@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Databases
+*.db
+*.duckdb
+*.sqlite
+*.sqlite3
+
+# Data & Reports
+*.csv
+*.log
+*.parquet
+*.txt
+*.json
+data_workspace/
+workspace/
+reports/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
