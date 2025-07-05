@@ -474,6 +474,137 @@ def test_5_preflight_fallback():
     log_message("測試 5: 預檢回退邏輯測試通過！")
     return True
 
+
+def test_6_no_data_skip_logic():
+    print_header("測試 6: 無數據區塊記錄與跳過邏輯測試")
+    cleanup_files(BASE_DB_PATH, REPORTS_DIR)
+
+    ticker_no_data = "NOEXISTS.TICKER" # 一個預期 yfinance 無法找到數據的代號
+    start_date_no_data = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+    end_date_no_data = (datetime.now() - timedelta(days=9)).strftime("%Y-%m-%d")
+    cooldown_param = "1" # 1 天的冷卻期
+
+    # --- 首次執行 ---
+    print_subheader("測試 6.1: 首次執行 - 記錄無數據區塊")
+    cmd1 = [
+        PYTHON_EXE, SCRIPT_PATH,
+        "--tickers", ticker_no_data,
+        "--start-date", start_date_no_data,
+        "--end-date", end_date_no_data,
+        "--db-path", BASE_DB_PATH,
+        "--table-name", TABLE_NAME,
+        "--data-only",
+        "--no_data_cooldown_days", cooldown_param
+    ]
+    returncode1, stdout1, stderr1 = run_command(cmd1)
+    assert returncode1 == 0, f"測試 6.1 失敗: 命令執行失敗 (返回碼 {returncode1})"
+
+    # 驗證 fetch_single_chunk 被呼叫 (yfinance_client 日誌)
+    # 驗證 record_no_data_range 被呼叫 (db_manager 日誌)
+    expected_in_log1 = [
+        f"fetch_single_chunk: Ticker={ticker_no_data}", # 至少會嘗試一次
+        f"INFO: fetch_single_chunk: [情報] {ticker_no_data}", # yfinance_client.py 中的無數據日誌
+        f"此區塊已被記錄為無數據", # yfinance_client.py 中記錄後的日誌片段
+        f"INFO: 已記錄/更新無數據區塊: Ticker={ticker_no_data}", # db_manager.py 中的日誌
+    ]
+    assert check_log_contains(stdout1, expected_in_log1), "測試 6.1 失敗: 首次執行的日誌未包含預期訊息。"
+    log_message("測試 6.1: 首次執行日誌驗證通過。")
+
+    # 驗證資料庫中 no_data_records 表
+    # 由於 yfinance_client 會嘗試多個 interval，我們需要找到對應的記錄
+    # 假設它至少會為某個 interval (如 '1m' 或 '1d') 記錄
+    # 我們可以檢查是否存在任何 ticker_no_data 的記錄
+    # 注意：yfinance_client 的 hydrate_data_range 會為請求的整個日期範圍（start_date_no_data 到 end_date_no_data）
+    # 在 fetch_single_chunk 失敗時，記錄的是 chunk 的範圍。
+    # 如果 hydrate_data_range 的請求範圍就是一個 chunk，那麼 start_date 和 end_date 會匹配。
+    # 我們需要找到一個被記錄的 interval。
+    # 為了簡化，我們檢查是否存在任何 ticker_no_data 的記錄，並且其 start/end date 與請求範圍一致。
+    # 這假設 yf_client 中的 chunking 邏輯對於短日期範圍會產生一個與請求範圍相同的 chunk。
+    # 或者，更準確地，我們應該檢查是否有任何 ticker_no_data 的記錄。
+
+    no_data_entry_query = f"SELECT COUNT(*) FROM no_data_records WHERE ticker = '{ticker_no_data}' AND start_date = '{start_date_no_data}' AND end_date = '{end_date_no_data}'"
+    # 可能因為 interval 不同而導致 start_date/end_date 略有不同，或者 yf_client 的 chunking 策略
+    # 更穩健的查詢是只查 ticker
+    no_data_entry_query_any_for_ticker = f"SELECT COUNT(*) FROM no_data_records WHERE ticker = '{ticker_no_data}'"
+    db_record_check = query_duckdb(BASE_DB_PATH, no_data_entry_query_any_for_ticker)
+    assert db_record_check['count_star()'].iloc[0] > 0, f"測試 6.1 失敗: 資料庫 no_data_records 中未找到 {ticker_no_data} 的記錄。"
+    log_message(f"測試 6.1: 資料庫 no_data_records 中已為 {ticker_no_data} 寫入記錄。")
+
+    # --- 第二次執行 (冷卻期內) ---
+    print_subheader("測試 6.2: 第二次執行 - 跳過 API 呼叫")
+    # 為確保仍在冷卻期，可以稍微等待一下，但對於1天的冷卻期，立即執行通常是安全的
+    time.sleep(1) # 短暫等待，確保時間戳不會完全相同（雖然影響不大）
+    cmd2 = cmd1 # 使用相同的命令
+    returncode2, stdout2, stderr2 = run_command(cmd2)
+    assert returncode2 == 0, f"測試 6.2 失敗: 命令執行失敗 (返回碼 {returncode2})"
+
+    # 驗證 check_no_data_record_exists 被呼叫且返回 True (db_manager 日誌)
+    # 驗證跳過訊息 (yfinance_client 日誌)
+    # 驗證 fetch_single_chunk 沒有被呼叫
+    expected_in_log2 = [
+        f"DEBUG: 發現有效的無數據記錄: Ticker={ticker_no_data}", # db_manager.py
+        f"[數據偵查] Ticker={ticker_no_data}", # yfinance_client.py
+        f"已跳過", # yfinance_client.py
+        f"因在最近 {cooldown_param} 天內曾記錄為無數據區塊" # yfinance_client.py
+    ]
+    assert check_log_contains(stdout2, expected_in_log2), "測試 6.2 失敗: 第二次執行的日誌未包含預期跳過訊息。"
+
+    unexpected_in_log2 = [
+        f"fetch_single_chunk: Ticker={ticker_no_data}", # 不應該再呼叫 fetch
+        f"INFO: 已記錄/更新無數據區塊: Ticker={ticker_no_data}" # 不應該再次記錄
+    ]
+    assert check_log_not_contains(stdout2, unexpected_in_log2), "測試 6.2 失敗: 第二次執行的日誌中包含不應出現的 fetch 或記錄訊息。"
+    log_message("測試 6.2: 第二次執行日誌驗證通過，API 呼叫已跳過。")
+
+    # --- 第三次執行 (模擬冷卻期過後) ---
+    print_subheader("測試 6.3: 第三次執行 - 冷卻期過後，重新嘗試")
+    # 手動修改資料庫中記錄的 recorded_at，使其早於冷卻期
+    # cooldown_param 是 1 天，所以我們將 recorded_at 設置為 2 天前
+    two_days_ago_iso = (datetime.now(timezone.utc) - timedelta(days=int(cooldown_param) + 1)).isoformat()
+    try:
+        with duckdb.connect(BASE_DB_PATH) as con:
+            # 更新所有 ticker_no_data 的記錄，以防有多個 interval 被記錄
+            update_query = f"UPDATE no_data_records SET recorded_at = '{two_days_ago_iso}' WHERE ticker = '{ticker_no_data}'"
+            con.execute(update_query)
+            log_message(f"測試 6.3: 已手動將 {ticker_no_data} 在 no_data_records 中的 recorded_at 更新為 {two_days_ago_iso}")
+    except Exception as e:
+        log_message(f"測試 6.3 錯誤: 更新 no_data_records 失敗: {e}")
+        assert False, f"測試 6.3 準備失敗: 無法更新資料庫記錄: {e}"
+
+    cmd3 = cmd1 # 使用相同的命令
+    returncode3, stdout3, stderr3 = run_command(cmd3)
+    assert returncode3 == 0, f"測試 6.3 失敗: 命令執行失敗 (返回碼 {returncode3})"
+
+    # 驗證 check_no_data_record_exists 被呼叫但返回 False (沒有 "發現有效的無數據記錄" 的 DEBUG 日誌)
+    # 驗證 fetch_single_chunk 再次被呼叫
+    # 驗證無數據區塊再次被記錄 (因為 API 仍然返回無數據)
+
+    # 期望 check_no_data_record_exists 執行，但不會找到有效的記錄 (即不會打印 "發現有效的無數據記錄")
+    # 因此，我們檢查 "發現有效的無數據記錄" 是否 *不* 存在於 stdout3 中 (針對此 ticker 和相關 interval)
+    # 但 check_no_data_record_exists 本身還是會被呼叫的，所以它查詢資料庫的日誌可能在
+    # 更簡單的是檢查跳過訊息是否 *不* 存在
+
+    unexpected_in_log3_after_cooldown = [
+        f"DEBUG: 發現有效的無數據記錄: Ticker={ticker_no_data}", # 不應該再是有效記錄
+        f"[數據偵查] Ticker={ticker_no_data}.*已跳過" # 不應該再跳過
+    ]
+    # 使用正則表達式來匹配跳過訊息會更準確，但 check_log_not_contains 不支持
+    # 我們可以分開檢查
+    assert check_log_not_contains(stdout3, [unexpected_in_log3_after_cooldown[0]]), "測試 6.3 失敗: 冷卻期過後，仍將記錄視為有效。"
+    assert check_log_not_contains(stdout3, [f"[數據偵查] Ticker={ticker_no_data}","已跳過"], case_sensitive=False), "測試 6.3 失敗: 冷卻期過後，仍在日誌中發現跳過訊息。"
+
+
+    expected_in_log3_after_cooldown = [
+        f"fetch_single_chunk: Ticker={ticker_no_data}", # 應該再次嘗試 fetch
+        f"INFO: 已記錄/更新無數據區塊: Ticker={ticker_no_data}", # 應該再次記錄，因為 API 還是無數據
+    ]
+    assert check_log_contains(stdout3, expected_in_log3_after_cooldown), "測試 6.3 失敗: 冷卻期過後的日誌未包含預期的 fetch 和記錄訊息。"
+    log_message("測試 6.3: 第三次執行日誌驗證通過，冷卻期過後重新嘗試 API 並記錄。")
+
+    log_message("測試 6: 無數據區塊記錄與跳過邏輯測試通過！")
+    return True
+
+
 # --- 主執行邏輯 ---
 if __name__ == "__main__":
     log_dir = os.path.dirname(LOG_FILE_PATH)
@@ -517,7 +648,8 @@ if __name__ == "__main__":
         test_2_data_only_mode,
         test_3_report_only_mode,
         test_4_full_flow,
-        test_5_preflight_fallback
+        test_5_preflight_fallback,
+        test_6_no_data_skip_logic
     ]
     total_tests = len(all_tests)
 

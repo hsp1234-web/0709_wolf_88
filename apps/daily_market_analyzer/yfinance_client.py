@@ -47,13 +47,14 @@ def _convert_missing_dates_to_ranges(missing_dates: list[str]) -> list[tuple[str
     return ranges
 
 class YFinanceClient:
-    def __init__(self, db_manager: DBManager, cache_dir="data_workspace/cache/yfinance_hydrator"):
+    def __init__(self, db_manager: DBManager, cache_dir="data_workspace/cache/yfinance_hydrator", no_data_cooldown_days: int = 7):
         self.db_manager = db_manager
         self.cache_dir = cache_dir
         os.makedirs(self.cache_dir, exist_ok=True)
         self.FALLBACK_INTERVALS = ['1m', '5m', '15m', '30m', '1h', '1d', '1wk', '1mo']
         self.HISTORICAL_FALLBACK = ['1d', '1wk', '1mo'] # 新增：歷史數據回溯策略
-        print(f"INFO: YFinanceClient (Data Hydrator v33.0) 初始化完畢。標準 Fallback: {self.FALLBACK_INTERVALS}, 歷史 Fallback: {self.HISTORICAL_FALLBACK}")
+        self.no_data_cooldown_days = no_data_cooldown_days
+        print(f"INFO: YFinanceClient (Data Hydrator v33.0) 初始化完畢。標準 Fallback: {self.FALLBACK_INTERVALS}, 歷史 Fallback: {self.HISTORICAL_FALLBACK}, 無數據冷卻期: {self.no_data_cooldown_days} 天。")
 
     def _get_chunk_size_for_interval(self, interval: str) -> int:
         if interval == '1m': return 6
@@ -88,8 +89,26 @@ class YFinanceClient:
             stock = yf.Ticker(ticker)
             data = stock.history(start=chunk_start_date_str, end=chunk_end_date_str, interval=interval, auto_adjust=True, prepost=False)
             if data is None or data.empty:
-                # 修改日誌等級和訊息
-                print(f"INFO: fetch_single_chunk: [情報] 外部數據源回報，{ticker} 於 {chunk_start_date_str} 至 {chunk_end_date_str} ({interval}) 無交易數據。可能原因：市場假日或非交易時段。")
+                # 計算實際的包含性結束日期
+                # yfinance 的 end date 是 exclusive，所以 chunk_end_date_str 是 chunk_actual_end_date + 1 day
+                try:
+                    actual_chunk_end_date_obj = datetime.strptime(chunk_end_date_str, "%Y-%m-%d") - timedelta(days=1)
+                    actual_chunk_end_date_str_for_record = actual_chunk_end_date_obj.strftime("%Y-%m-%d")
+                except ValueError:
+                    # 如果日期轉換失敗，則使用一個標記，避免記錄錯誤的日期範圍
+                    actual_chunk_end_date_str_for_record = "INVALID_CHUNK_END_DATE"
+                    print(f"錯誤 (fetch_single_chunk): 無法從 chunk_end_date_str '{chunk_end_date_str}' 計算實際結束日期。")
+
+                if actual_chunk_end_date_str_for_record != "INVALID_CHUNK_END_DATE":
+                    self.db_manager.record_no_data_range(
+                        ticker=ticker,
+                        interval=interval,
+                        start_date=chunk_start_date_str,
+                        end_date=actual_chunk_end_date_str_for_record
+                    )
+                    print(f"INFO: fetch_single_chunk: [情報] {ticker} 於 {chunk_start_date_str} 至 {actual_chunk_end_date_str_for_record} ({interval}) 無交易數據。此區塊已被記錄為無數據。可能原因：市場假日或非交易時段。")
+                else:
+                    print(f"INFO: fetch_single_chunk: [情報] {ticker} 於 {chunk_start_date_str} 至 {chunk_end_date_str} (excl.) ({interval}) 無交易數據。因結束日期計算問題未記錄。")
                 return None
             if isinstance(data.index, pd.DatetimeIndex):
                 data = data.reset_index()
@@ -195,10 +214,33 @@ class YFinanceClient:
 
         for interval in current_fallback_intervals:
             print(f"\nINFO: hydrate_data_range: Ticker={ticker}. 正在評估顆粒度 '{interval}' for range [{start_date_str} to {end_date_str}]...")
+
+            # --- 「無數據區塊」檢查 ---
+            # 檢查整個請求範圍是否被標記為無數據 for this specific interval
+            if self.db_manager.check_no_data_record_exists(
+                ticker=ticker,
+                interval=interval,
+                start_date=start_date_str, # 檢查整個請求的開始日期
+                end_date=end_date_str,     # 檢查整個請求的結束日期
+                cooldown_days=self.no_data_cooldown_days
+            ):
+                print(f"INFO: [數據偵查] Ticker={ticker}, Interval={interval} 的數據獲取已跳過 (請求範圍: {start_date_str} 至 {end_date_str})，因在最近 {self.no_data_cooldown_days} 天內曾記錄為無數據區塊。")
+                # 更新 overall_execution_log 標記跳過
+                for date_str_in_log_range in request_date_range_str_list:
+                    if date_str_in_log_range in overall_execution_log and ticker in overall_execution_log[date_str_in_log_range]:
+                        overall_execution_log[date_str_in_log_range][ticker].update({
+                            "status": "skipped_no_data_record",
+                            "interval": interval,
+                            "count": 0,
+                            "message": f"Skipped due to no-data record for interval {interval} covering range [{start_date_str}-{end_date_str}]."
+                        })
+                continue # 跳到下一個 interval
+
             chunk_size_days = self._get_chunk_size_for_interval(interval)
             if chunk_size_days <= 0: continue
 
             print(f"INFO: hydrate_data_range: Ticker={ticker}, Interval={interval}. 檢查資料庫快取...")
+            # 注意：這裡的 start_date_str 和 end_date_str 是整個 hydrate_data_range 的請求範圍
             cached_df, missing_dates_list = self.db_manager.check_cache(
                 ticker=ticker, start_date_str=start_date_str, end_date_str=end_date_str,
                 interval=interval, table_name=db_table_name

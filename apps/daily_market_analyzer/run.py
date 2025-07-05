@@ -66,6 +66,8 @@ def main():
                         help="資料庫中儲存 OHLCV 數據的表格名稱。")
     parser.add_argument("--process-uploads", action="store_true",
                         help="若指定，則處理 'uploads' 資料夾 (此功能待實現)。")
+    parser.add_argument("--no_data_cooldown_days", type=int, default=7,
+                        help="「無數據區塊」記錄的有效冷卻天數。預設為 7 天。")
 
     args = parser.parse_args()
 
@@ -129,8 +131,8 @@ def main():
     # 根據模式執行不同流程
     if args.data_only:
         print("執行模式：僅數據處理 (--data-only)")
-        print(f"執行參數: 標的='{args.tickers}', 起始日='{args.start_date}', 結束日='{args.end_date}', 資料庫='{args.db_path}', 資料表='{args.table_name}'")
-        yf_client = YFinanceClient(db_manager=db_manager)
+        print(f"執行參數: 標的='{args.tickers}', 起始日='{args.start_date}', 結束日='{args.end_date}', 資料庫='{args.db_path}', 資料表='{args.table_name}', 無數據冷卻期='{args.no_data_cooldown_days}'")
+        yf_client = YFinanceClient(db_manager=db_manager, no_data_cooldown_days=args.no_data_cooldown_days)
         overall_execution_log, _ = run_data_pipeline(args, db_manager, yf_client, tickers_list)
         # task_duration_seconds 將在 run_data_pipeline 內部計算或在此處計算實際數據處理時間
 
@@ -138,6 +140,7 @@ def main():
         print("執行模式：僅報告生成 (--report-only)")
         print(f"執行參數: 標的='{args.tickers}', 報告起始日='{args.report_start_date}', 報告結束日='{args.report_end_date}', 資料庫='{args.db_path}', 資料表='{args.table_name}'")
         # 注意：overall_execution_log 在此模式下通常為空，因為不執行數據獲取
+        # YFinanceClient 在此模式下不被實例化，因此 no_data_cooldown_days 不直接相關。
         # ReportGenerator 將主要基於資料庫中的數據生成報告
         # report_start_date 和 report_end_date 將覆蓋 args.start_date 和 args.end_date 用於報告範圍
         args.start_date = args.report_start_date # 將報告日期賦給主日期參數以供 ReportGenerator 使用
@@ -146,8 +149,8 @@ def main():
 
     else: # 完整流程
         print("執行模式：完整流程 (數據處理與報告生成)")
-        print(f"執行參數: 標的='{args.tickers}', 起始日='{args.start_date}', 結束日='{args.end_date}', 資料庫='{args.db_path}', 資料表='{args.table_name}'")
-        yf_client = YFinanceClient(db_manager=db_manager)
+        print(f"執行參數: 標的='{args.tickers}', 起始日='{args.start_date}', 結束日='{args.end_date}', 資料庫='{args.db_path}', 資料表='{args.table_name}', 無數據冷卻期='{args.no_data_cooldown_days}'")
+        yf_client = YFinanceClient(db_manager=db_manager, no_data_cooldown_days=args.no_data_cooldown_days)
         data_pipeline_start_time = datetime.now()
         overall_execution_log, _ = run_data_pipeline(args, db_manager, yf_client, tickers_list)
         data_pipeline_end_time = datetime.now()

@@ -25,21 +25,72 @@ class DBManager:
         """
         self.db_path = db_path
         self.duckdb_config = duckdb_config if duckdb_config else {} # 確保是字典以便合併
+        self.ohlcv_table_name = "market_ohlcv_analyzer" # 預設OHLCV資料表名稱
         db_dir = os.path.dirname(self.db_path)
         if db_dir and not os.path.exists(db_dir):
             os.makedirs(db_dir, exist_ok=True)
             print(f"INFO: 已建立資料庫目錄: {db_dir}")
 
+        self._setup_database() # 初始化時設置資料庫和資料表
+
         config_info = f"使用配置: {self.duckdb_config}" if self.duckdb_config else "使用預設配置"
         print(f"INFO: DBManager (Daily Market Analyzer v33.0) 初始化完畢，資料庫路徑: {self.db_path}。{config_info}")
 
+    def _setup_database(self):
+        """
+        設定資料庫，建立必要的資料表 (OHLCV 和 no_data_records)。
+        """
+        try:
+            with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
+                # 建立 OHLCV 資料表
+                create_ohlcv_sql = f"""
+                CREATE TABLE IF NOT EXISTS {self.ohlcv_table_name} (
+                    datetime TIMESTAMPTZ NOT NULL,
+                    ticker VARCHAR NOT NULL,
+                    interval VARCHAR NOT NULL,
+                    open DOUBLE PRECISION NOT NULL,
+                    high DOUBLE PRECISION NOT NULL,
+                    low DOUBLE PRECISION NOT NULL,
+                    close DOUBLE PRECISION NOT NULL,
+                    volume BIGINT,
+                    PRIMARY KEY (ticker, datetime, interval)
+                );
+                """
+                con.execute(create_ohlcv_sql)
+                print(f"INFO: 資料表 '{self.ohlcv_table_name}' 已在資料庫 '{self.db_path}' 中準備就緒。")
+
+                # 建立 no_data_records 資料表
+                create_no_data_records_sql = f"""
+                CREATE TABLE IF NOT EXISTS no_data_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticker TEXT NOT NULL,
+                    interval TEXT NOT NULL,
+                    start_date TEXT NOT NULL,
+                    end_date TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    UNIQUE(ticker, interval, start_date, end_date)
+                );
+                """
+                con.execute(create_no_data_records_sql)
+                print(f"INFO: 資料表 'no_data_records' 已在資料庫 '{self.db_path}' 中準備就緒。")
+
+        except Exception as e:
+            print(f"錯誤: 資料庫設定失敗 (_setup_database): {e}")
+            raise
 
     def create_ohlcv_table(self, table_name: str = "market_ohlcv_analyzer"):
         """
         建立市場 OHLCV（開高低收量）數據表，如果該表尚不存在。
         包含 'interval' 和 'ticker' 欄位。
         主鍵為 (ticker, datetime, interval) 以確保唯一性。
+        **注意：此方法在新版中主要由 _setup_database 處理，保留可能是為了向後兼容或特定測試。**
         """
+        if table_name != self.ohlcv_table_name:
+            print(f"警告: create_ohlcv_table 被呼叫以建立一個與預設 ({self.ohlcv_table_name}) 不同的資料表: {table_name}。通常情況下，這應由 _setup_database 自動處理。")
+
+        # 實際的建立邏輯已移至 _setup_database，但為了確保此獨立呼叫仍能運作，我們重複執行一次。
+        # 更理想的作法可能是讓 _setup_database 接受 table_name 參數，或移除此公開方法。
+        # 為了最小化變動，暫時保留其原始功能，但提示其主要職責已轉移。
         create_sql = f"""
         CREATE TABLE IF NOT EXISTS {table_name} (
             datetime TIMESTAMPTZ NOT NULL,
@@ -56,9 +107,9 @@ class DBManager:
         try:
             with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
                 con.execute(create_sql)
-            print(f"INFO: 資料表 '{table_name}' 已在資料庫 '{self.db_path}' 中準備就緒 (包含 interval 欄位)。")
+            print(f"INFO: (create_ohlcv_table) 資料表 '{table_name}' 已在資料庫 '{self.db_path}' 中準備就緒 (包含 interval 欄位)。")
         except Exception as e:
-            print(f"錯誤: 建立資料表 '{table_name}' 失敗: {e}")
+            print(f"錯誤: (create_ohlcv_table) 建立資料表 '{table_name}' 失敗: {e}")
             raise
 
     def upsert_data(self, df: pd.DataFrame, table_name: str):
@@ -242,6 +293,71 @@ class DBManager:
             cached_df = pd.DataFrame()
         print(f"INFO: check_cache: For {ticker} ({interval}), found {len(cached_df)} cached rows. Missing {len(missing_dates)} dates: {missing_dates[:5]}{'...' if len(missing_dates) > 5 else ''}")
         return cached_df, missing_dates
+
+    def record_no_data_range(self, ticker: str, interval: str, start_date: str, end_date: str) -> None:
+        """
+        記錄指定的 ticker、interval 和日期範圍為「無數據」。
+        如果記錄已存在，則更新 recorded_at 時間戳。
+
+        Args:
+            ticker (str): 股票代碼。
+            interval (str): 數據顆粒度。
+            start_date (str): 無數據區塊的起始日期 (YYYY-MM-DD)。
+            end_date (str): 無數據區塊的結束日期 (YYYY-MM-DD)。
+        """
+        recorded_at = datetime.now(timezone.utc).isoformat()
+        sql = """
+        INSERT INTO no_data_records (ticker, interval, start_date, end_date, recorded_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (ticker, interval, start_date, end_date) DO UPDATE SET
+            recorded_at = excluded.recorded_at;
+        """
+        try:
+            with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
+                con.execute(sql, [ticker, interval, start_date, end_date, recorded_at])
+            print(f"INFO: 已記錄/更新無數據區塊: Ticker={ticker}, Interval={interval}, Range=[{start_date} - {end_date}], RecordedAt={recorded_at}")
+        except Exception as e:
+            print(f"錯誤: 記錄無數據區塊失敗: Ticker={ticker}, Interval={interval}, Range=[{start_date} - {end_date}]: {e}")
+
+    def check_no_data_record_exists(self, ticker: str, interval: str, start_date: str, end_date: str, cooldown_days: int) -> bool:
+        """
+        檢查指定的 ticker、interval 和日期範圍是否存在有效的「無數據」記錄。
+        有效是指記錄存在，且 recorded_at 在指定的 cooldown_days 內。
+
+        Args:
+            ticker (str): 股票代碼。
+            interval (str): 數據顆粒度。
+            start_date (str): 查詢範圍的起始日期 (YYYY-MM-DD)。
+            end_date (str): 查詢範圍的結束日期 (YYYY-MM-DD)。
+            cooldown_days (int): 冷卻期天數。如果記錄的 recorded_at 在此天數內，則視為有效。
+
+        Returns:
+            bool: 如果存在有效的無數據記錄，則為 True，否則為 False。
+        """
+        if cooldown_days <= 0: # 如果冷卻期為0或負數，則不應跳過任何內容
+            return False
+
+        threshold_datetime = datetime.now(timezone.utc) - timedelta(days=cooldown_days)
+        threshold_timestamp_str = threshold_datetime.isoformat()
+
+        sql = """
+        SELECT COUNT(*) FROM no_data_records
+        WHERE ticker = ?
+          AND interval = ?
+          AND start_date = ?
+          AND end_date = ?
+          AND recorded_at >= ?;
+        """
+        try:
+            with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
+                result = con.execute(sql, [ticker, interval, start_date, end_date, threshold_timestamp_str]).fetchone()
+            if result and result[0] > 0:
+                print(f"DEBUG: 發現有效的無數據記錄: Ticker={ticker}, Interval={interval}, Range=[{start_date} - {end_date}], Cooldown={cooldown_days} days.")
+                return True
+            return False
+        except Exception as e:
+            print(f"錯誤: 檢查無數據記錄失敗: Ticker={ticker}, Interval={interval}, Range=[{start_date} - {end_date}]: {e}")
+            return False # 出錯時，不跳過 API 呼叫
 
 if __name__ == '__main__':
     print("--- DBManager (Daily Market Analyzer) 測試 ---")
