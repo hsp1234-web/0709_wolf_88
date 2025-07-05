@@ -123,17 +123,60 @@ def transform_and_load(raw_content_df: pd.DataFrame, target_conn: duckdb.DuckDBP
             else:
                 logger.debug(f"'交易日期' series for {source_file}/{member_file}:\n{trading_date_series.to_string()}")
 
-            # 精準指令：指定 YYYYMMDD 格式
-            parsed_dates_series = pd.to_datetime(trading_date_series, format='%Y%m%d', errors='coerce').dt.date
+            # --- 增強日期解析 ---
+            original_row_count = len(df)
+            parsed_dates_series = pd.Series([None] * len(df), index=df.index, dtype='object')
+
+            # 嘗試標準公元年格式 (YYYY/MM/DD 或 YYYY-MM-DD)
+            common_formats = ["%Y/%m/%d", "%Y-%m-%d", "%Y%m%d"]
+            for fmt in common_formats:
+                if parsed_dates_series.isnull().any(): # 只有當還有未解析的日期時才嘗試
+                    attempt = pd.to_datetime(trading_date_series, format=fmt, errors='coerce')
+                    parsed_dates_series = parsed_dates_series.fillna(attempt)
+
+            # 嘗試民國年格式 (YYY/MM/DD)
+            # 民國年轉換: 年份 + 1911
+            roc_date_str_series = trading_date_series.astype(str)
+            # 確保是 YYY/MM/DD 格式，避免匹配到 YYYY/MM/DD
+            is_roc_format = roc_date_str_series.str.match(r'^\d{3}/\d{1,2}/\d{1,2}$')
+
+            if is_roc_format.any(): # 只處理看起來像民國年的
+                roc_dates_to_process = roc_date_str_series[is_roc_format & parsed_dates_series.isnull()]
+                if not roc_dates_to_process.empty:
+                    try:
+                        # 分割日期，轉換年份，然後重新組合
+                        parts = roc_dates_to_process.str.split('/', expand=True)
+                        year = parts[0].astype(int) + 1911
+                        month = parts[1]
+                        day = parts[2]
+                        # 重新組合為 YYYY/MM/DD 字串，然後讓 pd.to_datetime 處理
+                        gregorian_equivalent_str = year.astype(str) + '/' + month + '/' + day
+                        roc_parsed = pd.to_datetime(gregorian_equivalent_str, format="%Y/%m/%d", errors='coerce')
+                        parsed_dates_series.update(roc_parsed)
+                    except Exception as e_roc:
+                        logger.warning(f"處理民國年日期時發生錯誤 (來源: {source_file}/{member_file}): {e_roc}")
+
+            # 將成功解析的日期轉換為 .dt.date
+            # 先檢查 Series 中的元素是否是 NaT 或 datetime 對象
+            mask_not_nat = pd.notna(parsed_dates_series)
+            # 僅對非 NaT 的 datetime 對象應用 .dt.date
+            parsed_dates_series.loc[mask_not_nat] = parsed_dates_series[mask_not_nat].apply(lambda x: x.date() if pd.notna(x) else None)
+
             logger.debug(f"parsed_dates_series for {source_file}/{member_file}:\n{parsed_dates_series.to_string()}")
 
             df['parsed_trading_date'] = parsed_dates_series
-            df_filtered = df[pd.notna(df['parsed_trading_date'])].copy()
+
+            # 過濾掉日期轉換失敗的行 (NaT)
+            df_filtered = df.dropna(subset=['parsed_trading_date']).copy()
+
+            dropped_rows = original_row_count - len(df_filtered)
+            if dropped_rows > 0:
+                logger.warning(f"在 {source_file}/{member_file} 中，由於日期轉換失敗或日期不存在，共捨棄了 {dropped_rows} 行數據。")
+
             logger.debug(f"df_filtered head for {source_file}/{member_file} (Non-NaT dates):\n{df_filtered.head().to_string()}")
 
-
             if df_filtered.empty:
-                logger.warning(f"在 {source_file}/{member_file} 中，所有有效數據行都因日期轉換失敗或不存在而被過濾。")
+                logger.warning(f"在 {source_file}/{member_file} 中，所有有效數據行都因日期轉換失敗或不存在而被過濾。 (在捨棄 {dropped_rows} 行後)")
                 continue
 
             # 現在 df_transformed 基於 df_filtered 建立
@@ -141,7 +184,7 @@ def transform_and_load(raw_content_df: pd.DataFrame, target_conn: duckdb.DuckDBP
             df_transformed['trading_date'] = df_filtered['parsed_trading_date']
 
             # 後續的 df.get('契約代碼') 應該改為 df_filtered.get('契約代碼')
-            df_transformed['product_id'] = df_filtered.get('契約代碼')
+            df_transformed['product_id'] = df_filtered.get('契約代碼') # 這裡的 get 是從 df_filtered 取值，所以不用改
             df_transformed['expiry_month'] = df_filtered.get('到期月份週別')
             df_transformed['strike_price'] = pd.to_numeric(df_filtered.get('履約價'), errors='coerce')
             df_transformed['option_type'] = df_filtered.get('買賣權')

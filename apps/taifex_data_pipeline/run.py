@@ -163,7 +163,7 @@ async def main():
                 fingerprint=fingerprint,
                 filename=os.path.basename(file_path),
                 filesize=os.path.getsize(file_path),
-                etl_version="v35.0-loader-v2"
+                etl_version="v35.0-loader"
             )
             processed_count += 1
         except Exception as e:
