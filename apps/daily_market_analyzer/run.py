@@ -68,6 +68,8 @@ def main():
                         help="若指定，則處理 'uploads' 資料夾 (此功能待實現)。")
     parser.add_argument("--no_data_cooldown_days", type=int, default=7,
                         help="「無數據區塊」記錄的有效冷卻天數。預設為 7 天。")
+    parser.add_argument("--force-refresh", action="store_true",
+                        help="強制刷新數據，忽略快取 (針對 yfinance_client)。")
 
     args = parser.parse_args()
 
@@ -189,7 +191,7 @@ def run_data_pipeline(args, db_manager: DBManager, yf_client: YFinanceClient, ti
         hydrated_df, ticker_execution_log = yf_client.hydrate_data_range(
             ticker_symbol, args.start_date, args.end_date,
             db_table_name=args.table_name,
-            force_refresh=False # 可考慮添加 force_refresh 參數到命令列
+            force_refresh=args.force_refresh
         )
 
         for date_key, ticker_daily_log_value in ticker_execution_log.items():

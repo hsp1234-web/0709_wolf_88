@@ -62,15 +62,15 @@ class DBManager:
                 # 建立 no_data_records 資料表
                 create_no_data_records_sql = f"""
                 CREATE TABLE IF NOT EXISTS no_data_records (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ticker TEXT NOT NULL,
                     interval TEXT NOT NULL,
                     start_date TEXT NOT NULL,
                     end_date TEXT NOT NULL,
                     recorded_at TEXT NOT NULL,
-                    UNIQUE(ticker, interval, start_date, end_date)
+                    PRIMARY KEY (ticker, interval, start_date, end_date)
                 );
                 """
+                # 使用 ticker, interval, start_date, end_date 作為主鍵，自然也滿足了 UNIQUE 約束
                 con.execute(create_no_data_records_sql)
                 print(f"INFO: 資料表 'no_data_records' 已在資料庫 '{self.db_path}' 中準備就緒。")
 
