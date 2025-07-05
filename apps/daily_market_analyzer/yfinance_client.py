@@ -154,20 +154,29 @@ class YFinanceClient:
             # 使用最粗顆粒度 '1mo' 請求整個範圍
             # yfinance 的 end date 是 exclusive, 所以要加一天
             preflight_end_date_str = (end_date_obj + timedelta(days=1)).strftime("%Y-%m-%d")
-            preflight_data = self.fetch_single_chunk(ticker, start_date_str, preflight_end_date_str, '1mo')
-            if preflight_data is None or preflight_data.empty:
-                print(f"INFO: Pre-flight check for {ticker} from {start_date_str} to {end_date_str} (1mo) failed. Skipping all intervals.")
-                for date_str_in_log_range in request_date_range_str_list:
-                    overall_execution_log[date_str_in_log_range][ticker].update({
-                        "status": "preflight_failed_empty",
-                        "interval": "1mo_preflight",
-                        "count": 0,
-                        "message": f"Pre-flight check for {ticker} over [{start_date_str}-{end_date_str}] returned no data with '1mo'. Assuming no data in this historical range."
-                    })
-                # print(f"DEBUG: PREFLIGHT FAILED, ATTEMPTING TO RETURN NOW FOR TICKER {ticker}") # 移除調試日誌
-                print(f"===== 數據回填任務結束 (預檢失敗): Ticker={ticker} =====")
-                return None, overall_execution_log
-            else:
+            preflight_data_1mo = self.fetch_single_chunk(ticker, start_date_str, preflight_end_date_str, '1mo')
+            if preflight_data_1mo is None or preflight_data_1mo.empty:
+                print(f"INFO: Pre-flight check for {ticker} from {start_date_str} to {end_date_str} (1mo) failed. Attempting secondary pre-flight with '1d'.")
+
+                # --- 「二次確認」機制 ---
+                preflight_data_1d = self.fetch_single_chunk(ticker, start_date_str, preflight_end_date_str, '1d')
+                if preflight_data_1d is None or preflight_data_1d.empty:
+                    print(f"INFO: Secondary pre-flight check for {ticker} from {start_date_str} to {end_date_str} (1d) also failed. Skipping all intervals.")
+                    for date_str_in_log_range in request_date_range_str_list:
+                        overall_execution_log[date_str_in_log_range][ticker].update({
+                            "status": "preflight_failed_empty_1mo_1d",
+                            "interval": "1mo_then_1d_preflight",
+                            "count": 0,
+                            "message": f"Pre-flight checks for {ticker} over [{start_date_str}-{end_date_str}] returned no data with '1mo' and '1d'. Assuming no data in this historical range."
+                        })
+                    print(f"===== 數據回填任務結束 (預檢 '1mo' 及 '1d' 均失敗): Ticker={ticker} =====")
+                    return None, overall_execution_log
+                else:
+                    print(f"INFO: Secondary pre-flight check for {ticker} from {start_date_str} to {end_date_str} (1d) successful. Proceeding with detailed fetch using HISTORICAL_FALLBACK.")
+                    # 如果 '1d' 預檢成功，我們應該使用 HISTORICAL_FALLBACK，因為 '1mo' 數據不可用
+                    # 但目前的 current_fallback_intervals 選擇邏輯是在預檢之後，所以這裡不需要直接修改它
+                    # 讓後續的 "時間感知回溯" 邏輯來決定使用哪個 fallback set
+            else: # '1mo' 預檢成功
                 print(f"INFO: Pre-flight check for {ticker} from {start_date_str} to {end_date_str} (1mo) successful. Proceeding with detailed fetch.")
         # --- 結束 「存在性預檢」 ---
 

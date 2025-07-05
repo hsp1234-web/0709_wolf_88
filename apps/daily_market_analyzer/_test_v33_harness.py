@@ -33,6 +33,19 @@ TICKER_FULL_FLOW = "NVDA"
 END_DATE_FULL_FLOW = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 START_DATE_FULL_FLOW = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
 
+# 針對測試 5: 預檢回退
+# 我們需要一個在 yfinance 上近期沒有月線數據，但有日線數據的標的。
+# 這通常發生在非常新的 IPO，或者某些特定市場的股票。
+# 為了測試的穩定性，我們可能需要一個更可控的方式，或者接受這個測試可能因數據源變化而不穩定。
+# 假設 "FAKEAPPL.US" 是一個符合條件的虛構代碼，或者我們可以找到一個真實但不常用的代碼。
+# 為了使測試更具確定性，我們將使用一個已知的、在特定歷史時期只有日線的標的。
+# 例如，一個在2023年才IPO的股票，在2022年查詢月線會失敗，但日線可能也失敗。
+# 這裡我們用一個代號，並期望 yfinance 對此代號的 '1mo' 請求失敗，對 '1d' 請求成功。
+# 注意：這個測試的可靠性高度依賴 yfinance 返回的數據。
+TICKER_PREFLIGHT_FALLBACK = "AMC" # AMC 在某些早期歷史區間可能更稀疏
+# 選擇一個較早的日期，增加 '1mo' 數據缺失的可能性，但 '1d' 數據可能存在
+START_DATE_PREFLIGHT_FALLBACK = "2014-01-01"
+END_DATE_PREFLIGHT_FALLBACK = "2014-03-30" # 查詢一個季度左右的數據，超過30天觸發預檢
 
 # --- 輔助函數 ---
 def print_header(message):
@@ -392,6 +405,75 @@ def test_4_full_flow():
     log_message("測試 4: 成功生成報告檔案。測試通過！")
     return True
 
+def test_5_preflight_fallback():
+    print_header("測試 5: 預檢回退邏輯測試 (`--data-only`)")
+    cleanup_files(BASE_DB_PATH, REPORTS_DIR) # 清理舊數據
+
+    cmd = [
+        PYTHON_EXE, SCRIPT_PATH,
+        "--tickers", TICKER_PREFLIGHT_FALLBACK,
+        "--start-date", START_DATE_PREFLIGHT_FALLBACK,
+        "--end-date", END_DATE_PREFLIGHT_FALLBACK,
+        "--db-path", BASE_DB_PATH,
+        "--table-name", TABLE_NAME,
+        "--data-only",
+        "--force-refresh" # 強制刷新以確保每次都觸發 API 調用
+    ]
+    returncode, stdout, stderr = run_command(cmd)
+
+    assert returncode == 0, f"測試 5 失敗: 命令執行失敗 (返回碼 {returncode})"
+    log_message("測試 5: 命令執行成功。")
+
+    # 驗證日誌中 '1mo' 預檢失敗，然後 '1d' 預檢成功 (或失敗，取決於 TICKER_PREFLIGHT_FALLBACK 的實際情況)
+    # 並接著嘗試使用 HISTORICAL_FALLBACK (其中包含 '1d') 獲取數據
+    expected_in_log = [
+        f"Performing existence pre-flight check for historical range [{START_DATE_PREFLIGHT_FALLBACK} to {END_DATE_PREFLIGHT_FALLBACK}]",
+        f"INFO: Pre-flight check for {TICKER_PREFLIGHT_FALLBACK} from {START_DATE_PREFLIGHT_FALLBACK} to {END_DATE_PREFLIGHT_FALLBACK} (1mo) failed. Attempting secondary pre-flight with '1d'.",
+    ]
+    assert check_log_contains(stdout, expected_in_log, case_sensitive=False), "測試 5 失敗: 日誌未包含 '1mo' 預檢失敗和嘗試 '1d' 預檢的訊息。"
+    log_message("測試 5: 日誌包含 '1mo' 預檢失敗和嘗試 '1d' 預檢的訊息。")
+
+    # 接下來，我們需要判斷 '1d' 預檢是否成功
+    # 情況 A: '1d' 預檢成功
+    secondary_preflight_success_log = f"INFO: Secondary pre-flight check for {TICKER_PREFLIGHT_FALLBACK} from {START_DATE_PREFLIGHT_FALLBACK} to {END_DATE_PREFLIGHT_FALLBACK} (1d) successful."
+    # 情況 B: '1d' 預檢也失敗
+    secondary_preflight_fail_log = f"INFO: Secondary pre-flight check for {TICKER_PREFLIGHT_FALLBACK} from {START_DATE_PREFLIGHT_FALLBACK} to {END_DATE_PREFLIGHT_FALLBACK} (1d) also failed."
+
+    if secondary_preflight_success_log.lower() in stdout.lower():
+        log_message("測試 5: '1d' 二次預檢成功。")
+        # 驗證是否繼續使用 HISTORICAL_FALLBACK (包含 '1d') 進行數據獲取
+        expected_after_1d_success = [
+            f"Using HISTORICAL_FALLBACK: {['1d', '1wk', '1mo']}", # yfinance_client.py 中的日誌
+            f"INFO: hydrate_data_range: Ticker={TICKER_PREFLIGHT_FALLBACK}. 正在評估顆粒度 '1d'", # 應首先嘗試 '1d'
+            f"fetch_single_chunk: Ticker={TICKER_PREFLIGHT_FALLBACK}, Interval=1d",
+            f"資訊：標的 {TICKER_PREFLIGHT_FALLBACK} 數據成功寫入資料庫" # run.py 中的日誌
+        ]
+        assert check_log_contains(stdout, expected_after_1d_success, case_sensitive=False), "測試 5 失敗: '1d' 預檢成功後，未按預期流程獲取 '1d' 數據。"
+        log_message("測試 5: '1d' 預檢成功後，按預期流程獲取 '1d' 數據。")
+
+        db_data = query_duckdb(BASE_DB_PATH, f"SELECT COUNT(*) FROM {TABLE_NAME} WHERE ticker = '{TICKER_PREFLIGHT_FALLBACK}' AND datetime >= '{START_DATE_PREFLIGHT_FALLBACK}' AND datetime <= '{END_DATE_PREFLIGHT_FALLBACK} 23:59:59'")
+        assert db_data['count_star()'].iloc[0] > 0, f"測試 5 失敗: '1d' 預檢成功後，資料庫中應存在 {TICKER_PREFLIGHT_FALLBACK} 的數據，但未找到。"
+        log_message(f"測試 5: '1d' 預檢成功後，資料庫中已寫入 {TICKER_PREFLIGHT_FALLBACK} 的數據 ({db_data['count_star()'].iloc[0]} 筆)。")
+
+    elif secondary_preflight_fail_log.lower() in stdout.lower():
+        log_message("測試 5: '1d' 二次預檢失敗。")
+        # 驗證是否正確終止流程
+        expected_after_1d_fail = [
+            f"===== 數據回填任務結束 (預檢 '1mo' 及 '1d' 均失敗): Ticker={TICKER_PREFLIGHT_FALLBACK} =====",
+            f"總結：標的 {TICKER_PREFLIGHT_FALLBACK} 在請求的歷史範圍內未找到任何數據。" # run.py 中的日誌
+        ]
+        assert check_log_contains(stdout, expected_after_1d_fail, case_sensitive=False), "測試 5 失敗: '1d' 預檢失敗後，未按預期終止流程並記錄日誌。"
+        log_message("測試 5: '1d' 預檢失敗後，按預期終止流程。")
+
+        db_data = query_duckdb(BASE_DB_PATH, f"SELECT COUNT(*) FROM {TABLE_NAME} WHERE ticker = '{TICKER_PREFLIGHT_FALLBACK}' AND datetime >= '{START_DATE_PREFLIGHT_FALLBACK}' AND datetime <= '{END_DATE_PREFLIGHT_FALLBACK} 23:59:59'")
+        assert db_data['count_star()'].iloc[0] == 0, f"測試 5 失敗: '1d' 預檢失敗後，資料庫中不應存在 {TICKER_PREFLIGHT_FALLBACK} 的數據，但找到了 {db_data['count_star()'].iloc[0]} 筆。"
+        log_message(f"測試 5: '1d' 預檢失敗後，資料庫中沒有 {TICKER_PREFLIGHT_FALLBACK} 的數據。")
+    else:
+        assert False, "測試 5 失敗: 日誌中既未找到 '1d' 預檢成功也未找到失敗的明確標記。"
+
+    log_message("測試 5: 預檢回退邏輯測試通過！")
+    return True
+
 # --- 主執行邏輯 ---
 if __name__ == "__main__":
     log_dir = os.path.dirname(LOG_FILE_PATH)
@@ -434,7 +516,8 @@ if __name__ == "__main__":
         test_1_invalid_historical_data,
         test_2_data_only_mode,
         test_3_report_only_mode,
-        test_4_full_flow
+        test_4_full_flow,
+        test_5_preflight_fallback
     ]
     total_tests = len(all_tests)
 

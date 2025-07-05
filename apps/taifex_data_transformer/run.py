@@ -22,23 +22,9 @@ except Exception as e:
     print(f"專案路徑校正時發生錯誤: {e}", file=sys.stderr)
 # --- 路徑自我校正樣板碼結束 ---
 
-class SimpleLogger:
-    def __init__(self, level="INFO"):
-        self.level = level.upper()
-        self.levels = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
+from src.utils.logger import setup_logger # 導入標準日誌模組
 
-    def _log(self, msg, level):
-        if self.levels.get(level, 0) >= self.levels.get(self.level, 20):
-            timestamp = datetime.now(pytz.timezone('Asia/Taipei')).strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{timestamp}] [{level}] {msg}")
-
-    def debug(self, msg): self._log(msg, "DEBUG")
-    def info(self, msg): self._log(msg, "INFO")
-    def warning(self, msg): self._log(msg, "WARNING")
-    def error(self, msg): self._log(msg, "ERROR")
-    def success(self, msg): self._log(f"✅ {msg}", "INFO")
-
-logger = SimpleLogger()
+# SimpleLogger class has been removed.
 
 def create_target_table(conn: duckdb.DuckDBPyConnection, table_name: str):
     """確保目標分析表格存在"""
@@ -262,7 +248,15 @@ def main():
     parser.add_argument("--enable-status-updates", action="store_true", help="啟用狀態更新通訊協議")
 
     args = parser.parse_args()
-    logger.level = args.log_level.upper()
+
+    # 初始化標準日誌器
+    log_level_map = {
+        "DEBUG": 10, # logging.DEBUG
+        "INFO": 20,  # logging.INFO
+        "WARNING": 30, # logging.WARNING
+        "ERROR": 40  # logging.ERROR
+    }
+    logger = setup_logger(__name__, level=log_level_map.get(args.log_level.upper(), 20)) # Default to INFO
 
     logger.info("--- TAIFEX 數據轉換器 v35.0 (Python 迭代模式) 啟動 ---")
     logger.info(f"讀取自「原始數據艙」: {args.raw_db_path}")

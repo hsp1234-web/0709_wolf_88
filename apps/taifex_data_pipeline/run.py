@@ -25,25 +25,10 @@ except Exception as e:
 # --- 路徑自我校正樣板碼結束 ---
 
 from apps.pipeline_metadata_manager.manager import MetadataManager, calculate_file_fingerprint
+from src.utils.logger import setup_logger # 導入標準日誌模組
 
 # --- 全域日誌與配置 ---
-class SimpleLogger:
-    def __init__(self, level="INFO"):
-        self.level = level.upper()
-        self.levels = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40}
-
-    def _log(self, msg, level):
-        if self.levels.get(level, 0) >= self.levels.get(self.level, 20):
-            timestamp = datetime.now(pytz.timezone('Asia/Taipei')).strftime('%Y-%m-%d %H:%M:%S')
-            print(f"[{timestamp}] [{level}] {msg}")
-
-    def debug(self, msg): self._log(msg, "DEBUG")
-    def info(self, msg): self._log(msg, "INFO")
-    def warning(self, msg): self._log(msg, "WARNING")
-    def error(self, msg): self._log(msg, "ERROR")
-    def success(self, msg): self._log(f"✅ {msg}", "INFO")
-
-logger = SimpleLogger()
+# SimpleLogger class has been removed.
 
 RAW_TABLE_NAME = "raw_import_log"
 
@@ -114,7 +99,15 @@ async def main():
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
 
     args = parser.parse_args()
-    logger.level = args.log_level.upper()
+
+    # 初始化標準日誌器
+    log_level_map = {
+        "DEBUG": 10, # logging.DEBUG
+        "INFO": 20,  # logging.INFO
+        "WARNING": 30, # logging.WARNING
+        "ERROR": 40  # logging.ERROR
+    }
+    logger = setup_logger(__name__, level=log_level_map.get(args.log_level.upper(), 20)) # Default to INFO
 
     db_path = os.path.join(args.db_output_dir, args.db_name)
     metadata_db_path = args.metadata_db_path or os.path.join(args.db_output_dir, "pipeline_metadata.duckdb")
