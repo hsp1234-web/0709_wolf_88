@@ -88,7 +88,8 @@ class YFinanceClient:
             stock = yf.Ticker(ticker)
             data = stock.history(start=chunk_start_date_str, end=chunk_end_date_str, interval=interval, auto_adjust=True, prepost=False)
             if data is None or data.empty:
-                print(f"警告: fetch_single_chunk: {ticker} 在 {chunk_start_date_str} 到 {chunk_end_date_str} (間隔: {interval}) 無數據返回。")
+                # 修改日誌等級和訊息
+                print(f"INFO: fetch_single_chunk: [情報] 外部數據源回報，{ticker} 於 {chunk_start_date_str} 至 {chunk_end_date_str} ({interval}) 無交易數據。可能原因：市場假日或非交易時段。")
                 return None
             if isinstance(data.index, pd.DatetimeIndex):
                 data = data.reset_index()
@@ -314,7 +315,8 @@ class YFinanceClient:
                     if chunk_df is not None and not chunk_df.empty:
                         current_missing_range_all_chunks_dfs.append(chunk_df)
                     else: # chunk_df is None or empty
-                        print(f"警告: hydrate_data_range: Ticker={ticker}, Interval={interval}. Chunk [{chunk_start_str}-{chunk_end_exclusive_str}) 數據抓取失敗或為空。此 missing range 的 '{interval}' 嘗試終止。")
+                        # 修改警告為策略說明
+                        print(f"INFO: hydrate_data_range: [策略] {ticker} 的 '{interval}' 精度探測完畢，未發現數據。智能引擎將自動評估下一個可用精度。")
                         current_missing_range_fetch_ok = False; break
 
                 if not current_missing_range_fetch_ok:
