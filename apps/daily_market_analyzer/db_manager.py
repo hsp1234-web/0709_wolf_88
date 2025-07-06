@@ -15,17 +15,19 @@ class DBManager:
     提供方法來建立資料庫連線、建立資料表以及高效地寫入 (UPSERT) DataFrame 數據。
     此版本適用於 Daily Market Analyzer，處理包含 'interval' 欄位的數據，並提供查詢功能。
     """
-    def __init__(self, db_path: str, duckdb_config: dict | None = None):
+    def __init__(self, db_path: str, target_ohlcv_table_name: str = "market_ohlcv_data", duckdb_config: dict | None = None):
         """
         初始化 DBManager。
 
         Args:
             db_path (str): DuckDB 資料庫檔案的路徑。
+            target_ohlcv_table_name (str, optional): 主要 OHLCV 數據表的名稱。
+                                                  預設為 "market_ohlcv_data"。
             duckdb_config (dict | None, optional): DuckDB 連線的配置選項。預設為 None。
         """
         self.db_path = db_path
         self.duckdb_config = duckdb_config if duckdb_config else {} # 確保是字典以便合併
-        self.ohlcv_table_name = "market_ohlcv_analyzer" # 預設OHLCV資料表名稱
+        self.ohlcv_table_name = target_ohlcv_table_name # 使用傳入的表名
         db_dir = os.path.dirname(self.db_path)
         if db_dir and not os.path.exists(db_dir):
             os.makedirs(db_dir, exist_ok=True)
@@ -78,21 +80,23 @@ class DBManager:
             print(f"錯誤: 資料庫設定失敗 (_setup_database): {e}")
             raise
 
-    def create_ohlcv_table(self, table_name: str = "market_ohlcv_analyzer"):
+    def create_ohlcv_table(self, table_name: str | None = None):
         """
         建立市場 OHLCV（開高低收量）數據表，如果該表尚不存在。
         包含 'interval' 和 'ticker' 欄位。
         主鍵為 (ticker, datetime, interval) 以確保唯一性。
         **注意：此方法在新版中主要由 _setup_database 處理，保留可能是為了向後兼容或特定測試。**
         """
-        if table_name != self.ohlcv_table_name:
-            print(f"警告: create_ohlcv_table 被呼叫以建立一個與預設 ({self.ohlcv_table_name}) 不同的資料表: {table_name}。通常情況下，這應由 _setup_database 自動處理。")
+        effective_table_name = table_name if table_name is not None else self.ohlcv_table_name
 
-        # 實際的建立邏輯已移至 _setup_database，但為了確保此獨立呼叫仍能運作，我們重複執行一次。
-        # 更理想的作法可能是讓 _setup_database 接受 table_name 參數，或移除此公開方法。
-        # 為了最小化變動，暫時保留其原始功能，但提示其主要職責已轉移。
+        if effective_table_name != self.ohlcv_table_name: # 此警告邏輯可能需要調整或移除，因為_setup_database已處理預設表
+            print(f"警告: create_ohlcv_table 被呼叫以建立一個與 DBManager 預設 ({self.ohlcv_table_name}) 不同的資料表: {effective_table_name}。")
+
+        # 實際的建立邏輯已移至 _setup_database，但為了確保此獨立呼叫仍能運作。
+        # 如果 effective_table_name 與 self.ohlcv_table_name 相同，_setup_database 已處理。
+        # 如果不同，則按需建立。
         create_sql = f"""
-        CREATE TABLE IF NOT EXISTS {table_name} (
+        CREATE TABLE IF NOT EXISTS {effective_table_name} (
             datetime TIMESTAMPTZ NOT NULL,
             ticker VARCHAR NOT NULL,
             interval VARCHAR NOT NULL,
@@ -174,6 +178,7 @@ class DBManager:
             with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
                 con.register('df_view_to_insert', df_to_insert)
                 columns_str = ", ".join(required_cols)
+                # upsert_data 必須明確提供 table_name
                 upsert_sql = f"INSERT OR REPLACE INTO {table_name} ({columns_str}) SELECT {columns_str} FROM df_view_to_insert"
                 con.execute(upsert_sql)
                 con.unregister('df_view_to_insert')
@@ -187,13 +192,14 @@ class DBManager:
             print(f"DEBUG: 嘗試寫入的 DataFrame ({current_ticker_for_error}) info:")
             df_to_insert.info()
 
-    def query_data_for_day(self, ticker: str, date_str: str, table_name: str = "market_ohlcv_analyzer") -> pd.DataFrame:
+    def query_data_for_day(self, ticker: str, date_str: str, table_name: str | None = None) -> pd.DataFrame:
+        effective_table_name = table_name if table_name is not None else self.ohlcv_table_name
         try:
             target_date = datetime.strptime(date_str, "%Y-%m-%d")
             start_of_day = f"{date_str} 00:00:00"
             start_of_next_day = (target_date + timedelta(days=1)).strftime("%Y-%m-%d 00:00:00")
             query = f"""
-            SELECT * FROM {table_name}
+            SELECT * FROM {effective_table_name}
             WHERE ticker = ? AND datetime >= CAST(? AS TIMESTAMPTZ) AND datetime < CAST(? AS TIMESTAMPTZ)
             ORDER BY datetime ASC
             """
@@ -212,13 +218,15 @@ class DBManager:
             print(f"錯誤: 查詢 {ticker} 在 {date_str} 的數據失敗: {e}")
             return pd.DataFrame()
 
-    def query_previous_day_close(self, ticker: str, current_date_str: str, table_name: str = "market_ohlcv_analyzer", max_lookback_days: int = 30) -> float | None:
+    def query_previous_day_close(self, ticker: str, current_date_str: str, table_name: str | None = None, max_lookback_days: int = 30) -> float | None:
+        effective_table_name = table_name if table_name is not None else self.ohlcv_table_name
         try:
             current_date_obj = datetime.strptime(current_date_str, "%Y-%m-%d").date()
             for i in range(1, max_lookback_days + 1):
                 prev_date_to_check = current_date_obj - timedelta(days=i)
                 prev_date_to_check_str = prev_date_to_check.strftime("%Y-%m-%d")
-                daily_data_df = self.query_data_for_day(ticker, prev_date_to_check_str, table_name)
+                # 呼叫 query_data_for_day 時傳遞 effective_table_name
+                daily_data_df = self.query_data_for_day(ticker, prev_date_to_check_str, effective_table_name)
                 if not daily_data_df.empty:
                     daily_1d_data = daily_data_df[daily_data_df['interval'] == '1d']
                     if not daily_1d_data.empty:
@@ -230,7 +238,7 @@ class DBManager:
             print(f"錯誤: 查詢 {ticker} 在 {current_date_str} 之前的收盤價失敗: {e}")
             return None
 
-    def check_cache(self, ticker: str, start_date_str: str, end_date_str: str, interval: str, table_name: str = "market_ohlcv_analyzer") -> tuple[pd.DataFrame, list[str]]:
+    def check_cache(self, ticker: str, start_date_str: str, end_date_str: str, interval: str, table_name: str | None = None) -> tuple[pd.DataFrame, list[str]]:
         """
         檢查快取中指定 ticker、日期範圍和 interval 的數據。
         Args:
@@ -238,13 +246,14 @@ class DBManager:
             start_date_str (str): 開始日期 (YYYY-MM-DD)。
             end_date_str (str): 結束日期 (YYYY-MM-DD)。
             interval (str): 數據顆粒度 (例如 '1d', '1h', '1m')。
-            table_name (str, optional): 數據表名稱。預設為 "market_ohlcv_analyzer"。
+            table_name (str | None, optional): 數據表名稱。若為 None，則使用 DBManager 初始化時設定的預設表名。
         Returns:
             tuple[pd.DataFrame, list[str]]:
                 - cached_df (pd.DataFrame): 快取中已存在的數據，按時間升序排列。
                 - missing_dates (list[str]): 在請求範圍內，但在快取中缺失的日期字串列表 (YYYY-MM-DD)。
         """
-        print(f"DEBUG: check_cache: ticker={ticker}, start={start_date_str}, end={end_date_str}, interval={interval}")
+        effective_table_name = table_name if table_name is not None else self.ohlcv_table_name
+        print(f"DEBUG: check_cache: ticker={ticker}, start={start_date_str}, end={end_date_str}, interval={interval}, table={effective_table_name}")
         cached_df = pd.DataFrame()
         missing_dates = []
         try:
@@ -263,7 +272,7 @@ class DBManager:
         query_start_ts = f"{start_date_str} 00:00:00"
         query_end_ts = (end_date + timedelta(days=1)).strftime("%Y-%m-%d 00:00:00")
         query = f"""
-        SELECT * FROM {table_name}
+        SELECT * FROM {effective_table_name}
         WHERE ticker = ? AND interval = ?
           AND datetime >= CAST(? AS TIMESTAMPTZ)
           AND datetime < CAST(? AS TIMESTAMPTZ)
@@ -291,8 +300,33 @@ class DBManager:
             print(f"錯誤 (check_cache): 查詢快取數據失敗 for {ticker} ({interval}): {e}")
             missing_dates = sorted(list(requested_dates_set))
             cached_df = pd.DataFrame()
-        print(f"INFO: check_cache: For {ticker} ({interval}), found {len(cached_df)} cached rows. Missing {len(missing_dates)} dates: {missing_dates[:5]}{'...' if len(missing_dates) > 5 else ''}")
+        print(f"DEBUG [CACHE_CHECK_DECISION_DETAIL]: Ticker: {ticker}, Interval: {interval}. All requested dates [{start_date_str} to {end_date_str}] are present in cache for this interval.")
+
         return cached_df, missing_dates
+
+    def check_data_exists_for_date_and_ticker(self, ticker: str, date_str: str, table_name: str | None = None) -> bool:
+        """檢查指定 ticker 在特定日期是否存在任何 interval 的數據。"""
+        effective_table_name = table_name if table_name is not None else self.ohlcv_table_name
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            query_start_ts = target_date.strftime("%Y-%m-%d 00:00:00")
+            query_end_ts = (target_date + timedelta(days=1)).strftime("%Y-%m-%d 00:00:00")
+
+            query = f"""
+            SELECT COUNT(*) FROM {effective_table_name}
+            WHERE ticker = ?
+              AND datetime >= CAST(? AS TIMESTAMPTZ)
+              AND datetime < CAST(? AS TIMESTAMPTZ)
+            """
+            with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
+                count = con.execute(query, [ticker, query_start_ts, query_end_ts]).fetchone()[0]
+
+            exists = count > 0
+            print(f"DEBUG [DB_DATA_EXISTS_CHECK]: Ticker: {ticker}, Date: {date_str}, Table: {effective_table_name}. Data exists: {exists} (Count: {count})")
+            return exists
+        except Exception as e:
+            print(f"ERROR [DB_DATA_EXISTS_CHECK]: Failed for Ticker: {ticker}, Date: {date_str}, Table: {effective_table_name}. Error: {e}")
+            return False # 出錯時保守假設不存在，以便上游重新獲取
 
     def record_no_data_range(self, ticker: str, interval: str, start_date: str, end_date: str) -> None:
         """
