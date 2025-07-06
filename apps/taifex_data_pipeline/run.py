@@ -98,7 +98,10 @@ async def main():
     parser.add_argument("--metadata-db-path", help="元數據資料庫的完整路徑。")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
 
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args() # <--- 【核心升級】
+    if unknown:
+        # 為了體現「預見」原則，我們在此加入日誌記錄，讓未來的維護者知道發生了什麼事
+        print(f"[INFO] Ignored unknown arguments: {unknown}", file=sys.stderr)
 
     # 初始化標準日誌器
     log_level_map = {
