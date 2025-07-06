@@ -106,13 +106,16 @@ class YFinanceClient:
                     print(f"INFO: fetch_single_chunk: Retrying in {delay:.2f} seconds...")
                     time.sleep(delay)
                 else:
-                    print(f"錯誤: fetch_single_chunk: Max retries reached for {ticker} ({interval}).")
-                    return None
-            if data is None and attempt == max_retries -1:
-                print(f"錯誤: fetch_single_chunk: Max retries reached, yfinance consistently returned None for {ticker} ({interval}).")
-                return None
+                    # Log max retries due to exception, but don't return yet, let it flow to the common None/empty check
+                    print(f"錯誤: fetch_single_chunk: Max retries reached for {ticker} ({interval}) due to Exception.")
+            # Removed early return if data is None within the loop's last attempt.
+            # Let it fall through to the unified None/empty check after the loop.
         try:
-            if data is None or data.empty:
+            if data is None or data.empty: # This will now catch cases where loop finished with data as None
+                # Add a log if max retries were reached and data is still None (previously handled by early return)
+                if data is None: # Specifically check for None, as empty DataFrame is a different case of "no data"
+                    print(f"INFO: fetch_single_chunk: Max retries completed. yfinance consistently returned None for {ticker} ({interval}, {chunk_start_date_str}-{chunk_end_date_str}).")
+
                 try:
                     actual_chunk_end_date_obj = datetime.strptime(chunk_end_date_str, "%Y-%m-%d") - timedelta(days=1)
                     actual_chunk_end_date_str_for_record = actual_chunk_end_date_obj.strftime("%Y-%m-%d")
@@ -403,7 +406,7 @@ class YFinanceClient:
             if not all_missing_ranges_processed_successfully_for_interval:
                  print(f"INFO: hydrate_data_range: Ticker={ticker}. 顆粒度 '{interval}' 未能成功獲取所有缺失數據。嘗試下一個更粗的顆粒度。")
                  for log_date_str in request_date_range_str_list:
-                    log_entry = overall_execution_log.get(date_str_in_log_range, {}).get(ticker, {})
+                    log_entry = overall_execution_log.get(log_date_str, {}).get(ticker, {})
                     current_status = log_entry.get("status", "pending")
                     if force_refresh or current_status not in ['success_producer', 'cached_any_interval', 'cached_full_range_verified_after_filter', 'skipped_no_data_record']:
                         existing_message = log_entry.get("message", "")
@@ -433,7 +436,7 @@ class YFinanceClient:
         print(f"錯誤: hydrate_data_range: Ticker={ticker}. 所有降級顆粒度 {current_fallback_intervals} 均無法為 [{start_date_str} to {end_date_str}] 回填完整數據。")
         print(f"===== 數據生產任務結束 (所有 Interval 均失敗): Ticker={ticker} =====")
         for log_date_str in request_date_range_str_list:
-            log_entry = overall_execution_log.get(date_str_in_log_range, {}).get(ticker, {})
+            log_entry = overall_execution_log.get(log_date_str, {}).get(ticker, {})
             final_status = log_entry.get("status", "unknown")
             if 'success_producer' not in final_status and 'cached_any_interval' not in final_status and 'cached_full_range_verified_after_filter' not in final_status and 'skipped_no_data_record' not in final_status and 'preflight_failed' not in final_status:
                  current_message = log_entry.get("message","")
