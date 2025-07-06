@@ -162,5 +162,120 @@ class TestYFinanceClient(unittest.TestCase):
         self.assertEqual(exec_log[start_date_str][self.ticker]['interval'], int_15m)
         self.assertTrue(int(exec_log[start_date_str][self.ticker]['count']) > 0)
 
+    # --- Tests for fetch_single_chunk retry logic ---
+    @patch('apps.daily_market_analyzer.yfinance_client.yf.Ticker')
+    @patch('apps.daily_market_analyzer.yfinance_client.time.sleep')
+    def test_fetch_single_chunk_success_on_first_try(self, mock_sleep, mock_yf_ticker):
+        mock_stock_instance = MagicMock()
+        mock_history_data = create_sample_df(["2023-01-01"], ticker=self.ticker, interval="1d")
+        mock_stock_instance.history.return_value = mock_history_data
+        mock_yf_ticker.return_value = mock_stock_instance
+
+        result_df = self.client.fetch_single_chunk(self.ticker, "2023-01-01", "2023-01-02", "1d")
+
+        mock_yf_ticker.assert_called_once_with(self.ticker)
+        mock_stock_instance.history.assert_called_once_with(start="2023-01-01", end="2023-01-02", interval="1d", auto_adjust=True, prepost=False)
+        mock_sleep.assert_not_called()
+        self.assertIsNotNone(result_df)
+        # mock_history_data from create_sample_df is already in the expected output format of fetch_single_chunk
+        pd.testing.assert_frame_equal(result_df, mock_history_data, check_dtype=False, rtol=1e-5)
+
+
+    @patch('apps.daily_market_analyzer.yfinance_client.yf.Ticker')
+    @patch('apps.daily_market_analyzer.yfinance_client.time.sleep')
+    def test_fetch_single_chunk_retry_on_exception_then_success(self, mock_sleep, mock_yf_ticker):
+        mock_stock_instance = MagicMock()
+        mock_history_data = create_sample_df(["2023-01-01"], ticker=self.ticker, interval="1d")
+        # Simulate failure on first call, success on second
+        mock_stock_instance.history.side_effect = [
+            Exception("API Error"),
+            mock_history_data
+        ]
+        mock_yf_ticker.return_value = mock_stock_instance
+
+        result_df = self.client.fetch_single_chunk(self.ticker, "2023-01-01", "2023-01-02", "1d")
+
+        self.assertEqual(mock_stock_instance.history.call_count, 2)
+        mock_sleep.assert_called_once() # Should sleep after the first failed attempt
+        self.assertIsNotNone(result_df)
+        pd.testing.assert_frame_equal(result_df, mock_history_data, check_dtype=False, rtol=1e-5)
+
+    @patch('apps.daily_market_analyzer.yfinance_client.yf.Ticker')
+    @patch('apps.daily_market_analyzer.yfinance_client.time.sleep')
+    def test_fetch_single_chunk_retry_on_none_then_success(self, mock_sleep, mock_yf_ticker):
+        mock_stock_instance = MagicMock()
+        mock_history_data = create_sample_df(["2023-01-01"], ticker=self.ticker, interval="1d")
+        mock_stock_instance.history.side_effect = [
+            None,  # First call returns None
+            mock_history_data # Second call returns data
+        ]
+        mock_yf_ticker.return_value = mock_stock_instance
+
+        result_df = self.client.fetch_single_chunk(self.ticker, "2023-01-01", "2023-01-02", "1d")
+        self.assertEqual(mock_stock_instance.history.call_count, 2)
+        mock_sleep.assert_called_once()
+        self.assertIsNotNone(result_df)
+        pd.testing.assert_frame_equal(result_df, mock_history_data, check_dtype=False, rtol=1e-5)
+
+
+    @patch('apps.daily_market_analyzer.yfinance_client.yf.Ticker')
+    @patch('apps.daily_market_analyzer.yfinance_client.time.sleep')
+    def test_fetch_single_chunk_max_retries_on_exception(self, mock_sleep, mock_yf_ticker):
+        mock_stock_instance = MagicMock()
+        mock_stock_instance.history.side_effect = Exception("Persistent API Error")
+        mock_yf_ticker.return_value = mock_stock_instance
+
+        result_df = self.client.fetch_single_chunk(self.ticker, "2023-01-01", "2023-01-02", "1d")
+
+        self.assertEqual(mock_stock_instance.history.call_count, 3) # max_retries = 3
+        self.assertEqual(mock_sleep.call_count, 2) # Sleeps after 1st and 2nd failure
+        self.assertIsNone(result_df)
+
+
+    @patch('apps.daily_market_analyzer.yfinance_client.yf.Ticker')
+    @patch('apps.daily_market_analyzer.yfinance_client.time.sleep')
+    def test_fetch_single_chunk_returns_empty_df_no_retry(self, mock_sleep, mock_yf_ticker):
+        mock_stock_instance = MagicMock()
+        empty_df = pd.DataFrame(columns=['datetime', 'ticker', 'interval', 'open', 'high', 'low', 'close', 'volume'])
+        # Ensure correct dtypes for empty df to match expected structure after processing
+        empty_df['datetime'] = pd.to_datetime(empty_df['datetime'])
+        empty_df['volume'] = empty_df['volume'].astype('int64')
+
+        mock_stock_instance.history.return_value = pd.DataFrame() # yfinance returns empty df
+        mock_yf_ticker.return_value = mock_stock_instance
+
+        # Expected behavior: fetch_single_chunk processes the empty yf result,
+        # which then results in its own empty_df (with standardized columns) or None.
+        # The retry logic should break if `data.empty` is true.
+        result_df = self.client.fetch_single_chunk(self.ticker, "2023-01-01", "2023-01-02", "1d")
+
+        mock_stock_instance.history.assert_called_once() # Should not retry if yf returns empty df
+        mock_sleep.assert_not_called()
+        # The method should record "no data" and return None after processing an empty df from yfinance
+        self.assertIsNone(result_df)
+        self.mock_db_manager.record_no_data_range.assert_called_once_with(
+            ticker=self.ticker, interval="1d", start_date="2023-01-01", end_date="2023-01-01"
+        )
+
+    @patch('apps.daily_market_analyzer.yfinance_client.yf.Ticker')
+    @patch('apps.daily_market_analyzer.yfinance_client.time.sleep')
+    def test_fetch_single_chunk_max_retries_on_none(self, mock_sleep, mock_yf_ticker):
+        mock_stock_instance = MagicMock()
+        mock_stock_instance.history.return_value = None # Consistently returns None
+        mock_yf_ticker.return_value = mock_stock_instance
+
+        result_df = self.client.fetch_single_chunk(self.ticker, "2023-01-01", "2023-01-02", "1d")
+
+        # max_retries is 3 in the implementation
+        self.assertEqual(mock_stock_instance.history.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2) # Sleeps after 1st and 2nd None return
+        self.assertIsNone(result_df)
+        # Check if record_no_data_range was called, as consistently None might mean no data
+        # The current logic in fetch_single_chunk calls record_no_data_range if data is None or empty *after* the retry loop.
+        self.mock_db_manager.record_no_data_range.assert_called_once_with(
+            ticker=self.ticker, interval="1d", start_date="2023-01-01", end_date="2023-01-01"
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

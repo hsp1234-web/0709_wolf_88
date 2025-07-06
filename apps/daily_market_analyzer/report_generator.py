@@ -5,14 +5,53 @@
 """
 import pandas as pd
 from datetime import datetime
+import statistics # For hardware stats summary
 
 class ReportGenerator:
-    def __init__(self, execution_log: dict, analysis_engine_instance):
+    def __init__(self, execution_log: dict, analysis_engine_instance,
+                 hardware_stats: list[dict] | None = None,
+                 hardware_report_csv_path: str | None = None):
         self.execution_log = execution_log
         self.analyzer = analysis_engine_instance
+        self.hardware_stats = hardware_stats if hardware_stats is not None else []
+        self.hardware_report_csv_path = hardware_report_csv_path
         self.target_tickers_overall = []
         self.db_table_name = None
         print("資訊：報告生成器 (ReportGenerator) 初始化完畢。")
+
+    def _generate_hardware_summary_md(self) -> str:
+        if not self.hardware_stats:
+            return "\n## 監控與日誌\n- 本次執行未記錄詳細硬體監控數據。\n"
+
+        lines = ["\n## 監控與日誌\n"]
+        lines.append("### 硬體資源使用情況摘要")
+
+        cpu_percentages = [s['cpu_percent'] for s in self.hardware_stats if 'cpu_percent' in s]
+        ram_percentages = [s['ram_percent'] for s in self.hardware_stats if 'ram_percent' in s]
+
+        if cpu_percentages:
+            avg_cpu = statistics.mean(cpu_percentages)
+            max_cpu = max(cpu_percentages)
+            min_cpu = min(cpu_percentages)
+            lines.append(f"- **CPU 使用率**: 平均 {avg_cpu:.2f}% (峰值: {max_cpu:.2f}%, 最低: {min_cpu:.2f}%)")
+        else:
+            lines.append("- **CPU 使用率**: 無數據")
+
+        if ram_percentages:
+            avg_ram = statistics.mean(ram_percentages)
+            max_ram = max(ram_percentages)
+            min_ram = min(ram_percentages)
+            lines.append(f"- **記憶體使用率**: 平均 {avg_ram:.2f}% (峰值: {max_ram:.2f}%, 最低: {min_ram:.2f}%)")
+        else:
+            lines.append("- **記憶體使用率**: 無數據")
+
+        if self.hardware_report_csv_path:
+            lines.append(f"- **詳細硬體日誌**: 參見獨立報告檔案 `{self.hardware_report_csv_path}`")
+        else:
+            lines.append("- **詳細硬體日誌**: 未產生獨立報告檔案。")
+
+        lines.append("\n---")
+        return "\n".join(lines)
 
     def _generate_task_summary_md(self, overall_start_date_str: str, overall_end_date_str: str,
                                   report_generation_time: datetime, task_duration_seconds: float,
@@ -149,7 +188,11 @@ class ReportGenerator:
         task_summary_md = self._generate_task_summary_md(
             overall_start_date_str, overall_end_date_str, report_generation_time,
             task_duration_seconds, self.target_tickers_overall, self.execution_log)
-        report_parts = [task_summary_md]
+
+        hardware_summary_md = self._generate_hardware_summary_md() # Generate hardware summary
+
+        report_parts = [task_summary_md, hardware_summary_md] # Add hardware summary to report parts
+
         try:
             date_range = pd.date_range(start=overall_start_date_str, end=overall_end_date_str, freq='D').sort_values(ascending=False)
         except Exception as e:

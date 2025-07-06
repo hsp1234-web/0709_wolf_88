@@ -85,10 +85,55 @@ class YFinanceClient:
 
     def fetch_single_chunk(self, ticker: str, chunk_start_date_str: str, chunk_end_date_str: str, interval: str) -> pd.DataFrame | None:
         print(f"INFO: fetch_single_chunk: Ticker={ticker}, Interval={interval}, Start={chunk_start_date_str}, End(Exclusive)={chunk_end_date_str}")
+
+        max_retries = 3
+        base_delay_seconds = 1 # Base delay in seconds
+        data = None
+
+        for attempt in range(max_retries):
+            try:
+                stock = yf.Ticker(ticker)
+                # Add a small random delay before each API call to help distribute load slightly
+                # time.sleep(random.uniform(0.1, 0.5)) # Requires import random
+
+                data = stock.history(start=chunk_start_date_str, end=chunk_end_date_str, interval=interval, auto_adjust=True, prepost=False)
+
+                if data is not None and not data.empty:
+                    break # Success
+                elif data is None: # yfinance can return None on certain errors not raising exceptions
+                    print(f"警告 (fetch_single_chunk attempt {attempt+1}/{max_retries}): yfinance returned None for {ticker} ({interval}, {chunk_start_date_str}-{chunk_end_date_str}).")
+                # If data is empty, it might be legitimate (no data for period) or an issue.
+                # The existing logic below handles empty data by calling record_no_data_range.
+                # We should let that logic proceed if retries are exhausted and data is still empty.
+                if data is not None and data.empty: # Legitimate empty data, don't retry for this.
+                    print(f"INFO (fetch_single_chunk): Ticker={ticker}, Interval={interval} returned empty DataFrame. Assuming no data for this period/interval.")
+                    break
+
+            except Exception as e:
+                print(f"錯誤 (fetch_single_chunk attempt {attempt+1}/{max_retries}):抓取 {ticker} ({interval}, {chunk_start_date_str}-{chunk_end_date_str}) 失敗: {type(e).__name__} - {e}")
+                if attempt < max_retries - 1:
+                    delay = base_delay_seconds * (attempt + 1) # Simple incremental delay
+                    # Add some jitter to the delay
+                    # delay += random.uniform(0, base_delay_seconds * 0.5) # Requires import random
+                    print(f"INFO: fetch_single_chunk: Retrying in {delay:.2f} seconds...")
+                    time.sleep(delay)
+                else:
+                    print(f"錯誤: fetch_single_chunk: Max retries reached for {ticker} ({interval}).")
+                    return None # Failed after all retries
+
+            # If loop finishes due to break (success or legitimate empty), data holds the result.
+            # If loop finishes due to exhausting retries on None or Exception, data might be None or last failed state.
+            # The 'return None' in the except block handles the Exception case after max_retries.
+            # If yfinance consistently returns None and exhausts retries:
+            if data is None and attempt == max_retries -1:
+                print(f"錯誤: fetch_single_chunk: Max retries reached, yfinance consistently returned None for {ticker} ({interval}).")
+                return None
+
+
+        # Original logic for handling data (including None or empty)
         try:
-            stock = yf.Ticker(ticker)
-            data = stock.history(start=chunk_start_date_str, end=chunk_end_date_str, interval=interval, auto_adjust=True, prepost=False)
-            if data is None or data.empty:
+            # This 'data' is the result from the retry loop
+            if data is None or data.empty: # data can be None if retries failed, or empty if yfinance returned empty
                 # 計算實際的包含性結束日期
                 # yfinance 的 end date 是 exclusive，所以 chunk_end_date_str 是 chunk_actual_end_date + 1 day
                 try:
