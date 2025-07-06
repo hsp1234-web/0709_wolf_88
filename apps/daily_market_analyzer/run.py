@@ -46,6 +46,12 @@ def main():
     """
     主執行函數 for Daily Market Analyzer。
     """
+    # --- Early debug prints in main ---
+    # print(f"DEBUG [run.py main()]: CWD: {os.getcwd()}")
+    # print(f"DEBUG [run.py main()]: sys.path: {sys.path}")
+    # print(f"DEBUG [run.py main()]: Args received by run.py: {sys.argv[1:]}")
+    # --- End early debug prints ---
+
     parser = argparse.ArgumentParser(description="每日市場洞察報告與智能數據考古引擎。")
     # 核心參數
     parser.add_argument("--tickers", help="要分析的標的列表，以逗號分隔 (例如: AAPL,MSFT)。在純報告模式下非必需，但若提供則用於報告。")
@@ -400,21 +406,26 @@ def run_data_pipeline(args, db_manager: DBManager, yf_client: YFinanceClient, ti
         print("警告 (run_data_pipeline): 標的列表為空，無法執行數據流程。")
         return {}, []
 
-    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor, as_completed # MODIFIED: Changed ProcessPoolExecutor to ThreadPoolExecutor
 
-    print(f"INFO (run_data_pipeline): 開始並行獲取 {len(tickers_list)} 個標的的市場數據，使用最多 {args.max_workers} 個工作進程。")
+    print(f"INFO (run_data_pipeline): 開始並行獲取 {len(tickers_list)} 個標的的市場數據，使用最多 {args.max_workers} 個執行緒。") # MODIFIED: Changed "工作進程" to "執行緒"
 
     # To map futures back to ticker symbols for logging results
     future_to_ticker = {}
 
-    with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
+    # Initialize YFinanceClient here, so each thread can potentially use it.
+    # However, yf_client is passed in, implying it should be shareable or its methods thread-safe.
+    # Let's assume yf_client and its underlying db_manager are designed to be thread-safe for now.
+
+    with ThreadPoolExecutor(max_workers=args.max_workers) as executor: # MODIFIED: Changed ProcessPoolExecutor to ThreadPoolExecutor
         for ticker_symbol in tickers_list:
-            print(f"INFO (Parallel Dispatch): 分派標的 {ticker_symbol} 進行數據處理...")
-            # yf_client.hydrate_data_range is a synchronous method that handles its own DB operations.
-            # It's crucial that DBManager's methods (like connect) are process-safe.
-            # DuckDB connections via `with duckdb.connect(...)` are generally safe as they are opened and closed per call.
+            print(f"INFO (Thread Dispatch): 分派標的 {ticker_symbol} 進行數據處理...") # MODIFIED: Changed "Parallel Dispatch" to "Thread Dispatch"
+            # yf_client.hydrate_data_range is a synchronous method.
+            # If DBManager creates a new connection per operation or uses thread-local connections, it should be fine.
+            # If DBManager shares a single connection across threads without proper locking, issues might arise.
+            # Given DuckDB's capabilities, new connection per call or thread-local is viable.
             future = executor.submit(
-                yf_client.hydrate_data_range,
+                yf_client.hydrate_data_range, # This method will be called by multiple threads
                 ticker_symbol,
                 args.start_date,
                 args.end_date,
