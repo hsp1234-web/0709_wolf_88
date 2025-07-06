@@ -7,6 +7,25 @@ import sys
 import os # Needed for os.makedirs
 from logging.handlers import RotatingFileHandler
 
+# --- 【核心升級】---
+# 1. 定義自訂的 SUCCESS 日誌級別
+# ---------------------
+SUCCESS_LEVEL_NUM = 25  # 介於 INFO (20) 和 WARNING (30) 之間
+logging.addLevelName(SUCCESS_LEVEL_NUM, "SUCCESS")
+
+def success(self, message, *args, **kws):
+    """
+    記錄一個 'SUCCESS' 級別的日誌。
+    """
+    if self.isEnabledFor(SUCCESS_LEVEL_NUM):
+        # pylint: disable=protected-access
+        self._log(SUCCESS_LEVEL_NUM, message, args, **kws)
+
+# 2. 將 success 方法動態添加到 logging.Logger 類別
+# -------------------------------------------------
+logging.Logger.success = success
+# --- 升級結束 ---
+
 def setup_logger(name, log_file_path_str=None, level=logging.INFO):
     """
     設定一個 logger，可選擇性地將日誌輸出到檔案。
