@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 import time # 用於測量每個步驟的耗時
+import os # 新增導入 os 模組
 
 # 嘗試從 core 模組導入 config
 try:
@@ -117,7 +118,8 @@ def main_pipeline(args): # 添加 args 參數
 
 
     # --- [階段 1/5] 時間序列聚合 (Time Aggregator) ---
-    logger.info("====== [階段 1/5] 開始時間序列聚合 (Time Aggregator) ======")
+    # (此階段將變為 [階段 1/7])
+    logger.info("====== [階段 1/7] 開始時間序列聚合 (Time Aggregator) ======")
 
     # 預設聚合起始偏移年數，優先使用專門為聚合配置的值
     agg_offset_years = getattr(config, 'DEFAULT_AGGREGATION_START_OFFSET_YEARS', config.YFINANCE_START_DATE_OFFSET_YEARS)
@@ -169,14 +171,73 @@ def main_pipeline(args): # 添加 args 參數
                 pipeline_success = False
                 logger.error(f"time_aggregator ({stock_id_for_agg}) 執行失敗。後續分析可能受影響。") # 修正變數名稱
                 # 考慮是否中止整個流程
-    logger.info("====== [階段 1/5] 時間序列聚合完成 ======")
+    logger.info("====== [階段 1/7] 時間序列聚合完成 ======")
 
 
-    # --- [階段 2/5] 其他數據源獲取 (yfinance, FinMind) ---
-    # 原來的 [階段 1/4]
-    logger.info("====== [階段 2/5] 開始其他數據源獲取 (yfinance, FinMind) ======")
+    # --- [階段 2/7] TAIFEX 原始數據載入 (TAIFEX Data Loader) ---
+    logger.info("====== [階段 2/7] 開始 TAIFEX 原始數據載入 (TAIFEX Data Loader) ======")
     if not pipeline_success:
-        logger.warning("由於時間聚合階段失敗或配置錯誤，可能影響其他數據源獲取。")
+        logger.warning("由於前序階段失敗，可能影響 TAIFEX 原始數據載入。")
+    else:
+        # 確保 TAIFEX_RAW_DATA_DIR 存在
+        if not Path(config.TAIFEX_RAW_DATA_DIR).is_dir():
+            logger.warning(f"TAIFEX 原始數據目錄 {config.TAIFEX_RAW_DATA_DIR} 不存在或不是一個目錄。跳過 TAIFEX 數據載入。")
+        else:
+            ALLOWED_EXTENSIONS = {".zip", ".csv", ".txt", ".json", ".html"} # 參考指揮官工具
+            taifex_files_to_process = []
+            for root, _, files in os.walk(config.TAIFEX_RAW_DATA_DIR):
+                for file in files:
+                    if Path(file).suffix.lower() in ALLOWED_EXTENSIONS:
+                        taifex_files_to_process.append(str(Path(root) / file))
+
+            if not taifex_files_to_process:
+                logger.info("在 TAIFEX_RAW_DATA_DIR 中沒有找到符合條件的檔案。")
+            else:
+                logger.info(f"找到 {len(taifex_files_to_process)} 個 TAIFEX 相關檔案進行處理。")
+                # 確保 TAIFEX_RAW_DB_DIR 存在
+                Path(config.TAIFEX_RAW_DB_DIR).mkdir(parents=True, exist_ok=True)
+
+                for file_path in taifex_files_to_process:
+                    cmd_taifex_loader = [
+                        sys.executable, config.TAIFEX_DATA_PIPELINE_RUN_PATH,
+                        "--input-files", file_path,
+                        "--db-output-dir", config.TAIFEX_RAW_DB_DIR,
+                        "--metadata-db-path", config.ANALYTICS_DB_PATH # 根據計畫書
+                    ]
+                    if not run_subprocess_command(cmd_taifex_loader, f"taifex_data_pipeline ({Path(file_path).name})"):
+                        pipeline_success = False
+                        logger.error(f"taifex_data_pipeline ({Path(file_path).name}) 執行失敗。")
+                        # 決定是否中止，或允許部分失敗
+
+    logger.info("====== [階段 2/7] TAIFEX 原始數據載入完成 ======")
+
+
+    # --- [階段 3/7] TAIFEX 數據轉換 (TAIFEX Data Transformer) ---
+    logger.info("====== [階段 3/7] 開始 TAIFEX 數據轉換 (TAIFEX Data Transformer) ======")
+    if not pipeline_success:
+        logger.warning("由於前序階段失敗，可能影響 TAIFEX 數據轉換。")
+    else:
+        raw_taifex_db_full_path = str(Path(config.TAIFEX_RAW_DB_DIR) / config.TAIFEX_RAW_DB_FILENAME)
+
+        # 檢查原始 TAIFEX 資料庫檔案是否存在
+        if not Path(raw_taifex_db_full_path).is_file():
+            logger.warning(f"TAIFEX 原始資料庫檔案 {raw_taifex_db_full_path} 不存在。可能是因為 TAIFEX 數據載入階段沒有成功生成該檔案，或者沒有處理任何檔案。跳過 TAIFEX 數據轉換。")
+        else:
+            cmd_taifex_transformer = [
+                sys.executable, config.TAIFEX_DATA_TRANSFORMER_RUN_PATH,
+                "--raw-db-path", raw_taifex_db_full_path,
+                "--analytics-db-path", config.ANALYTICS_DB_PATH
+            ]
+            if not run_subprocess_command(cmd_taifex_transformer, "taifex_data_transformer"):
+                pipeline_success = False
+                logger.error("taifex_data_transformer 執行失敗。")
+    logger.info("====== [階段 3/7] TAIFEX 數據轉換完成 ======")
+
+
+    # --- [階段 4/7] (原階段 2/5) 其他數據源獲取 (yfinance, FinMind) ---
+    logger.info("====== [階段 4/7] 開始其他數據源獲取 (yfinance, FinMind) ======") # 更新階段編號
+    if not pipeline_success:
+        logger.warning("由於前序階段失敗或配置錯誤，可能影響其他數據源獲取。")
 
     # 1. yfinance_client (日線OHLCV)
     # 計算 yfinance 的起始日期
@@ -217,11 +278,10 @@ def main_pipeline(args): # 添加 args 參數
                 logger.warning(f"institutional_analyzer ({stock_id_fm}) 執行失敗。")
     else:
         logger.warning("未設定 FINMIND_API_TOKEN，跳過法人籌碼數據更新。")
-    logger.info("====== [階段 1/4] 數據更新完成 ======")
+    logger.info("====== [階段 4/7] 其他數據源獲取完成 ======") # 更新階段編號和日誌
 
-    # --- [階段 3/5] 核心分析 (Chimera) ---
-    # 原來的 [階段 2/4]
-    logger.info("====== [階段 3/5] 開始核心分析 (Chimera) ======")
+    # --- [階段 5/7] (原階段 3/5) 核心分析 (Chimera) ---
+    logger.info("====== [階段 5/7] 開始核心分析 (Chimera) ======") # 更新階段編號
     if pipeline_success: # 僅在前序階段成功或未被中止時執行
         # Chimera 分析的日期範圍可以不指定，讓它處理資料庫中所有可用數據
         # 或者指定一個與報告期相關的範圍
@@ -242,12 +302,11 @@ def main_pipeline(args): # 添加 args 參數
             logger.error("feature_analyzer (Chimera) 執行失敗，報告生成可能受影響。")
     else:
         logger.warning("由於前序階段失敗，跳過核心分析 (Chimera)。")
-    logger.info("====== [階段 3/5] 核心分析完成 ======")
+    logger.info("====== [階段 5/7] 核心分析完成 ======") # 更新階段編號
 
 
-    # --- [階段 4/5] 報告生成 (Argus) ---
-    # 原來的 [階段 3/4]
-    logger.info("====== [階段 4/5] 開始報告生成 (Argus) ======")
+    # --- [階段 6/7] (原階段 4/5) 報告生成 (Argus) ---
+    logger.info("====== [階段 6/7] 開始報告生成 (Argus) ======") # 更新階段編號
     if pipeline_success:
         report_start_date = (current_run_datetime - timedelta(days=config.REPORT_START_DATE_OFFSET_MONTHS * 30)).strftime("%Y-%m-%d")
         default_report_timeframe = "1d" # 可配置或遍歷
@@ -267,12 +326,11 @@ def main_pipeline(args): # 添加 args 參數
                 logger.warning(f"report_generator ({stock_id_for_report}, {default_report_timeframe}) 執行失敗。") # 修正變數名稱
     else:
         logger.warning("由於前序階段失敗，跳過報告生成。")
-    logger.info(f"====== [階段 4/5] 報告生成完成 ======")
+    logger.info(f"====== [階段 6/7] 報告生成完成 ======") # 更新階段編號
 
 
-    # --- [階段 5/5] 清理與總結 ---
-    # 原來的 [階段 4/4]
-    logger.info("====== [階段 5/5] 清理與總結 ======")
+    # --- [階段 7/7] (原階段 5/5) 清理與總結 ---
+    logger.info("====== [階段 7/7] 清理與總結 ======") # 更新階段編號
     if pipeline_success:
         logger.info("每日自動化分析與報告生成流程成功執行完畢。")
         return True

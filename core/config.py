@@ -43,6 +43,21 @@ SOURCE_TICKS_DB_NAME = "taifex_ticks.duckdb"  # 建議的源資料庫名稱
 _default_source_ticks_db_path = str(PROJECT_ROOT / SOURCE_TICKS_DB_NAME)
 SOURCE_TICKS_DB_PATH = os.getenv("KRONOS_SOURCE_TICKS_DB_PATH", _default_source_ticks_db_path)
 
+# --- TAIFEX 原始數據目錄 ---
+# 此目錄包含所有預先下載好的 TAIFEX 原始數據檔案 (例如 .zip, .csv, .txt 等)
+TAIFEX_RAW_DATA_DIR_NAME = "taifex_raw_data" # 資料夾名稱
+_default_taifex_raw_data_dir = str(PROJECT_ROOT / "data" / TAIFEX_RAW_DATA_DIR_NAME)
+TAIFEX_RAW_DATA_DIR = os.getenv("ATHENA_TAIFEX_RAW_DATA_DIR", _default_taifex_raw_data_dir)
+
+# --- TAIFEX 原始數據庫目錄 ---
+# taifex_data_pipeline 的輸出位置
+TAIFEX_RAW_DB_DIR_NAME = "raw_taifex"
+_default_taifex_raw_db_dir = str(PROJECT_ROOT / "data" / TAIFEX_RAW_DB_DIR_NAME)
+TAIFEX_RAW_DB_DIR = os.getenv("ATHENA_TAIFEX_RAW_DB_DIR", _default_taifex_raw_db_dir)
+# 內部 DuckDB 檔案的名稱
+TAIFEX_RAW_DB_FILENAME = "raw_taifex.duckdb"
+
+
 # --- 報告輸出目錄 ---
 REPORTS_OUTPUT_DIR_NAME = "output_reports" # 修改目錄名以更清晰
 _default_reports_output_dir = str(PROJECT_ROOT / REPORTS_OUTPUT_DIR_NAME)
@@ -69,6 +84,8 @@ INSTITUTIONAL_ANALYZER_RUN_PATH = str(PROJECT_ROOT / "apps" / "institutional_ana
 FEATURE_ANALYZER_RUN_PATH = str(PROJECT_ROOT / "apps" / "feature_analyzer" / "run.py")
 REPORT_GENERATOR_RUN_PATH = str(PROJECT_ROOT / "apps" / "report_generator" / "run.py")
 TIME_AGGREGATOR_RUN_PATH = str(PROJECT_ROOT / "apps" / "time_aggregator" / "run.py") # 新增時間聚合器路徑
+TAIFEX_DATA_PIPELINE_RUN_PATH = str(PROJECT_ROOT / "apps" / "taifex_data_pipeline" / "run.py") # 新增 TAIFEX 數據載入器路徑
+TAIFEX_DATA_TRANSFORMER_RUN_PATH = str(PROJECT_ROOT / "apps" / "taifex_data_transformer" / "run.py") # 新增 TAIFEX 數據轉換器路徑
 
 # --- 數據更新與分析的時間範圍參數 ---
 # 這些可以根據需求調整
@@ -101,6 +118,9 @@ if __name__ == '__main__':
     for target_info in TARGETS:
         print(f"  - {target_info}")
     print(f"分析資料庫路徑: {ANALYTICS_DB_PATH}")
+    print(f"源 Tick 資料庫路徑: {SOURCE_TICKS_DB_PATH}")
+    print(f"TAIFEX 原始數據目錄: {TAIFEX_RAW_DATA_DIR}")
+    print(f"TAIFEX 原始數據庫目錄: {TAIFEX_RAW_DB_DIR}")
     print(f"報告輸出目錄: {REPORTS_OUTPUT_DIR}")
     print(f"日誌級別: {LOG_LEVEL_STR} ({LOG_LEVEL})")
     print(f"FinMind API Token (是否已設定): {'是' if FINMIND_API_TOKEN else '否'}")
@@ -109,6 +129,9 @@ if __name__ == '__main__':
     print(f"Institutional Analyzer Run Path: {INSTITUTIONAL_ANALYZER_RUN_PATH}")
     print(f"Feature Analyzer Run Path: {FEATURE_ANALYZER_RUN_PATH}")
     print(f"Report Generator Run Path: {REPORT_GENERATOR_RUN_PATH}")
+    print(f"Time Aggregator Run Path: {TIME_AGGREGATOR_RUN_PATH}")
+    print(f"TAIFEX Data Pipeline Run Path: {TAIFEX_DATA_PIPELINE_RUN_PATH}")
+    print(f"TAIFEX Data Transformer Run Path: {TAIFEX_DATA_TRANSFORMER_RUN_PATH}")
 
     print(f"\nYFinance Start Date Offset (Years): {YFINANCE_START_DATE_OFFSET_YEARS}")
     print(f"Institutional Data Start Date Offset (Months): {INSTITUTIONAL_START_DATE_OFFSET_MONTHS}")
