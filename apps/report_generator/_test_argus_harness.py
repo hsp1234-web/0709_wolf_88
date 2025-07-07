@@ -75,8 +75,9 @@ def _create_test_input_data(con: duckdb.DuckDBPyConnection):
         raise
 
 def _run_report_generator_script(stock_id: str, start_date: str, end_date: str) -> Path:
-    """通過 subprocess 調用 report_generator 的 run.py。"""
-    output_filename = f"{stock_id}_{start_date.replace('-', '')}_{end_date.replace('-', '')}_report.png"
+    """通過 subprocess 調用 report_generator 的 run.py，並驗證 HTML 輸出。"""
+    # 預期輸出檔案名現在是 .html
+    output_filename = f"{stock_id}_{start_date.replace('-', '')}_{end_date.replace('-', '')}_report.html"
     expected_report_path = TEST_OUTPUT_DIR / output_filename
 
     command = [
@@ -97,11 +98,24 @@ def _run_report_generator_script(stock_id: str, start_date: str, end_date: str) 
             print(process.stderr)
 
         if not expected_report_path.exists():
-            raise FileNotFoundError(f"預期的報告檔案未生成: {expected_report_path}")
-        if expected_report_path.stat().st_size == 0:
-            raise ValueError(f"生成的報告檔案為空: {expected_report_path}")
+            raise FileNotFoundError(f"預期的 HTML 報告檔案未生成: {expected_report_path}")
 
-        print(f"報告檔案似乎已成功生成: {expected_report_path}")
+        # 檢查檔案大小是否合理 (例如，大於 1KB，表示不是一個空的 HTML)
+        min_html_size = 1024 # 1KB
+        actual_size = expected_report_path.stat().st_size
+        if actual_size < min_html_size:
+            raise ValueError(f"生成的 HTML 報告檔案大小 ({actual_size} bytes) 過小，可能為空或不完整: {expected_report_path}")
+
+        # 檢查 HTML 內容是否包含 Plotly 的特徵字串
+        try:
+            with open(expected_report_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            if "plotly.js" not in html_content and "Plotly.newPlot" not in html_content:
+                raise ValueError(f"生成的 HTML 報告檔案中未找到 Plotly 特徵字串: {expected_report_path}")
+        except Exception as e_read:
+            raise ValueError(f"讀取或驗證 HTML 報告內容時發生錯誤: {e_read} ({expected_report_path})")
+
+        print(f"HTML 報告檔案已成功生成並通過初步驗證: {expected_report_path}")
         return expected_report_path
 
     except subprocess.CalledProcessError as e:
