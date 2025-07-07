@@ -4,12 +4,33 @@ import duckdb
 import pandas as pd
 import argparse
 from pathlib import Path
+import sys # 導入 sys
+import os # 導入 os
 
-# 假設 analytics_mart.duckdb 位於專案根目錄下的 "data" 資料夾中
-DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+# --- 路徑自我校正樣板碼 START ---
+# 目的是將專案根目錄 (上一層的上一層) 添加到 sys.path
+# 這樣就可以使用 from apps.feature_analyzer.analyzer import ChimeraAnalyzer
+try:
+    current_script_dir = Path(__file__).resolve().parent
+    project_root = current_script_dir.parent.parent # apps 目錄的父目錄，即專案根目錄
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+    # 如果需要 apps 目錄本身也在 sys.path 中 (例如 from apps.another_app import ...)
+    # apps_dir = current_script_dir.parent
+    # if str(apps_dir) not in sys.path:
+    #     sys.path.insert(0, str(apps_dir))
+
+except Exception as e:
+    print(f"專案路徑校正時發生錯誤 (run.py in feature_analyzer): {e}", file=sys.stderr)
+# --- 路徑自我校正樣板碼 END ---
+
+
+# 假設 analytics_mart.duckdb 位於專案根目錄下的 "data" 資料夾中 (舊的象限分析用)
+DEFAULT_DATA_DIR = project_root / "data" # 使用校正後的 project_root
 ANALYTICS_DB_PATH = DEFAULT_DATA_DIR / "analytics_mart.duckdb"
 
-# 與 time_aggregator 中定義的時間週期保持一致
+# 與 time_aggregator 中定義的時間週期保持一致 (舊的象限分析用)
 TIME_PERIODS = {
     "1min": "1T",
     "5min": "5T",
@@ -221,8 +242,29 @@ def main(args): # 修改這裡，讓 main 函數接受 args
             analytics_db_path=args.analytics_mart_db # 從 args 傳遞
         )
 
-    if not args.run_correlation and not args.run_quadrant and not args.run_dealer_analysis:
-        print("未指定要執行的分析類型。請使用 --run_correlation, --run_quadrant, 或 --run_dealer_analysis。")
+    # 新增：執行奇美拉複合分析
+    if args.run_chimera_analysis:
+        from apps.feature_analyzer.analyzer import ChimeraAnalyzer # 修改為絕對導入
+        print("\n準備執行奇美拉複合價量與籌碼分析。")
+        # ChimeraAnalyzer 使用 analytics_mart_db
+        # ChimeraAnalyzer 內部預設 db path 是 analytics_mart.duckdb (相對於專案根目錄)
+        # 如果命令行傳入的 analytics_mart_db 與其預設不同，則使用命令行傳入的
+        # ChimeraAnalyzer 的建構函數接受 db_path 參數
+        chimera_analyzer = ChimeraAnalyzer(db_path=Path(args.analytics_mart_db))
+        chimera_analyzer.run_composite_analysis(
+            start_date=args.start_date, # 需要為 Chimera 新增 start_date, end_date, stock_ids 參數
+            end_date=args.end_date,
+            stock_ids=args.stock_ids
+        )
+
+    active_analyses = [
+        args.run_correlation,
+        args.run_quadrant,
+        args.run_dealer_analysis,
+        args.run_chimera_analysis # 新增
+    ]
+    if not any(active_analyses):
+        print("未指定要執行的分析類型。請使用 --run_quadrant, --run_correlation, --run_dealer_analysis, 或 --run_chimera_analysis。")
 
 
 if __name__ == "__main__":
@@ -236,41 +278,68 @@ if __name__ == "__main__":
     parser.add_argument(
         "--market_data_db",
         type=str,
-        default="market_data.duckdb", # 與各 client/analyzer 中的 DEFAULT 一致
-        help="來源市場數據資料庫路徑 (例如 market_data.duckdb)"
+        default="market_data.duckdb",
+        help="來源市場數據資料庫路徑 (預設: market_data.duckdb)"
     )
+    # 將 analytics_mart_db 的預設路徑與 ChimeraAnalyzer 中的 DEFAULT_DB_PATH 對齊
+    # ChimeraAnalyzer 中的 DEFAULT_DB_PATH 是基於 analyzer.py 的位置計算的，指向專案根目錄下的 analytics_mart.duckdb
+    # 這裡的 run.py 在同一目錄下，所以其相對路徑計算方式應類似或直接使用絕對/已知相對路徑
+    # 為簡單起見，這裡我們假設 analytics_mart.duckdb 就在專案根目錄
+    # 如果 DEFAULT_DATA_DIR/ANALYTICS_DB_PATH (舊的) 指向 data/analytics_mart.duckdb
+    # 而 ChimeraAnalyzer 指向 analytics_mart.duckdb (根目錄)
+    # 則需要統一。假設統一到根目錄的 analytics_mart.duckdb
+    # 因此，這裡的 default 可以是 "analytics_mart.duckdb"
+    # 或者，讓 ChimeraAnalyzer 的 db_path 也由 args.analytics_mart_db 決定，這樣更靈活
+    # 目前 ChimeraAnalyzer(db_path=Path(args.analytics_mart_db)) 已經這樣做了。
+
+    # 統一 analytics_mart_db 的預設路徑，使其與 ChimeraAnalyzer 中的 DEFAULT_DB_PATH 計算方式一致
+    # 即專案根目錄下的 analytics_mart.duckdb
+    # 若 run.py 和 analyzer.py 在同一 apps/feature_analyzer/ 目錄下，
+    # 則 DEFAULT_DB_PATH (in analyzer.py) = Path(__file__).resolve().parent.parent.parent / "analytics_mart.duckdb"
+    # 在 run.py 中，如果也想指向同一個檔案：
+    run_py_default_analytics_mart_path = Path(__file__).resolve().parent.parent.parent / "analytics_mart.duckdb"
+
     parser.add_argument(
         "--analytics_mart_db",
         type=str,
-        default="analytics_mart.duckdb", # 與各 analyzer 中的 DEFAULT 一致
-        help="目標分析結果資料庫路徑 (例如 analytics_mart.duckdb)"
+        default=str(run_py_default_analytics_mart_path),
+        help="目標分析結果資料庫路徑 (預設: 專案根目錄下的 analytics_mart.duckdb)"
     )
-    # analytics_db 參數主要用於舊的象限分析，新的分析模組將使用 analytics_mart_db
-    # 為了兼容，保留 analytics_db，但新的分析優先使用 analytics_mart_db (如果它們不同)
-    # 或者，我們可以統一它們，讓 analytics_db 也指向 analytics_mart_db
-    # 這裡我們先假設 quadrant analysis 繼續用 --analytics_db (其內部預設為 ANALYTICS_DB_PATH)
-    # 而新的分析用 --analytics_mart_db
-    parser.add_argument("--analytics_db", type=str, default=str(ANALYTICS_DB_PATH), help="分析結果資料庫路徑 (主要用於舊的象限分析)")
+    # 舊的 --analytics_db 參數，如果不再嚴格需要，可以考慮移除或使其也指向 analytics_mart_db
+    parser.add_argument("--analytics_db", type=str, default=str(ANALYTICS_DB_PATH), help="分析結果資料庫路徑 (主要用於舊的象限分析，預設: data/analytics_mart.duckdb)")
 
-    parser.add_argument("--run_quadrant", action="store_true", help="執行價格/量能四象限分析")
+    parser.add_argument("--run_quadrant", action="store_true", help="執行價格/量能四象限分析 (舊版)")
     parser.add_argument("--run_correlation", action="store_true", help="執行跨市場相關性分析")
     parser.add_argument(
         "--correlation_assets",
         nargs="+",
-        default=None, # 將在 run_cross_market_correlation_analysis 中使用其內部 CORE_ASSETS 作為預設
-        help="用於相關性分析的資產代碼列表 (預設: cross_market_analyzer 中的 CORE_ASSETS)"
+        default=None,
+        help="用於相關性分析的資產代碼列表"
     )
     parser.add_argument(
         "--correlation_window",
         type=int,
-        default=None, # 將在 run_cross_market_correlation_analysis 中使用其內部預設窗口 (30)
-        help="相關性分析的滾動窗口大小 (預設: 30)"
+        default=None,
+        help="相關性分析的滾動窗口大小"
     )
     parser.add_argument("--run_dealer_analysis", action="store_true", help="執行一級交易商持有量分析")
 
+    # 為奇美拉分析添加新的參數
+    parser.add_argument("--run_chimera_analysis", action="store_true", help="執行奇美拉複合價量與籌碼分析 (日線級別)")
+    parser.add_argument("--start_date", type=str, default=None, help="奇美拉分析開始日期 (YYYY-MM-DD)")
+    parser.add_argument("--end_date", type=str, default=None, help="奇美拉分析結束日期 (YYYY-MM-DD)")
+    parser.add_argument("--stock_ids", nargs="+", default=None, help="要進行奇美拉分析的股票代碼列表 (可選，預設處理所有)")
+
+
     args = parser.parse_args()
 
-    if not args.run_quadrant and not args.run_correlation and not args.run_dealer_analysis:
-        print("提醒：未指定明確的分析任務。請使用 --run_quadrant, --run_correlation, 或 --run_dealer_analysis 來執行特定分析。")
+    active_analyses = [
+        args.run_correlation,
+        args.run_quadrant,
+        args.run_dealer_analysis,
+        args.run_chimera_analysis
+    ]
+    if not any(active_analyses):
+        print("提醒：未指定明確的分析任務。請使用 --run_quadrant, --run_correlation, --run_dealer_analysis, 或 --run_chimera_analysis 來執行特定分析。")
 
     main(args)
