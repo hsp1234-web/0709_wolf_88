@@ -12,20 +12,28 @@ import io
 import zipfile
 import pytz
 from datetime import datetime
+from pathlib import Path # 標準樣板碼需要 Path
 
-# --- 路徑自我校正樣板碼 ---
+# --- 標準化「路徑自我校正」樣板碼 START ---
 try:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    apps_dir = os.path.dirname(current_dir)
-    project_root = os.path.dirname(apps_dir)
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
+    # 獲取目前腳本的絕對路徑
+    current_script_path = Path(__file__).resolve()
+    # 假設此腳本位於 apps/[app_name] 目錄下，專案根目錄是其再上兩層
+    project_root = current_script_path.parent.parent.parent
+    # 將專案根目錄加入 sys.path
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+except NameError: # __file__ is not defined, common in interactive shells or certain execution contexts
+    project_root = Path(os.getcwd())
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    print(f"警告：__file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。", file=sys.stderr)
 except Exception as e:
-    print(f"專案路徑校正時發生錯誤: {e}", file=sys.stderr)
-# --- 路徑自我校正樣板碼結束 ---
+    print(f"專案路徑校正時發生錯誤 (apps/taifex_data_pipeline/run.py): {e}", file=sys.stderr)
+# --- 標準化「路徑自我校正」樣板碼 END ---
 
 from apps.pipeline_metadata_manager.manager import MetadataManager, calculate_file_fingerprint
-from src.utils.logger import setup_logger # 導入標準日誌模組
+from core.utils import setup_logger # 導入標準日誌模組 (已更新路徑)
 
 # --- 全域日誌與配置 ---
 # SimpleLogger class has been removed.

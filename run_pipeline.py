@@ -6,17 +6,15 @@ from pathlib import Path
 import sys
 import time # 用於測量每個步驟的耗時
 
-# 嘗試從同級目錄的 config.py 導入配置
-# 如果此腳本不在專案根目錄，或者 config.py 不在，則此導入會失敗
-# 更好的做法是確保 config.py 能被 Python 解釋器找到
+# 嘗試從 core 模組導入 config
 try:
-    import config
+    from core import config
 except ImportError:
-    print("錯誤：無法導入 config.py。請確保 config.py 與 run_daily_pipeline.py 在同一目錄，或者已正確設定 PYTHONPATH。")
+    print("錯誤：無法從 core 導入 config。請確保 core/config.py 存在且專案結構正確。")
     sys.exit(1)
 
 # --- 日誌設定 ---
-# 使用 config 中定義的日誌級別
+# 使用 core.config 中定義的日誌級別
 logging.basicConfig(
     level=config.LOG_LEVEL,
     format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',

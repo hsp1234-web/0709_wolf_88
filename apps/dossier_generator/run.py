@@ -76,14 +76,14 @@ if __name__ == "__main__":
         markdown_content += "未找到 `apps` 目錄。\n\n"
 
     # --- 彙編共享模組 ---
-    markdown_content += "## 三、共享模組 (src/utils)\n\n"
-    utils_dir = os.path.join(project_root, "src", "utils")
-    if os.path.exists(utils_dir) and os.path.isdir(utils_dir):
-        for filename in os.listdir(utils_dir):
+    markdown_content += "## 三、核心共享模組 (core)\n\n"
+    core_dir = os.path.join(project_root, "core")
+    if os.path.exists(core_dir) and os.path.isdir(core_dir):
+        for filename in os.listdir(core_dir):
             if filename.endswith(".py"): # 假設共享模組都是 .py 檔案
-                file_path = os.path.join(utils_dir, filename)
+                file_path = os.path.join(core_dir, filename)
                 markdown_content += f"### 模組：{filename}\n\n"
-                markdown_content += f"**檔案路徑：** `src/utils/{filename}`\n\n"
+                markdown_content += f"**檔案路徑：** `core/{filename}`\n\n"
                 markdown_content += "```python\n"
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:
@@ -92,10 +92,10 @@ if __name__ == "__main__":
                 except Exception as e:
                     markdown_content += f"無法讀取檔案：{e}\n```\n\n"
     else:
-        markdown_content += "未找到 `src/utils` 目錄。\n\n"
+        markdown_content += "未找到 `core` 目錄。\n\n"
 
 
-    print("\n產生的 Markdown 內容預覽（包含微服務與共享模組）：")
+    print("\n產生的 Markdown 內容預覽（包含微服務與核心共享模組）：")
     # print(markdown_content) # 在最終寫入前，可以選擇性註解掉詳細預覽以保持終端輸出簡潔
 
     # --- 最終輸出指令：覆寫 README.md ---

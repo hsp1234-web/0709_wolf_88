@@ -108,17 +108,46 @@ def store_data_to_duckdb(df: pd.DataFrame, table_name: str = "daily_ohlcv", db_f
         table_name (str): 目標資料表的名稱。
         db_file (str): DuckDB 資料庫檔案路徑。
     """
-    if df.empty:
-        print(f"沒有數據可儲存至資料表 {table_name}。")
-        return
-
     try:
         with duckdb.connect(db_file) as con:
-            # 使用 CREATE OR REPLACE TABLE，如果表不存在則創建，如果存在則替換
-            con.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM df")
-            print(f"數據已成功儲存至 DuckDB 資料庫 '{db_file}' 的資料表 '{table_name}'。")
+            # 確保資料表結構存在，即使 df 是空的
+            # 定義 daily_ohlcv 的預期欄位和類型
+            # 欄位：Date (DATE), symbol (VARCHAR), Open (DOUBLE), High (DOUBLE), Low (DOUBLE), Close (DOUBLE), Adj_Close (DOUBLE), Volume (BIGINT)
+            con.execute(f"""
+                CREATE TABLE IF NOT EXISTS {table_name} (
+                    Date DATE,
+                    symbol VARCHAR,
+                    Open DOUBLE,
+                    High DOUBLE,
+                    Low DOUBLE,
+                    Close DOUBLE,
+                    Adj_Close DOUBLE,
+                    Volume BIGINT
+                );
+            """)
 
-            # 驗證寫入的數據量
+            if df.empty:
+                print(f"從 yfinance 獲取的數據為空。確保資料表 '{table_name}' 在 '{db_file}' 中存在，但不寫入數據。")
+                # 即使 df 為空，也要確保表被創建了 (上面的 CREATE TABLE IF NOT EXISTS 處理了)
+                # 不再執行 return，而是讓後續的計數邏輯執行
+            else:
+                # 如果有數據，先刪除該 symbol 已有的數據，再插入新的 (實現 upsert 效果)
+                # 假設 df 中包含 'symbol' 和 'Date' 欄位
+                # 為了簡化，這裡假設如果 df 非空，則至少包含一個 symbol
+                # 並且我們是針對本次抓取的 symbols 進行覆寫
+                # 如果 df 包含多個 symbols，這會一次性刪除所有這些 symbols 的舊數據
+                if 'symbol' in df.columns and not df['symbol'].empty:
+                    unique_symbols_in_df = tuple(df['symbol'].unique())
+                    placeholders = ', '.join(['?'] * len(unique_symbols_in_df))
+                    delete_query = f"DELETE FROM {table_name} WHERE symbol IN ({placeholders})"
+                    con.execute(delete_query, list(unique_symbols_in_df))
+                    print(f"已從 '{table_name}' 刪除股票 {unique_symbols_in_df} 的舊數據。")
+
+                # 使用 INSERT INTO 插入新數據
+                con.execute(f"INSERT INTO {table_name} SELECT * FROM df")
+                print(f"數據已成功寫入/更新至 DuckDB 資料庫 '{db_file}' 的資料表 '{table_name}'。")
+
+            # 驗證寫入的數據量 (或表是否為空)
             count_result = con.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
             if count_result:
                 print(f"資料表 '{table_name}' 目前包含 {count_result[0]} 筆數據。")

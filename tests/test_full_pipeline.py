@@ -11,25 +11,25 @@ from datetime import datetime, timedelta
 try:
     # 獲取目前腳本的絕對路徑
     current_script_path = Path(__file__).resolve()
-    # 假設此腳本位於專案根目錄，所以 project_root 就是 current_script_path.parent
-    project_root = current_script_path.parent
+    # 測試腳本位於 tests/ 目錄下，專案根目錄是其再上兩層 (tests -> project_root)
+    project_root = current_script_path.parent.parent
     # 將專案根目錄加入 sys.path
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-except NameError:
+except NameError: # __file__ is not defined, common in interactive shells or certain execution contexts
     project_root = Path(os.getcwd())
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-    print(f"警告：__file__ 未定義（在 _test_kronos_harness.py 中），專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。", file=sys.stderr)
+    print(f"警告：__file__ 未定義（在 tests/test_full_pipeline.py 中），專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。", file=sys.stderr)
 except Exception as e:
-    print(f"專案路徑校正時發生錯誤 (apps/time_aggregator/run.py): {e}", file=sys.stderr)
+    print(f"專案路徑校正時發生錯誤 (tests/test_full_pipeline.py): {e}", file=sys.stderr)
 # --- 標準化「路徑自我校正」樣板碼 END ---
 
-# 導入配置，假設 config.py 在 project_root
+# 導入配置，假設 config.py 在 project_root (core/config.py)
 try:
-    import config
+    from core import config
 except ImportError:
-    print("錯誤：無法導入 config.py。請確保 _test_kronos_harness.py 與 config.py 在同一專案根目錄下，或者 PYTHONPATH 已正確設定。", file=sys.stderr)
+    print("錯誤：無法從 core 導入 config。請確保 core/config.py 存在且專案結構正確。", file=sys.stderr)
     sys.exit(1)
 
 # 測試用的資料庫名稱和路徑
@@ -117,7 +117,7 @@ class TestKronosHarness(unittest.TestCase):
         """執行 run_daily_pipeline.py 命令。"""
         cmd = [
             sys.executable,
-            str(self.project_root / "run_daily_pipeline.py")
+            str(self.project_root / "run_pipeline.py") # 更正腳本名稱
         ]
         if command_args:
             cmd.extend(command_args)

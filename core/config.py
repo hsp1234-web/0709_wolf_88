@@ -4,8 +4,10 @@ from pathlib import Path
 import logging # 為了 LOG_LEVEL
 
 # --- 基本路徑設定 ---
-# 假設此 config.py 位於專案根目錄
-PROJECT_ROOT = Path(__file__).resolve().parent
+# __file__ 是目前檔案 (core/config.py) 的路徑
+# .parent 會得到 core/
+# .parent.parent 會得到專案的根目錄
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # --- 目標標的 ---
 # 注意：yfinance 對於台股，通常需要在股票代號後加上 ".TW"
