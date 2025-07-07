@@ -167,9 +167,9 @@ def main_pipeline(args): # 添加 args 參數
                 "--source_db", config.SOURCE_TICKS_DB_PATH,
                 "--analytics_db", config.ANALYTICS_DB_PATH
             ]
-            if not run_subprocess_command(cmd_time_aggregator, f"time_aggregator ({stock_id_agg})"):
+            if not run_subprocess_command(cmd_time_aggregator, f"time_aggregator ({stock_id_for_agg})"): # 修正變數名稱
                 pipeline_success = False
-                logger.error(f"time_aggregator ({stock_id_agg}) 執行失敗。後續分析可能受影響。")
+                logger.error(f"time_aggregator ({stock_id_for_agg}) 執行失敗。後續分析可能受影響。") # 修正變數名稱
                 # 考慮是否中止整個流程
     logger.info("====== [階段 1/5] 時間序列聚合完成 ======")
 
@@ -264,9 +264,9 @@ def main_pipeline(args): # 添加 args 參數
                 "--output-dir", config.REPORTS_OUTPUT_DIR,
                 "--timeframe", default_report_timeframe # 已存在，很好
             ]
-            if not run_subprocess_command(cmd_report_generator, f"report_generator ({stock_id_yf_report}, {default_report_timeframe})"):
+            if not run_subprocess_command(cmd_report_generator, f"report_generator ({stock_id_for_report}, {default_report_timeframe})"): # 修正變數名稱
                 pipeline_success = False
-                logger.warning(f"report_generator ({stock_id_yf_report}, {default_report_timeframe}) 執行失敗。")
+                logger.warning(f"report_generator ({stock_id_for_report}, {default_report_timeframe}) 執行失敗。") # 修正變數名稱
     else:
         logger.warning("由於前序階段失敗，跳過報告生成。")
     logger.info(f"====== [階段 4/5] 報告生成完成 ======")

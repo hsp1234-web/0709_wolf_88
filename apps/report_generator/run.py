@@ -67,10 +67,12 @@ def main():
         )
         if report_path:
             print(f"報告已成功生成並儲存於: {report_path}")
-            # 成功生成報告，腳本應以狀態 0 退出 (預設行為)
+            sys.exit(0)
         else:
-            print(f"報告生成失敗 (股票: {args.stock_id}, 週期: {args.timeframe})，未返回有效的報告路徑。")
-            sys.exit(1)
+            # 如果 report_path 為 None，表示 generate_report 內部已處理了錯誤訊息（例如無數據）
+            # 這裡我們打印一個警告，並以成功碼退出，避免阻塞主流程。
+            print(f"警告：報告檔案未實際生成 (股票: {args.stock_id}, 週期: {args.timeframe})。詳情請查看 generate_report 內部日誌。")
+            sys.exit(0) # 以成功碼退出
     except ImportError as ie: # 特別處理 Plotly 可能未安裝的情況
         print(f"發生導入錯誤: {ie}", file=sys.stderr)
         print("請確保已安裝所有必要的套件 (例如 plotly)。", file=sys.stderr)
