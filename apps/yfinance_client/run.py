@@ -6,17 +6,27 @@ from datetime import datetime
 import sys # 導入 sys
 from pathlib import Path # 導入 Path
 
-# --- 路徑自我校正樣板碼 START ---
+import os # 標準樣板碼需要 os
+
+# --- 標準化「路徑自我校正」樣板碼 START ---
 try:
-    current_script_dir = Path(__file__).resolve().parent
-    project_root = current_script_dir.parent.parent
+    # 獲取目前腳本的絕對路徑
+    current_script_path = Path(__file__).resolve()
+    # 假設此腳本位於 apps/[app_name] 目錄下，專案根目錄是其再上兩層
+    project_root = current_script_path.parent.parent.parent
+    # 將專案根目錄加入 sys.path
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
+except NameError: # __file__ is not defined, common in interactive shells or certain execution contexts
+    project_root = Path(os.getcwd())
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    print(f"警告：__file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。", file=sys.stderr)
 except Exception as e:
-    print(f"專案路徑校正時發生錯誤 (run.py in yfinance_client): {e}", file=sys.stderr)
-# --- 路徑自我校正樣板碼 END ---
+    print(f"專案路徑校正時發生錯誤 (apps/yfinance_client/run.py): {e}", file=sys.stderr)
+# --- 標準化「路徑自我校正」樣板碼 END ---
 
-from apps.yfinance_client.client import fetch_daily_ohlcv, store_data_to_duckdb, MARKET_DATA_DB # 修改為絕對導入
+from apps.yfinance_client.client import fetch_daily_ohlcv, store_data_to_duckdb, MARKET_DATA_DB
 
 def main():
     parser = argparse.ArgumentParser(description="Yahoo Finance 數據抓取客戶端")

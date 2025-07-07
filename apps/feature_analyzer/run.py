@@ -7,27 +7,28 @@ from pathlib import Path
 import sys # 導入 sys
 import os # 導入 os
 
-# --- 路徑自我校正樣板碼 START ---
-# 目的是將專案根目錄 (上一層的上一層) 添加到 sys.path
-# 這樣就可以使用 from apps.feature_analyzer.analyzer import ChimeraAnalyzer
+# --- 標準化「路徑自我校正」樣板碼 START ---
 try:
-    current_script_dir = Path(__file__).resolve().parent
-    project_root = current_script_dir.parent.parent # apps 目錄的父目錄，即專案根目錄
+    # 獲取目前腳本的絕對路徑
+    current_script_path = Path(__file__).resolve()
+    # 假設此腳本位於 apps/[app_name] 目錄下，專案根目錄是其再上兩層
+    project_root = current_script_path.parent.parent.parent
+    # 將專案根目錄加入 sys.path
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-
-    # 如果需要 apps 目錄本身也在 sys.path 中 (例如 from apps.another_app import ...)
-    # apps_dir = current_script_dir.parent
-    # if str(apps_dir) not in sys.path:
-    #     sys.path.insert(0, str(apps_dir))
-
+except NameError: # __file__ is not defined, common in interactive shells or certain execution contexts
+    project_root = Path(os.getcwd())
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    print(f"警告：__file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。", file=sys.stderr)
 except Exception as e:
-    print(f"專案路徑校正時發生錯誤 (run.py in feature_analyzer): {e}", file=sys.stderr)
-# --- 路徑自我校正樣板碼 END ---
+    print(f"專案路徑校正時發生錯誤 (apps/feature_analyzer/run.py): {e}", file=sys.stderr)
+# --- 標準化「路徑自我校正」樣板碼 END ---
 
 
+# project_root 現在由標準樣板碼定義
 # 假設 analytics_mart.duckdb 位於專案根目錄下的 "data" 資料夾中 (舊的象限分析用)
-DEFAULT_DATA_DIR = project_root / "data" # 使用校正後的 project_root
+DEFAULT_DATA_DIR = project_root / "data"
 ANALYTICS_DB_PATH = DEFAULT_DATA_DIR / "analytics_mart.duckdb"
 
 # 與 time_aggregator 中定義的時間週期保持一致 (舊的象限分析用)

@@ -24,11 +24,19 @@ TARGET_STOCK_IDS_FINMIND = [sid.replace('.TW', '') for sid in TARGET_STOCK_IDS_Y
 # --- 資料庫路徑 ---
 # 所有的分析結果和基礎數據都將存儲在這個 DuckDB 檔案中
 ANALYTICS_DB_NAME = "analytics_mart.duckdb"
-ANALYTICS_DB_PATH = str(PROJECT_ROOT / ANALYTICS_DB_NAME)
+_default_analytics_db_path = str(PROJECT_ROOT / ANALYTICS_DB_NAME)
+ANALYTICS_DB_PATH = os.getenv("KRONOS_ANALYTICS_DB_PATH", _default_analytics_db_path)
+
+# --- 源 Tick 資料庫路徑 ---
+# Time Aggregator 將從此資料庫讀取原始 Tick 數據
+SOURCE_TICKS_DB_NAME = "taifex_ticks.duckdb"  # 建議的源資料庫名稱
+_default_source_ticks_db_path = str(PROJECT_ROOT / SOURCE_TICKS_DB_NAME)
+SOURCE_TICKS_DB_PATH = os.getenv("KRONOS_SOURCE_TICKS_DB_PATH", _default_source_ticks_db_path)
 
 # --- 報告輸出目錄 ---
 REPORTS_OUTPUT_DIR_NAME = "output_reports" # 修改目錄名以更清晰
-REPORTS_OUTPUT_DIR = str(PROJECT_ROOT / REPORTS_OUTPUT_DIR_NAME)
+_default_reports_output_dir = str(PROJECT_ROOT / REPORTS_OUTPUT_DIR_NAME)
+REPORTS_OUTPUT_DIR = os.getenv("KRONOS_REPORTS_OUTPUT_DIR", _default_reports_output_dir)
 
 # --- 日誌級別 ---
 # 可選值: 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
@@ -50,6 +58,7 @@ YFINANCE_CLIENT_RUN_PATH = str(PROJECT_ROOT / "apps" / "yfinance_client" / "run.
 INSTITUTIONAL_ANALYZER_RUN_PATH = str(PROJECT_ROOT / "apps" / "institutional_analyzer" / "run.py")
 FEATURE_ANALYZER_RUN_PATH = str(PROJECT_ROOT / "apps" / "feature_analyzer" / "run.py")
 REPORT_GENERATOR_RUN_PATH = str(PROJECT_ROOT / "apps" / "report_generator" / "run.py")
+TIME_AGGREGATOR_RUN_PATH = str(PROJECT_ROOT / "apps" / "time_aggregator" / "run.py") # 新增時間聚合器路徑
 
 # --- 數據更新與分析的時間範圍參數 ---
 # 這些可以根據需求調整
