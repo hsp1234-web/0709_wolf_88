@@ -11,6 +11,7 @@ import pytz
 import time
 import json
 from pathlib import Path # 標準樣板碼需要 Path
+import logging # 確保 logging 已導入
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
 try:
@@ -32,7 +33,7 @@ except Exception as e:
 
 from core.utils import setup_logger # 導入標準日誌模組 (已更新路徑)
 
-# SimpleLogger class has been removed.
+RAW_TABLE_NAME = "raw_import_log" # 雖然此腳本不直接用，但保持一致性
 
 def create_target_table(conn: duckdb.DuckDBPyConnection, table_name: str):
     """確保目標分析表格存在"""
@@ -59,7 +60,7 @@ def create_target_table(conn: duckdb.DuckDBPyConnection, table_name: str):
     );
     """)
 
-def transform_and_load(raw_content_df: pd.DataFrame, target_conn: duckdb.DuckDBPyConnection, target_table: str, enable_status_updates: bool = False):
+def transform_and_load(raw_content_df: pd.DataFrame, target_conn: duckdb.DuckDBPyConnection, target_table: str, logger: logging.Logger, enable_status_updates: bool = False):
     """在 Python 中處理文本內容，並將結構化數據載入目標資料庫"""
     all_clean_dfs = []
     total_files = len(raw_content_df)
@@ -82,86 +83,123 @@ def transform_and_load(raw_content_df: pd.DataFrame, target_conn: duckdb.DuckDBP
             logger.warning(f"跳過空的文本內容 (來源: {source_file}/{member_file})")
             continue
 
+        # 內容類型初步判斷
+        file_ext = Path(source_file).suffix.lower()
+        if file_ext not in ['.csv', '.txt']:
+            logger.warning(f"跳過非 CSV/TXT 檔案類型: {source_file}/{member_file} (副檔名: {file_ext})")
+            continue
+
         try:
             # 使用 Pandas 強大的 CSV 解析器
+            logger.debug(f"準備使用 pd.read_csv 解析檔案: {source_file}/{member_file}")
+            logger.debug(f"傳遞給 StringIO 的文本內容 (前500字符): {content_text[:500]}")
             df = pd.read_csv(
                 StringIO(content_text),
                 encoding='utf-8', # 此時應為 UTF-8
                 thousands=',', # 處理數字中的逗號
                 low_memory=False,
-                dtype=str # 將所有欄位先讀取為字串，避免 Pandas 自動推斷類型錯誤
+                dtype=str, # 將所有欄位先讀取為字串，避免 Pandas 自動推斷類型錯誤
+                index_col=False # 確保第一列不被當作索引
             )
+            logger.debug(f"pd.read_csv 完成 for {source_file}/{member_file}. DataFrame info:")
+            # StringIO() 用於捕獲 df.info() 的輸出到日誌
+            buffer = StringIO()
+            df.info(buf=buffer)
+            logger.debug(buffer.getvalue())
+            logger.debug(f"DataFrame head (解析後，清理前) for {source_file}/{member_file}:\n{df.head().to_string()}")
+            if '交易日期' in df.columns:
+                logger.debug(f"df['交易日期'] (解析後，清理前) for {source_file}/{member_file}:\n{df['交易日期'].head().to_string()}")
+            logger.debug(f"df.iloc[:,0] (解析後，清理前) for {source_file}/{member_file}:\n{df.iloc[:,0].head().to_string()}")
+
             # 清理欄位名中的空格，並將其轉換為標準的 snake_case 或保持原樣以便後續 .get()
+            original_columns = list(df.columns)
             df.columns = [col.strip().replace(' ', '_').replace('(', '').replace(')', '') for col in df.columns]
+            cleaned_columns = list(df.columns)
+            logger.debug(f"原始欄位名 for {source_file}/{member_file}: {original_columns}")
+            logger.debug(f"清理後欄位名 for {source_file}/{member_file}: {cleaned_columns}")
+            logger.debug(f"DataFrame head (清理後) for {source_file}/{member_file}:\n{df.head().to_string()}")
+            # date_col_name 在這裡還未賦值，所以下面這幾行調試會出錯，先註解或移到後面
+            # if '交易日期' in df.columns:
+            #      logger.debug(f"df['交易日期'] (清理後) for {source_file}/{member_file}:\n{df['交易日期'].head().to_string()}")
+            # if date_col_name and date_col_name in df.columns:
+            #      logger.debug(f"df[date_col_name] (清理後, date_col_name='{date_col_name}') for {source_file}/{member_file}:\n{df[date_col_name].head().to_string()}")
+            logger.debug(f"df.iloc[:,0] (清理後) for {source_file}/{member_file}:\n{df.iloc[:,0].head().to_string()}")
 
-            # 緊急修復：兼容 '成交日期' 欄位
-            # 在 pd.read_csv(...) 之後，且欄位名稱清理之後
-            if '成交日期' in df.columns and '交易日期' not in df.columns:
-                df.rename(columns={'成交日期': '交易日期'}, inplace=True)
+
+            # 欄位名稱靈活性：處理日期欄位
+            date_col_name = None # 初始化 date_col_name
+            # 優先使用 '交易日期' (清理後的)
+            if '交易日期' in df.columns:
+                date_col_name = '交易日期'
+            # 如果 '交易日期' 不存在，嘗試 '日期' (清理後的)
+            elif '日期' in df.columns:
+                date_col_name = '日期'
+            # 如果 '成交日期' (清理後的) 存在且上述兩者都不存在，則重命名並使用
+            elif '成交日期' in df.columns:
+                df.rename(columns={'成交日期': '交易日期'}, inplace=True) # 標準化為 '交易日期'
+                date_col_name = '交易日期' # 更新 date_col_name 以反映重命名
                 logger.info(f"成功將欄位 '成交日期' 兼容為 '交易日期' (來源: {source_file}/{member_file})")
-            elif '成交日期' in df.columns and '交易日期' in df.columns:
-                # 理論上不應該同時存在，但若存在，優先使用 '交易日期'，並記錄警告
-                logger.warning(f"欄位 '成交日期' 和 '交易日期' 同時存在於 {source_file}/{member_file}。將優先使用 '交易日期'。")
-            # 如果只有 '交易日期'，則什麼都不做，流程正常
 
-            logger.debug(f"DataFrame columns after cleaning and compatibility fix for {source_file}/{member_file}: {list(df.columns)}")
+            logger.debug(f"DataFrame columns after cleaning and date compatibility fix for {source_file}/{member_file}: {list(df.columns)}")
             logger.debug(f"DataFrame head for {source_file}/{member_file}:\n{df.head().to_string()}")
 
-            trading_date_series = df.get('交易日期') # 假設清理後的欄位名仍然是 '交易日期'
-            if trading_date_series is None:
-                logger.error(f"'交易日期' column not found in df for {source_file}/{member_file} after column cleaning. Available columns: {list(df.columns)}")
-                # 嘗試使用原始可能的欄位名（如果清理邏輯有變）
-                # trading_date_series = df.get('交易日期') # 這裡的 get 應該基於清理後的名稱
-                # 如果真的找不到，就無法繼續處理這個檔案的日期
+            if not date_col_name:
+                logger.error(f"未找到有效的日期欄位 ('交易日期' 或 '日期') in df for {source_file}/{member_file}. Available columns: {list(df.columns)}")
                 continue
-            else:
-                logger.debug(f"'交易日期' series for {source_file}/{member_file}:\n{trading_date_series.to_string()}")
+
+            trading_date_series = df[date_col_name]
+            logger.debug(f"選定的日期欄位 '{date_col_name}' series for {source_file}/{member_file} (前5行):\n{trading_date_series.head().to_string()}")
+            logger.debug(f"選定的日期欄位 '{date_col_name}' series name: {trading_date_series.name}, dtype: {trading_date_series.dtype}, index: {trading_date_series.index}")
+
 
             # --- 增強日期解析 ---
             original_row_count = len(df)
-            parsed_dates_series = pd.Series([None] * len(df), index=df.index, dtype='object')
+            # 初始化 parsed_dates_series，確保其索引與 trading_date_series 一致
+            parsed_dates_series = pd.Series([None] * len(trading_date_series), index=trading_date_series.index, dtype='object')
 
-            # 嘗試標準公元年格式 (YYYY/MM/DD 或 YYYY-MM-DD)
             common_formats = ["%Y/%m/%d", "%Y-%m-%d", "%Y%m%d"]
             for fmt in common_formats:
-                if parsed_dates_series.isnull().any(): # 只有當還有未解析的日期時才嘗試
+                if parsed_dates_series.isnull().any():
+                    # 確保 to_datetime 操作在原始 trading_date_series 上進行
                     attempt = pd.to_datetime(trading_date_series, format=fmt, errors='coerce')
                     parsed_dates_series = parsed_dates_series.fillna(attempt)
 
             # 嘗試民國年格式 (YYY/MM/DD)
-            # 民國年轉換: 年份 + 1911
-            roc_date_str_series = trading_date_series.astype(str)
-            # 確保是 YYY/MM/DD 格式，避免匹配到 YYYY/MM/DD
-            is_roc_format = roc_date_str_series.str.match(r'^\d{3}/\d{1,2}/\d{1,2}$')
+            # 只處理前面 common_formats 未成功解析的日期
+            roc_candidate_series = trading_date_series[parsed_dates_series.isnull()]
+            if not roc_candidate_series.empty:
+                roc_date_str_series = roc_candidate_series.astype(str)
+                is_roc_format = roc_date_str_series.str.match(r'^\d{3}/\d{1,2}/\d{1,2}$')
 
-            if is_roc_format.any(): # 只處理看起來像民國年的
-                roc_dates_to_process = roc_date_str_series[is_roc_format & parsed_dates_series.isnull()]
-                if not roc_dates_to_process.empty:
-                    try:
-                        # 分割日期，轉換年份，然後重新組合
-                        parts = roc_dates_to_process.str.split('/', expand=True)
-                        year = parts[0].astype(int) + 1911
-                        month = parts[1]
-                        day = parts[2]
-                        # 重新組合為 YYYY/MM/DD 字串，然後讓 pd.to_datetime 處理
-                        gregorian_equivalent_str = year.astype(str) + '/' + month + '/' + day
-                        roc_parsed = pd.to_datetime(gregorian_equivalent_str, format="%Y/%m/%d", errors='coerce')
-                        parsed_dates_series.update(roc_parsed)
-                    except Exception as e_roc:
-                        logger.warning(f"處理民國年日期時發生錯誤 (來源: {source_file}/{member_file}): {e_roc}")
+                if is_roc_format.any():
+                    roc_dates_to_process = roc_date_str_series[is_roc_format]
+                    if not roc_dates_to_process.empty:
+                        try:
+                            parts = roc_dates_to_process.str.split('/', expand=True)
+                            year = parts[0].astype(int) + 1911
+                            month = parts[1]
+                            day = parts[2]
+                            gregorian_equivalent_str = year.astype(str) + '/' + month + '/' + day
+                            roc_parsed = pd.to_datetime(gregorian_equivalent_str, format="%Y/%m/%d", errors='coerce')
+                            parsed_dates_series.update(roc_parsed) # update 會基於索引更新
+                        except Exception as e_roc:
+                            logger.warning(f"處理民國年日期時發生錯誤 (來源: {source_file}/{member_file}): {e_roc}")
 
-            # 將成功解析的日期轉換為 .dt.date
-            # 先檢查 Series 中的元素是否是 NaT 或 datetime 對象
             mask_not_nat = pd.notna(parsed_dates_series)
-            # 僅對非 NaT 的 datetime 對象應用 .dt.date
-            parsed_dates_series.loc[mask_not_nat] = parsed_dates_series[mask_not_nat].apply(lambda x: x.date() if pd.notna(x) else None)
+            # Convert Timestamp objects to date objects for non-NaT values
+            # After pd.to_datetime(errors='coerce'), non-NaT values are Timestamps
+            for idx in parsed_dates_series[mask_not_nat].index:
+                if isinstance(parsed_dates_series[idx], pd.Timestamp):
+                    parsed_dates_series[idx] = parsed_dates_series[idx].date()
+                # If it's already a date object (e.g. from a previous successful conversion in a loop), leave it.
+                # If it's something else that's not NaT and not Timestamp, it's an unexpected state here.
 
-            logger.debug(f"parsed_dates_series for {source_file}/{member_file}:\n{parsed_dates_series.to_string()}")
+            logger.debug(f"parsed_dates_series for {source_file}/{member_file} (前5行):\n{parsed_dates_series.head().to_string()}")
 
+            # 將解析後的日期賦值給 DataFrame 的新欄位，確保索引對齊
             df['parsed_trading_date'] = parsed_dates_series
 
-            # 過濾掉日期轉換失敗的行 (NaT)
-            df_filtered = df.dropna(subset=['parsed_trading_date']).copy()
+            df_filtered = df.dropna(subset=['parsed_trading_date']).copy() # dropna 基於 parsed_trading_date
 
             dropped_rows = original_row_count - len(df_filtered)
             if dropped_rows > 0:
@@ -173,13 +211,20 @@ def transform_and_load(raw_content_df: pd.DataFrame, target_conn: duckdb.DuckDBP
                 logger.warning(f"在 {source_file}/{member_file} 中，所有有效數據行都因日期轉換失敗或不存在而被過濾。 (在捨棄 {dropped_rows} 行後)")
                 continue
 
-            # 現在 df_transformed 基於 df_filtered 建立
             df_transformed = pd.DataFrame()
             df_transformed['trading_date'] = df_filtered['parsed_trading_date']
 
-            # 後續的 df.get('契約代碼') 應該改為 df_filtered.get('契約代碼')
-            df_transformed['product_id'] = df_filtered.get('契約代碼') # 這裡的 get 是從 df_filtered 取值，所以不用改
-            df_transformed['expiry_month'] = df_filtered.get('到期月份週別')
+            # 確保從 df_filtered 中獲取欄位
+            # For product_id, try '契約' then '商品'
+            if '契約' in df_filtered.columns:
+                 df_transformed['product_id'] = df_filtered.get('契約')
+            elif '商品' in df_filtered.columns: # Fallback for files like utf8_bom_fut_daily.csv
+                 df_transformed['product_id'] = df_filtered.get('商品')
+            else:
+                 df_transformed['product_id'] = None
+
+
+            df_transformed['expiry_month'] = df_filtered.get('到期月份週別') # 根據 large_ms950_options_sample.csv 標頭 (已清理)
             df_transformed['strike_price'] = pd.to_numeric(df_filtered.get('履約價'), errors='coerce')
             df_transformed['option_type'] = df_filtered.get('買賣權')
             df_transformed['open'] = pd.to_numeric(df_filtered.get('開盤價'), errors='coerce')
@@ -201,8 +246,7 @@ def transform_and_load(raw_content_df: pd.DataFrame, target_conn: duckdb.DuckDBP
                 df_transformed['open_interest'] = pd.Series(dtype='Int64')
 
             df_transformed['trading_session'] = df_filtered.get('交易時段')
-
-            df_transformed['source_file'] = source_file # source_file 和 member_file 是循環變數，不是來自 df_filtered
+            df_transformed['source_file'] = source_file
             df_transformed['member_file'] = member_file
             df_transformed['transformed_at'] = datetime.now(pytz.utc)
 
@@ -214,17 +258,10 @@ def transform_and_load(raw_content_df: pd.DataFrame, target_conn: duckdb.DuckDBP
             import traceback
             logger.error(traceback.format_exc())
 
-
     if all_clean_dfs:
         final_df = pd.concat(all_clean_dfs, ignore_index=True)
         logger.info(f"準備將 {len(final_df)} 筆已轉換的記錄載入到 '{target_table}'...")
-
-        # 確保 final_df 中的欄位順序與目標表一致 (如果使用 BY POSITION)
-        # 或者使用 BY NAME (DuckDB 0.7.0+ 支持 INSERT INTO table BY NAME SELECT ...)
         try:
-            # 為了最大的相容性和明確性，我們可以明確指定欄位列表
-            # DuckDB's executemany is not directly for pandas DataFrames in the same way as to_sql.
-            # We use DuckDB's ability to query pandas DataFrames directly.
             target_conn.register('final_df_view', final_df)
             target_conn.execute(f"""
                 INSERT INTO {target_table} (
@@ -238,15 +275,14 @@ def transform_and_load(raw_content_df: pd.DataFrame, target_conn: duckdb.DuckDBP
                 FROM final_df_view
             """)
             target_conn.unregister('final_df_view')
+            logger.info(f"成功將 {len(final_df)} 筆數據載入到 '{target_table}'。")
             return len(final_df)
         except Exception as e:
             logger.error(f"將數據載入到 DuckDB 時發生錯誤: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return 0
-
     return 0
-
 
 def main():
     parser = argparse.ArgumentParser(description="TAIFEX 數據轉換器 (v35.0 - Python 迭代模式)")
@@ -257,14 +293,13 @@ def main():
 
     args = parser.parse_args()
 
-    # 初始化標準日誌器
     log_level_map = {
-        "DEBUG": 10, # logging.DEBUG
-        "INFO": 20,  # logging.INFO
-        "WARNING": 30, # logging.WARNING
-        "ERROR": 40  # logging.ERROR
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR
     }
-    logger = setup_logger(__name__, level=log_level_map.get(args.log_level.upper(), 20)) # Default to INFO
+    logger = setup_logger(__name__, level=log_level_map.get(args.log_level.upper(), logging.INFO))
 
     logger.info("--- TAIFEX 數據轉換器 v35.0 (Python 迭代模式) 啟動 ---")
     logger.info(f"讀取自「原始數據艙」: {args.raw_db_path}")
@@ -273,22 +308,20 @@ def main():
     raw_conn = None
     analytics_conn = None
     try:
-        # 調整 raw_conn 的連接邏輯，以便處理記憶體資料庫
         if args.raw_db_path.lower() == "memory" or args.raw_db_path == ":memory:":
             logger.info(f"使用記憶體原始數據艙 (非只讀模式初始連接)。")
-            raw_conn = duckdb.connect(database=":memory:") # 首次連接記憶體資料庫不能是只讀
+            raw_conn = duckdb.connect(database=":memory:")
         else:
             logger.info(f"從檔案系統連接原始數據艙 (只讀模式): {args.raw_db_path}")
             raw_conn = duckdb.connect(database=args.raw_db_path, read_only=True)
 
-        analytics_conn = duckdb.connect(database=args.analytics_db_path) # 分析資料庫通常需要寫入
+        analytics_conn = duckdb.connect(database=args.analytics_db_path)
 
         target_table = "daily_ohlc"
-        create_target_table(analytics_conn, target_table) # 確保表和序列存在
-        logger.success(f"成功連接資料庫並確保目標表 '{target_table}' 存在。")
+        create_target_table(analytics_conn, target_table)
+        logger.info(f"成功連接資料庫並確保目標表 '{target_table}' 存在。")
 
         logger.info("正在從原始數據艙獲取待處理內容...")
-        # 只選擇必要的欄位
         raw_content_df = raw_conn.execute("SELECT source_file, member_file, file_content_as_text FROM raw_import_log WHERE file_content_as_text IS NOT NULL AND file_content_as_text != ''").fetchdf()
 
         if raw_content_df.empty:
@@ -297,9 +330,9 @@ def main():
         else:
             logger.info(f"發現 {len(raw_content_df)} 筆原始文本記錄，開始轉換與載入...")
             start_time = time.time()
-            inserted_count = transform_and_load(raw_content_df, analytics_conn, target_table, args.enable_status_updates)
+            inserted_count = transform_and_load(raw_content_df, analytics_conn, target_table, logger, args.enable_status_updates) # Pass logger
             duration = time.time() - start_time
-            logger.success(f"轉換與載入流程完成，耗時: {duration:.2f} 秒。")
+            logger.info(f"轉換與載入流程完成，耗時: {duration:.2f} 秒。")
 
         logger.info(f"驗證：共 {inserted_count} 筆乾淨數據被載入到分析資料庫。")
 

@@ -6,6 +6,7 @@ import argparse
 import asyncio
 from typing import List, Dict, Optional, Any
 import hashlib
+import logging # <--- 新增導入
 import duckdb
 import pandas as pd
 import io
@@ -36,11 +37,11 @@ from apps.pipeline_metadata_manager.manager import MetadataManager, calculate_fi
 from core.utils import setup_logger # 導入標準日誌模組 (已更新路徑)
 
 # --- 全域日誌與配置 ---
-# SimpleLogger class has been removed.
+# logger 變數將在 main 函數中初始化並傳遞給需要的函數。
 
 RAW_TABLE_NAME = "raw_import_log"
 
-def get_raw_content_from_zip(file_path: str) -> Optional[Dict[str, bytes]]:
+def get_raw_content_from_zip(file_path: str, logger: logging.Logger) -> Optional[Dict[str, bytes]]:
     try:
         contents = {}
         with zipfile.ZipFile(file_path, 'r') as zf:
@@ -55,30 +56,28 @@ def get_raw_content_from_zip(file_path: str) -> Optional[Dict[str, bytes]]:
         logger.error(f"讀取 ZIP 檔案時發生錯誤 {file_path}: {e}")
         return None
 
-async def load_raw_data_to_db(db_conn: duckdb.DuckDBPyConnection, file_path: str):
+async def load_raw_data_to_db(db_conn: duckdb.DuckDBPyConnection, file_path: str, logger: logging.Logger):
     file_name = os.path.basename(file_path)
     is_zip = file_name.lower().endswith('.zip')
 
     try:
-        def decode_content(content_bytes: bytes) -> Optional[str]:
-            for encoding in ['big5', 'ms950', 'utf-8']: # 嘗試常用編碼
+        def decode_content(content_bytes: bytes, current_file_name: str, logger_instance: logging.Logger) -> Optional[str]:
+            for encoding in ['big5', 'ms950', 'utf-8']:
                 try:
                     return content_bytes.decode(encoding)
                 except UnicodeDecodeError:
                     continue
-            logger.warning(f"無法使用 BIG5, MS950, UTF-8 解碼檔案內容: {file_name} (部分內容可能無法正確解碼)")
-            # 如果所有嘗試都失敗，可以選擇返回 None，或者帶有替換字元的字串
+            logger_instance.warning(f"無法使用 BIG5, MS950, UTF-8 解碼檔案內容: {current_file_name} (部分內容可能無法正確解碼)")
             return content_bytes.decode('utf-8', errors='replace')
 
-
         if is_zip:
-            zip_contents = get_raw_content_from_zip(file_path) # 已修正：移除 await
+            zip_contents = get_raw_content_from_zip(file_path, logger) # Pass logger
             if not zip_contents:
                 logger.warning(f"ZIP 檔案為空或無法讀取: {file_name}")
                 return
 
             for member_name, content_bytes in zip_contents.items():
-                decoded_text = decode_content(content_bytes)
+                decoded_text = decode_content(content_bytes, f"{file_name}/{member_name}", logger) # Pass logger
                 db_conn.execute(
                     f"INSERT INTO {RAW_TABLE_NAME} (source_file, member_file, file_content_blob, file_content_as_text, processed_at) VALUES (?, ?, ?, ?, ?)",
                     [file_name, member_name, content_bytes, decoded_text, datetime.now(pytz.utc)]
@@ -87,7 +86,7 @@ async def load_raw_data_to_db(db_conn: duckdb.DuckDBPyConnection, file_path: str
         else:
             with open(file_path, 'rb') as f:
                 content_bytes = f.read()
-            decoded_text = decode_content(content_bytes)
+            decoded_text = decode_content(content_bytes, file_name, logger) # Pass logger
             db_conn.execute(
                 f"INSERT INTO {RAW_TABLE_NAME} (source_file, member_file, file_content_blob, file_content_as_text, processed_at) VALUES (?, ?, ?, ?, ?)",
                 [file_name, None, content_bytes, decoded_text, datetime.now(pytz.utc)]
@@ -106,22 +105,36 @@ async def main():
     parser.add_argument("--metadata-db-path", help="元數據資料庫的完整路徑。")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
 
-    args, unknown = parser.parse_known_args() # <--- 【核心升級】
+    args, unknown = parser.parse_known_args()
     if unknown:
-        # 為了體現「預見」原則，我們在此加入日誌記錄，讓未來的維護者知道發生了什麼事
         print(f"[INFO] Ignored unknown arguments: {unknown}", file=sys.stderr)
 
-    # 初始化標準日誌器
     log_level_map = {
-        "DEBUG": 10, # logging.DEBUG
-        "INFO": 20,  # logging.INFO
-        "WARNING": 30, # logging.WARNING
-        "ERROR": 40  # logging.ERROR
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR
     }
-    logger = setup_logger(__name__, level=log_level_map.get(args.log_level.upper(), 20)) # Default to INFO
+    logger = setup_logger(__name__, level=log_level_map.get(args.log_level.upper(), logging.INFO))
+
+    Path(args.db_output_dir).mkdir(parents=True, exist_ok=True)
+    if args.metadata_db_path:
+        # Ensure the directory for the metadata_db_path also exists if it's specified as a full path
+        metadata_db_parent_dir = Path(args.metadata_db_path).parent
+        metadata_db_parent_dir.mkdir(parents=True, exist_ok=True)
 
     db_path = os.path.join(args.db_output_dir, args.db_name)
-    metadata_db_path = args.metadata_db_path or os.path.join(args.db_output_dir, "pipeline_metadata.duckdb")
+    # If metadata_db_path is a full path, use it; otherwise, construct it.
+    if args.metadata_db_path and os.path.isabs(args.metadata_db_path):
+         metadata_db_path = args.metadata_db_path
+    else: # Handles None or relative path for metadata_db_path (though relative might be odd here)
+        default_metadata_db_name = "pipeline_metadata.duckdb"
+        # If a specific metadata_db_path (filename) is given but not absolute, place it in db_output_dir.
+        # If args.metadata_db_path is None, it defaults to pipeline_metadata.duckdb in db_output_dir.
+        metadata_db_path = args.metadata_db_path or default_metadata_db_name
+        if not os.path.isabs(metadata_db_path):
+            metadata_db_path = os.path.join(args.db_output_dir, metadata_db_path)
+
 
     logger.info("--- TAIFEX 高速載入器 v22.0 (含預翻譯) 啟動 ---")
     logger.info(f"原始數據艙位置: {db_path}")
@@ -129,7 +142,6 @@ async def main():
 
     try:
         raw_db_conn = duckdb.connect(database=db_path)
-        # 修正：先建立 SEQUENCE
         raw_db_conn.execute(f"CREATE SEQUENCE IF NOT EXISTS seq_raw_import;")
         raw_db_conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {RAW_TABLE_NAME} (
@@ -137,7 +149,7 @@ async def main():
             source_file VARCHAR,
             member_file VARCHAR,
             file_content_blob BLOB,
-            file_content_as_text TEXT, -- 新增的預翻譯欄位
+            file_content_as_text TEXT,
             processed_at TIMESTAMPTZ
         );
         """)
@@ -155,15 +167,15 @@ async def main():
             logger.warning(f"檔案不存在，跳過: {file_path}")
             continue
         try:
-            fingerprint = calculate_file_fingerprint(file_path) # 已修正
+            fingerprint = calculate_file_fingerprint(file_path)
             if meta_manager.check_fingerprint_exists(fingerprint):
                 logger.info(f"偵測到已處理檔案 (指紋: {fingerprint[:8]}...), 跳過: {os.path.basename(file_path)}")
                 skipped_count += 1
                 continue
 
             logger.info(f"處理新檔案: {os.path.basename(file_path)}")
-            await load_raw_data_to_db(raw_db_conn, file_path) # await 保留，因為 load_raw_data_to_db 是 async
-            meta_manager.write_fingerprint( # 已修正
+            await load_raw_data_to_db(raw_db_conn, file_path, logger) # Pass logger
+            meta_manager.write_fingerprint(
                 fingerprint=fingerprint,
                 filename=os.path.basename(file_path),
                 filesize=os.path.getsize(file_path),
@@ -175,7 +187,7 @@ async def main():
 
     raw_db_conn.close()
     logger.info("--- 作戰總結 ---")
-    logger.success(f"任務完成。總計檔案: {total_files} | 新處理: {processed_count} | 已跳過: {skipped_count}")
+    logger.info(f"任務完成。總計檔案: {total_files} | 新處理: {processed_count} | 已跳過: {skipped_count}")
 
 if __name__ == "__main__":
     asyncio.run(main())
