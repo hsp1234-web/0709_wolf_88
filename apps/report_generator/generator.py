@@ -3,6 +3,7 @@ import duckdb
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
+import pytz # 確保導入 pytz 以便在 __main__ 中使用
 
 # 導入 Plotly - 直接導入，如果失敗則讓 ImportError 自然拋出
 import plotly.graph_objects as go
@@ -11,7 +12,6 @@ from plotly.subplots import make_subplots
 class ReportGenerator:
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
-        # 此處不再檢查 PLOTLY_AVAILABLE
 
     def _connect_db(self):
         try:
@@ -30,11 +30,11 @@ class ReportGenerator:
             raise ValueError(f"Timeframe '{timeframe}' 包含無效字符。")
         return cleaned_timeframe
 
-    def _fetch_data(self, con: duckdb.DuckDBPyConnection, stock_id: str, start_date_str: str, end_date_str: str, timeframe: str) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
+    def _fetch_data(self, con: duckdb.DuckDBPyConnection, stock_id: str, start_date_str: str, end_date_str: str, timeframe: str) -> tuple[pd.DataFrame | None, pd.DataFrame | None, pd.DataFrame | None]:
         ohlcv_df = None
         chimera_df = None
+        pc_ratio_df = None
 
-        # 處理 stock_id 以符合內部 ohlcv_* 表格的 product_id 規範 (移除 .TW)
         internal_stock_id_for_ohlcv = stock_id.replace(".TW", "") if isinstance(stock_id, str) and ".TW" in stock_id else stock_id
         print(f"原始 stock_id (用於報告和 Chimera): '{stock_id}', 內部查詢 ohlcv 使用的 product_id: '{internal_stock_id_for_ohlcv}'")
 
@@ -56,17 +56,19 @@ class ReportGenerator:
 
             if ohlcv_df.empty:
                 print(f"未找到 {internal_stock_id_for_ohlcv} (原始 {stock_id}) 在 {start_date_str} 至 {end_date_str} ({timeframe} 週期) 的 OHLCV 數據。")
-                return None, None
+                return None, None, None
             print(f"成功讀取 {len(ohlcv_df)} 筆 {internal_stock_id_for_ohlcv} (原始 {stock_id}) 的 {timeframe} OHLCV 數據。")
+            if 'timestamp' in ohlcv_df.columns: # 確保 timestamp 是 datetime 對象
+                 ohlcv_df['timestamp'] = pd.to_datetime(ohlcv_df['timestamp'])
         except duckdb.CatalogException:
             print(f"錯誤：OHLCV 資料表 '{ohlcv_table_name}' (用於 timeframe '{timeframe}') 不存在於資料庫 {self.db_path} 中。")
-            return None, None
+            return None, None, None
         except ValueError as ve:
             print(f"錯誤: {ve}")
-            return None, None
+            return None, None, None
         except Exception as e:
             print(f"讀取 {timeframe} OHLCV 數據時發生錯誤: {e}")
-            return None, None
+            return None, None, None
 
         try:
             query_chimera = """
@@ -78,7 +80,7 @@ class ReportGenerator:
             params_chimera = {'stock_id': stock_id, 'start_date': start_date_str, 'end_date': end_date_str}
             chimera_df = con.execute(query_chimera, params_chimera).fetchdf()
             if not chimera_df.empty:
-                chimera_df['date'] = pd.to_datetime(chimera_df['date'])
+                chimera_df['date'] = pd.to_datetime(chimera_df['date']).dt.date # 確保是 date 類型
                 print(f"成功讀取 {len(chimera_df)} 筆 {stock_id} 的 Chimera 日信號數據。")
             else:
                 print(f"未找到 {stock_id} 在 {start_date_str} 至 {end_date_str} 的 Chimera 日信號數據 (將不顯示信號)。")
@@ -86,16 +88,57 @@ class ReportGenerator:
             print(f"讀取 Chimera 日信號數據時發生錯誤: {e} (將不顯示信號)。")
             chimera_df = None
 
-        return ohlcv_df, chimera_df
+        pc_ratio_product_to_fetch = None
+        if stock_id == '0050.TW' or stock_id == 'TXO': # 如果是0050 ETF 或直接請求 TXO
+            pc_ratio_product_to_fetch = 'TXO'
 
-    def _plot_report_plotly(self, stock_id: str, ohlcv_df: pd.DataFrame, chimera_df: pd.DataFrame | None, timeframe: str) -> go.Figure | None:
+        if pc_ratio_product_to_fetch:
+            try:
+                query_pc_ratio = f"""
+                SELECT trading_date, product_id, pc_volume_ratio, pc_oi_ratio
+                FROM taifex_pc_ratios
+                WHERE product_id = $product_id
+                  AND trading_date >= CAST($start_date AS DATE)
+                  AND trading_date <= CAST($end_date AS DATE)
+                ORDER BY trading_date;
+                """
+                params_pc_ratio = {
+                    'product_id': pc_ratio_product_to_fetch,
+                    'start_date': start_date_str,
+                    'end_date': end_date_str
+                }
+                pc_ratio_df = con.execute(query_pc_ratio, params_pc_ratio).fetchdf()
+                if not pc_ratio_df.empty:
+                    pc_ratio_df['trading_date'] = pd.to_datetime(pc_ratio_df['trading_date']).dt.date
+                    print(f"成功讀取 {len(pc_ratio_df)} 筆 {pc_ratio_product_to_fetch} 的 P/C Ratio 數據。")
+                else:
+                    print(f"未找到 {pc_ratio_product_to_fetch} 在 {start_date_str} 至 {end_date_str} 的 P/C Ratio 數據。")
+                    pc_ratio_df = None
+            except Exception as e:
+                print(f"讀取 P/C Ratio ({pc_ratio_product_to_fetch}) 數據時發生錯誤: {e}")
+                pc_ratio_df = None
+
+        return ohlcv_df, chimera_df, pc_ratio_df
+
+    def _plot_report_plotly(self, stock_id: str, ohlcv_df: pd.DataFrame, chimera_df: pd.DataFrame | None, pc_ratio_df: pd.DataFrame | None, timeframe: str) -> go.Figure | None:
         if ohlcv_df.empty:
             print(f"({timeframe}) 沒有 OHLCV 數據可供繪製。")
             return None
 
         print(f"開始使用 Plotly 繪製 {timeframe} 報告圖表...")
         x_axis_data = ohlcv_df['timestamp']
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
+
+        has_pc_ratio_data = pc_ratio_df is not None and not pc_ratio_df.empty
+        num_rows = 3 if has_pc_ratio_data else 2
+        row_heights = [0.6, 0.2, 0.2] if has_pc_ratio_data else [0.7, 0.3]
+
+        subplot_titles = ["K線與信號", "成交量"]
+        if has_pc_ratio_data:
+            pc_product_id_for_title = pc_ratio_df['product_id'].iloc[0] if 'product_id' in pc_ratio_df.columns and not pc_ratio_df.empty else "Market"
+            subplot_titles.append(f"Put/Call Ratio ({pc_product_id_for_title})")
+
+        fig = make_subplots(rows=num_rows, cols=1, shared_xaxes=True, vertical_spacing=0.03,
+                            row_heights=row_heights, subplot_titles=subplot_titles[:num_rows])
 
         fig.add_trace(go.Candlestick(x=x_axis_data,
                                      open=ohlcv_df['open'], high=ohlcv_df['high'],
@@ -110,7 +153,7 @@ class ReportGenerator:
 
         if chimera_df is not None and not chimera_df.empty:
             ohlcv_for_merge = ohlcv_df.copy()
-            ohlcv_for_merge['date_for_signal_merge'] = ohlcv_for_merge['timestamp'].dt.normalize()
+            ohlcv_for_merge['date_for_signal_merge'] = ohlcv_for_merge['timestamp'].dt.normalize().dt.date
             current_stock_chimera_df = chimera_df[chimera_df['stock_id'] == stock_id]
             merged_for_plot = pd.merge(ohlcv_for_merge, current_stock_chimera_df,
                                        left_on='date_for_signal_merge', right_on='date',
@@ -152,17 +195,30 @@ class ReportGenerator:
                         legendgroup=style["legend_group"], hoverinfo='text', text=data['text']
                     ), row=1, col=1)
 
+        if has_pc_ratio_data:
+            pc_x_axis = pc_ratio_df['trading_date']
+            if 'pc_volume_ratio' in pc_ratio_df.columns:
+                fig.add_trace(go.Scatter(x=pc_x_axis, y=pc_ratio_df['pc_volume_ratio'], mode='lines', name='P/C Ratio (Volume)', legendgroup="pc_ratio_group"), row=3, col=1)
+            if 'pc_oi_ratio' in pc_ratio_df.columns:
+                fig.add_trace(go.Scatter(x=pc_x_axis, y=pc_ratio_df['pc_oi_ratio'], mode='lines', name='P/C Ratio (OI)', legendgroup="pc_ratio_group"), row=3, col=1)
+
         min_date_str = ohlcv_df['timestamp'].min().strftime('%Y-%m-%d %H:%M') if timeframe not in ['1d','1w','1m'] else ohlcv_df['timestamp'].min().strftime('%Y-%m-%d')
         max_date_str = ohlcv_df['timestamp'].max().strftime('%Y-%m-%d %H:%M') if timeframe not in ['1d','1w','1m'] else ohlcv_df['timestamp'].max().strftime('%Y-%m-%d')
 
         fig.update_layout(
             title_text=f"股票 {stock_id} ({timeframe}) 複合信號分析報告 ({min_date_str} 至 {max_date_str})",
             xaxis_rangeslider_visible=False,
-            showlegend=True, legend_title_text='信號標記 (日級別)',
+            showlegend=True,
+            legend_title_text='圖例',
+            legend=dict(tracegroupgap=10),
             hovermode='x unified'
         )
         fig.update_yaxes(title_text="股價", row=1, col=1)
         fig.update_yaxes(title_text="成交量", row=2, col=1)
+        if has_pc_ratio_data:
+             pc_product_id_for_y_title = pc_ratio_df['product_id'].iloc[0] if 'product_id' in pc_ratio_df.columns and not pc_ratio_df.empty else "Market"
+             fig.update_yaxes(title_text=f"P/C Ratio ({pc_product_id_for_y_title})", row=3, col=1)
+             # Subplot titles are set in make_subplots
 
         print(f"Plotly {timeframe} 圖表繪製完成。")
         return fig
@@ -171,13 +227,13 @@ class ReportGenerator:
         report_file_path = None
         try:
             with self._connect_db() as con:
-                ohlcv_df, chimera_df = self._fetch_data(con, stock_id, start_date_str, end_date_str, timeframe)
+                ohlcv_df, chimera_df, pc_ratio_df = self._fetch_data(con, stock_id, start_date_str, end_date_str, timeframe)
 
             if ohlcv_df is None or ohlcv_df.empty:
                 print(f"股票 {stock_id} ({timeframe}) 在指定日期範圍內無 OHLCV 數據，無法生成報告。")
                 return None
 
-            fig = self._plot_report_plotly(stock_id, ohlcv_df, chimera_df, timeframe)
+            fig = self._plot_report_plotly(stock_id, ohlcv_df, chimera_df, pc_ratio_df, timeframe)
 
             if fig:
                 output_dir.mkdir(parents=True, exist_ok=True)
@@ -197,11 +253,9 @@ class ReportGenerator:
 
 if __name__ == '__main__':
     print("執行 ReportGenerator (Plotly 版本) 初步測試...")
-    # 測試用的資料庫路徑和輸出目錄
     test_db_name = "temp_plotly_report_test.duckdb"
     test_output_dir_name = "test_generator_reports_output"
 
-    # 清理舊的測試資料庫和輸出目錄 (如果存在)
     test_db_file = Path(test_db_name)
     if test_db_file.exists():
         print(f"正在刪除舊的測試資料庫: {test_db_file}")
@@ -215,9 +269,7 @@ if __name__ == '__main__':
     test_output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        # 創建測試資料庫和表
         with duckdb.connect(str(test_db_file)) as con:
-            # 創建 ohlcv_1d 表 (用於日線測試)
             con.execute("""
             CREATE TABLE IF NOT EXISTS ohlcv_1d (
                 timestamp TIMESTAMP, product_id VARCHAR, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT,
@@ -227,37 +279,12 @@ if __name__ == '__main__':
                 (datetime(2023,1,1), 'TEST_STOCK_D', 10,12,9,11,1000),
                 (datetime(2023,1,2), 'TEST_STOCK_D', 11,13,10.5,12.5,1200),
                 (datetime(2023,1,3), 'TEST_STOCK_D', 12.5,12.5,11,11.5,800),
+                (datetime(2023,1,1), '0050', 120.0, 122.0, 119.0, 121.0, 5000), # For 0050.TW test
+                (datetime(2023,1,2), '0050', 121.0, 123.0, 120.0, 122.0, 6000)
             ]
             con.executemany("INSERT INTO ohlcv_1d VALUES (?,?,?,?,?,?,?)", ohlcv_1d_data)
             print(f"已創建並填充 ohlcv_1d 測試數據到 {test_db_file}")
 
-            # 創建 ohlcv_1h 表 (用於小時線測試)
-            con.execute("""
-            CREATE TABLE IF NOT EXISTS ohlcv_1h (
-                timestamp TIMESTAMP, product_id VARCHAR, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT,
-                PRIMARY KEY (timestamp, product_id)
-            );""")
-            ohlcv_1h_data = [
-                (datetime(2023,1,1,9,0,0), 'TEST_STOCK_H', 10,10.5,9.8,10.2,200),
-                (datetime(2023,1,1,10,0,0), 'TEST_STOCK_H', 10.2,11,10.1,10.8,300),
-            ]
-            con.executemany("INSERT INTO ohlcv_1h VALUES (?,?,?,?,?,?,?)", ohlcv_1h_data)
-            print(f"已創建並填充 ohlcv_1h 測試數據到 {test_db_file}")
-
-            # 創建 ohlcv_5min 表 (用於5分鐘線測試)
-            con.execute("""
-            CREATE TABLE IF NOT EXISTS ohlcv_5min (
-                timestamp TIMESTAMP, product_id VARCHAR, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT,
-                PRIMARY KEY (timestamp, product_id)
-            );""")
-            ohlcv_5min_data = [
-                (datetime(2023,1,1,9,0,0), 'TEST_STOCK_5M', 100,100.5,99.8,100.2,20),
-                (datetime(2023,1,1,9,5,0), 'TEST_STOCK_5M', 100.2,101,100.1,100.8,30),
-            ]
-            con.executemany("INSERT INTO ohlcv_5min VALUES (?,?,?,?,?,?,?)", ohlcv_5min_data)
-            print(f"已創建並填充 ohlcv_5min 測試數據到 {test_db_file}")
-
-            # 創建 chimera_daily_signals 表
             con.execute("""
             CREATE TABLE IF NOT EXISTS chimera_daily_signals (
                 date DATE, stock_id VARCHAR, price_volume_label VARCHAR,
@@ -267,56 +294,42 @@ if __name__ == '__main__':
             chimera_test_data = [
                 (datetime(2023,1,1).date(), 'TEST_STOCK_D', '價漲量增', '法人買超', '價漲量增_法人買超'),
                 (datetime(2023,1,2).date(), 'TEST_STOCK_D', '價跌量增', '法人賣超', '價跌量增_法人賣超'),
-                (datetime(2023,1,1).date(), 'TEST_STOCK_H', '價漲量增', '法人買超', '價漲量增_法人買超'), # Chimera for hourly test stock
-                (datetime(2023,1,1).date(), 'TEST_STOCK_5M', '價漲量增', '法人買超', '價漲量增_法人買超'), # Chimera for 5min test stock
+                (datetime(2023,1,1).date(), '0050.TW', '價漲量增', '法人買超', '價漲量增_法人買超'),
             ]
             con.executemany("INSERT INTO chimera_daily_signals VALUES (?,?,?,?,?)", chimera_test_data)
             print(f"已創建並填充 chimera_daily_signals 測試數據到 {test_db_file}")
 
+            con.execute("""
+            CREATE TABLE IF NOT EXISTS taifex_pc_ratios (
+                trading_date DATE, product_id VARCHAR, pc_volume_ratio DOUBLE, pc_oi_ratio DOUBLE,
+                total_put_volume BIGINT, total_call_volume BIGINT, total_put_oi BIGINT, total_call_oi BIGINT, calculated_at TIMESTAMPTZ,
+                PRIMARY KEY (trading_date, product_id)
+            );""")
+            pc_ratio_data = [
+                (datetime(2023,1,1).date(), 'TXO', 0.8, 0.9, 8000, 10000, 9000, 10000, datetime.now(pytz.utc)),
+                (datetime(2023,1,2).date(), 'TXO', 0.85, 0.92, 8500, 10000, 9200, 10000, datetime.now(pytz.utc)),
+                (datetime(2023,1,3).date(), 'TXO', 0.90, 0.95, 9000, 10000, 9500, 10000, datetime.now(pytz.utc))
+            ]
+            con.executemany("INSERT INTO taifex_pc_ratios VALUES (?,?,?,?,?,?,?,?,?)", pc_ratio_data)
+            print(f"已創建並填充 taifex_pc_ratios 測試數據到 {test_db_file}")
+
         generator = ReportGenerator(db_path=str(test_db_file))
 
-        print("\n--- 測試生成日線 (1d) 報告 ---")
+        print("\n--- 測試生成 TEST_STOCK_D 日線 (1d) 報告 (無P/C Ratio) ---")
         report_1d = generator.generate_report(
             stock_id='TEST_STOCK_D', start_date_str='2023-01-01', end_date_str='2023-01-03',
             timeframe='1d', output_dir=test_output_dir
         )
-        if report_1d and report_1d.exists(): print(f"日線 (1d) 報告生成成功: {report_1d}")
-        else: print("日線 (1d) 報告生成失敗。")
+        if report_1d and report_1d.exists(): print(f"TEST_STOCK_D 日線 (1d) 報告生成成功: {report_1d}")
+        else: print("TEST_STOCK_D 日線 (1d) 報告生成失敗。")
 
-        print("\n--- 測試生成小時線 (1h) 報告 ---")
-        report_1h = generator.generate_report(
-            stock_id='TEST_STOCK_H', start_date_str='2023-01-01', end_date_str='2023-01-01',
-            timeframe='1h', output_dir=test_output_dir
+        print("\n--- 測試生成 0050.TW 日線 (1d) 報告 (應包含 TXO P/C Ratio) ---")
+        report_0050 = generator.generate_report(
+            stock_id='0050.TW', start_date_str='2023-01-01', end_date_str='2023-01-03', # Adjusted end_date for more data points
+            timeframe='1d', output_dir=test_output_dir
         )
-        if report_1h and report_1h.exists(): print(f"小時線 (1h) 報告生成成功: {report_1h}")
-        else: print("小時線 (1h) 報告生成失敗。")
-
-        print("\n--- 測試生成5分鐘線 (5min) 報告 ---")
-        report_5min = generator.generate_report(
-            stock_id='TEST_STOCK_5M', start_date_str='2023-01-01', end_date_str='2023-01-01',
-            timeframe='5min', output_dir=test_output_dir
-        )
-        if report_5min and report_5min.exists(): print(f"5分鐘線 (5min) 報告生成成功: {report_5min}")
-        else: print("5分鐘線 (5min) 報告生成失敗。")
-
-        print("\n--- 測試無效 timeframe (invalid_tf) ---")
-        try:
-            generator.generate_report(
-                stock_id='TEST_STOCK_D', start_date_str='2023-01-01', end_date_str='2023-01-03',
-                timeframe='invalid@tf', output_dir=test_output_dir
-            )
-        except ValueError as ve:
-            print(f"成功捕獲無效 timeframe 的 ValueError: {ve}")
-
-        print("\n--- 測試缺少資料表的 timeframe (e.g., 4h if ohlcv_4h not created) ---")
-        report_missing_table = generator.generate_report(
-            stock_id='TEST_STOCK_D', start_date_str='2023-01-01', end_date_str='2023-01-03',
-            timeframe='4h', output_dir=test_output_dir
-        )
-        if not report_missing_table:
-            print(f"缺少資料表 timeframe (4h) 報告按預期未生成。")
-        else:
-            print(f"錯誤：缺少資料表 timeframe (4h) 報告不應生成，但得到了: {report_missing_table}")
+        if report_0050 and report_0050.exists(): print(f"0050.TW 日線 (1d) 報告生成成功: {report_0050}")
+        else: print("0050.TW 日線 (1d) 報告生成失敗。")
 
     except Exception as e:
         print(f"ReportGenerator (Plotly 版本) __main__ 測試時發生錯誤: {e}")

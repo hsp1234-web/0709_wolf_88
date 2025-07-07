@@ -258,14 +258,27 @@ def main(args): # 修改這裡，讓 main 函數接受 args
             stock_ids=args.stock_ids
         )
 
+    # 新增：執行 TAIFEX P/C Ratio 分析
+    if args.run_taifex_pc_ratio:
+        from apps.feature_analyzer.analyzer import ChimeraAnalyzer # 確保已導入
+        print("\n準備執行 TAIFEX Put/Call Ratio 分析。")
+        # ChimeraAnalyzer 實例化時使用 args.analytics_mart_db
+        analyzer_instance = ChimeraAnalyzer(db_path=Path(args.analytics_mart_db))
+        analyzer_instance.run_taifex_pc_ratio_analysis(
+            start_date=args.start_date, # 可以共用 start/end date
+            end_date=args.end_date,
+            target_products=args.pc_ratio_products
+        )
+
     active_analyses = [
         args.run_correlation,
         args.run_quadrant,
         args.run_dealer_analysis,
-        args.run_chimera_analysis # 新增
+        args.run_chimera_analysis, # 新增
+        args.run_taifex_pc_ratio
     ]
     if not any(active_analyses):
-        print("未指定要執行的分析類型。請使用 --run_quadrant, --run_correlation, --run_dealer_analysis, 或 --run_chimera_analysis。")
+        print("未指定要執行的分析類型。請使用 --run_quadrant, --run_correlation, --run_dealer_analysis, --run_chimera_analysis, 或 --run_taifex_pc_ratio。")
 
 
 if __name__ == "__main__":
@@ -330,6 +343,8 @@ if __name__ == "__main__":
     parser.add_argument("--start_date", type=str, default=None, help="奇美拉分析開始日期 (YYYY-MM-DD)")
     parser.add_argument("--end_date", type=str, default=None, help="奇美拉分析結束日期 (YYYY-MM-DD)")
     parser.add_argument("--stock_ids", nargs="+", default=None, help="要進行奇美拉分析的股票代碼列表 (可選，預設處理所有)")
+    parser.add_argument("--run_taifex_pc_ratio", action="store_true", help="執行 TAIFEX Put/Call Ratio 分析")
+    parser.add_argument("--pc_ratio_products", nargs="+", default=['TXO'], help="要計算 P/C Ratio 的期交所選擇權商品代號列表 (預設: ['TXO'])")
 
 
     args = parser.parse_args()
@@ -338,9 +353,10 @@ if __name__ == "__main__":
         args.run_correlation,
         args.run_quadrant,
         args.run_dealer_analysis,
-        args.run_chimera_analysis
+        args.run_chimera_analysis,
+        args.run_taifex_pc_ratio # 新增
     ]
     if not any(active_analyses):
-        print("提醒：未指定明確的分析任務。請使用 --run_quadrant, --run_correlation, --run_dealer_analysis, 或 --run_chimera_analysis 來執行特定分析。")
+        print("提醒：未指定明確的分析任務。請使用 --run_quadrant, --run_correlation, --run_dealer_analysis, --run_chimera_analysis, 或 --run_taifex_pc_ratio 來執行特定分析。")
 
     main(args)

@@ -297,7 +297,12 @@ def main_pipeline(args): # 添加 args 參數
             "--start_date", chimera_start_date, # 新增 start_date
             "--end_date", today_date_str        # 新增 end_date (使用 today_date_str)
         ]
-        if not run_subprocess_command(cmd_feature_analyzer, "feature_analyzer (Chimera)"):
+        if args.run_taifex_pc_ratio:
+            cmd_feature_analyzer.append("--run_taifex_pc_ratio")
+            if args.pc_ratio_products:
+                cmd_feature_analyzer.extend(["--pc_ratio_products", *args.pc_ratio_products])
+
+        if not run_subprocess_command(cmd_feature_analyzer, "feature_analyzer (Chimera & P/C Ratio)"):
             pipeline_success = False
             logger.error("feature_analyzer (Chimera) 執行失敗，報告生成可能受影響。")
     else:
@@ -352,6 +357,22 @@ if __name__ == "__main__":
         metavar="STOCK_ID", # 提示用戶可以指定股票ID
         help="強制重新聚合時間序列數據。若不指定 STOCK_ID，則刷新所有目標股票。若指定 STOCK_ID (例如 '2330' 或 '2330.TW')，則僅刷新該股票。"
     )
+    # 新增參數給 feature_analyzer
+    parser.add_argument(
+        "--run_taifex_pc_ratio",
+        action="store_true",
+        help="執行 TAIFEX Put/Call Ratio 分析 (由 feature_analyzer 執行)。"
+    )
+    parser.add_argument(
+        "--pc_ratio_products",
+        nargs="+",
+        default=['TXO'], # 預設計算 TXO
+        help="要計算 P/C Ratio 的期交所選擇權商品代號列表 (例如 TXO TEO)。"
+    )
+    # 注意：run_pipeline.py 自身的 --stock_ids 控制 yfinance 和 institutional_analyzer 的目標
+    # 而 feature_analyzer 的 --stock_ids 目前是從 config.CHIMERA_ANALYSIS_STOCK_IDS 獲取
+    # 如果需要命令行完全控制，則 run_pipeline.py 也需要一個 --stock_ids_for_feature_analysis 參數
+
     args = parser.parse_args()
 
     # 檢查 config.py 是否能被正確加載和使用

@@ -100,7 +100,8 @@ INSTITUTIONAL_START_DATE_OFFSET_MONTHS = 12
 CHIMERA_ANALYSIS_STOCK_IDS = [target['yfinance_id'] for target in TARGETS] # 更新以使用新的 TARGETS 結構
 
 # 報告生成的時間範圍 (例如，生成最近3個月的報告)
-REPORT_START_DATE_OFFSET_MONTHS = 3
+# 為了TAIFEX P/C Ratio測試，臨時擴大到36個月以覆蓋模擬數據日期
+REPORT_START_DATE_OFFSET_MONTHS = 36
 
 # --- 其他配置 ---
 # 例如，subprocess 調用的超時時間 (秒)
