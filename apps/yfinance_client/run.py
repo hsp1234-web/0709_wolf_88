@@ -3,7 +3,20 @@
 
 import argparse
 from datetime import datetime
-from .client import fetch_daily_ohlcv, store_data_to_duckdb, MARKET_DATA_DB
+import sys # 導入 sys
+from pathlib import Path # 導入 Path
+
+# --- 路徑自我校正樣板碼 START ---
+try:
+    current_script_dir = Path(__file__).resolve().parent
+    project_root = current_script_dir.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+except Exception as e:
+    print(f"專案路徑校正時發生錯誤 (run.py in yfinance_client): {e}", file=sys.stderr)
+# --- 路徑自我校正樣板碼 END ---
+
+from apps.yfinance_client.client import fetch_daily_ohlcv, store_data_to_duckdb, MARKET_DATA_DB # 修改為絕對導入
 
 def main():
     parser = argparse.ArgumentParser(description="Yahoo Finance 數據抓取客戶端")
