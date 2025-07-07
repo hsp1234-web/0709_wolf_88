@@ -90,8 +90,9 @@ def main_pipeline(args): # 添加 args 參數
             logger.warning("##### 全局強制刷新已啟用! #####")
 
     # 讀取配置
-    logger.info(f"目標股票 (yfinance): {config.TARGET_STOCK_IDS_YFINANCE}")
-    logger.info(f"目標股票 (FinMind): {config.TARGET_STOCK_IDS_FINMIND}")
+    logger.info(f"統一目標列表 (TARGETS):")
+    for target_info in config.TARGETS:
+        logger.info(f"  - {target_info}")
     logger.info(f"分析資料庫: {config.ANALYTICS_DB_PATH}")
     logger.info(f"報告輸出目錄: {config.REPORTS_OUTPUT_DIR}")
     if not config.FINMIND_API_TOKEN:
@@ -125,32 +126,42 @@ def main_pipeline(args): # 添加 args 參數
     default_agg_start_date = (current_run_datetime - timedelta(days=agg_offset_years * 365))
 
     # 根據是否有 force_refresh_stock_id 決定聚合哪些股票及起始日期
-    stocks_to_aggregate_full_hist = []
+    targets_to_aggregate = []
 
     if args.force_refresh: # args 將從 main 函數傳入
         if isinstance(args.force_refresh, str): # 特定股票強制刷新
-            forced_stock_id = args.force_refresh.replace('.TW', '')
-            if forced_stock_id in config.TARGET_STOCK_IDS_FINMIND:
-                stocks_to_aggregate_full_hist = [forced_stock_id]
-                logger.info(f"強制刷新股票 {forced_stock_id}，將從 {default_agg_start_date.strftime('%Y-%m-%d %H:%M:%S')} 開始聚合。")
+            # force_refresh 可能帶 .TW 也可能不帶，需要同時檢查 'id' 和 'yfinance_id'
+            forced_stock_yfin_id = args.force_refresh if '.TW' in args.force_refresh else args.force_refresh + '.TW'
+            forced_stock_plain_id = args.force_refresh.replace('.TW', '')
+
+            found_target = None
+            for target in config.TARGETS:
+                if target['id'] == forced_stock_plain_id or target['yfinance_id'] == forced_stock_yfin_id:
+                    found_target = target
+                    break
+
+            if found_target:
+                targets_to_aggregate = [found_target]
+                logger.info(f"強制刷新股票 {found_target['name']} ({found_target['id']})，將從 {default_agg_start_date.strftime('%Y-%m-%d %H:%M:%S')} 開始聚合。")
             else:
-                logger.error(f"錯誤：--force-refresh 指定的股票ID '{args.force_refresh}' 不在 TARGET_STOCK_IDS_FINMIND 中。")
+                logger.error(f"錯誤：--force-refresh 指定的股票ID '{args.force_refresh}' 不在 config.TARGETS 中。")
                 pipeline_success = False
         else: # 全局強制刷新
-            stocks_to_aggregate_full_hist = config.TARGET_STOCK_IDS_FINMIND
+            targets_to_aggregate = config.TARGETS
             logger.info(f"全局強制刷新，所有目標股票將從 {default_agg_start_date.strftime('%Y-%m-%d %H:%M:%S')} 開始聚合。")
     else: # 非強制刷新，也處理所有股票，time_aggregator 內部冪等性會處理
-        stocks_to_aggregate_full_hist = config.TARGET_STOCK_IDS_FINMIND
+        targets_to_aggregate = config.TARGETS
         logger.info(f"標準執行，所有目標股票將從 {default_agg_start_date.strftime('%Y-%m-%d %H:%M:%S')} 開始聚合（由 time_aggregator 內部冪等性確保更新）。")
 
     if not pipeline_success:
         logger.warning("由於股票ID配置錯誤，跳過時間聚合階段。")
     else:
-        for stock_id_agg in stocks_to_aggregate_full_hist:
+        for target in targets_to_aggregate:
+            stock_id_for_agg = target['id'] # 使用不帶後綴的 ID for time_aggregator
             agg_start_date_str_for_cmd = default_agg_start_date.strftime("%Y-%m-%d %H:%M:%S")
             cmd_time_aggregator = [
                 sys.executable, config.TIME_AGGREGATOR_RUN_PATH,
-                stock_id_agg,
+                stock_id_for_agg, # 傳遞 'id'
                 agg_start_date_str_for_cmd,
                 aggregation_end_datetime_str,
                 "--source_db", config.SOURCE_TICKS_DB_PATH,
@@ -172,9 +183,13 @@ def main_pipeline(args): # 添加 args 參數
     # 1. yfinance_client (日線OHLCV)
     # 計算 yfinance 的起始日期
     yf_start_date = (current_run_datetime - timedelta(days=config.YFINANCE_START_DATE_OFFSET_YEARS * 365)).strftime("%Y-%m-%d")
+
+    # 從 config.TARGETS 提取所有 yfinance_id
+    yfinance_ids_for_client = [target['yfinance_id'] for target in config.TARGETS]
+
     cmd_yfinance = [
         sys.executable, config.YFINANCE_CLIENT_RUN_PATH,
-        "--symbols", *config.TARGET_STOCK_IDS_YFINANCE,
+        "--symbols", *yfinance_ids_for_client, # 傳遞 yfinance_id 列表
         "--start_date", yf_start_date,
         "--end_date", today_date_str, # 使用 today_date_str
         "--db_file", config.ANALYTICS_DB_PATH
@@ -189,10 +204,11 @@ def main_pipeline(args): # 添加 args 參數
     if config.FINMIND_API_TOKEN: # 只有在 Token 存在時才執行
         # 計算法人籌碼的起始日期
         inst_start_date = (current_run_datetime - timedelta(days=config.INSTITUTIONAL_START_DATE_OFFSET_MONTHS * 30)).strftime("%Y-%m-%d")
-        for stock_id_fm in config.TARGET_STOCK_IDS_FINMIND:
+        for target in config.TARGETS: # 遍歷 TARGETS
+            stock_id_for_fm = target['id'] # 使用 'id' (不帶 .TW)
             cmd_institutional = [
                 sys.executable, config.INSTITUTIONAL_ANALYZER_RUN_PATH,
-                "--stock-id", stock_id_fm,
+                "--stock-id", stock_id_for_fm,
                 "--start-date", inst_start_date,
                 "--end-date", today_date_str, # 使用 today_date_str
                 "--api-token", config.FINMIND_API_TOKEN,
@@ -212,11 +228,14 @@ def main_pipeline(args): # 添加 args 參數
         # Chimera 分析的日期範圍可以不指定，讓它處理資料庫中所有可用數據
         # 或者指定一個與報告期相關的範圍
         chimera_start_date = (current_run_datetime - timedelta(days=config.REPORT_START_DATE_OFFSET_MONTHS * 30)).strftime("%Y-%m-%d") # 與報告期一致
+
+        # config.CHIMERA_ANALYSIS_STOCK_IDS 已經在 config.py 中從 TARGETS 更新，所以這裡保持不變
+        # 它會是 yfinance_id 的列表: [target['yfinance_id'] for target in TARGETS]
         cmd_feature_analyzer = [
             sys.executable, config.FEATURE_ANALYZER_RUN_PATH,
             "--run_chimera_analysis",
             "--analytics_mart_db", config.ANALYTICS_DB_PATH,
-            "--stock_ids", *config.CHIMERA_ANALYSIS_STOCK_IDS, # 使用 yfinance ID 列表
+            "--stock_ids", *config.CHIMERA_ANALYSIS_STOCK_IDS, # 應已是 yfinance_id 列表
             "--start_date", chimera_start_date, # 新增 start_date
             "--end_date", today_date_str        # 新增 end_date (使用 today_date_str)
         ]
@@ -234,10 +253,11 @@ def main_pipeline(args): # 添加 args 參數
     if pipeline_success:
         report_start_date = (current_run_datetime - timedelta(days=config.REPORT_START_DATE_OFFSET_MONTHS * 30)).strftime("%Y-%m-%d")
         default_report_timeframe = "1d" # 可配置或遍歷
-        for stock_id_yf_report in config.TARGET_STOCK_IDS_YFINANCE:
+        for target in config.TARGETS: # 遍歷 TARGETS
+            stock_id_for_report = target['yfinance_id'] # 使用 'yfinance_id'
             cmd_report_generator = [
                 sys.executable, config.REPORT_GENERATOR_RUN_PATH,
-                "--stock-id", stock_id_yf_report,
+                "--stock-id", stock_id_for_report,
                 "--start-date", report_start_date,
                 "--end-date", today_date_str, # 使用 today_date_str
                 "--db-path", config.ANALYTICS_DB_PATH,

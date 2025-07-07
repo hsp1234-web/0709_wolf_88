@@ -34,26 +34,30 @@ class ReportGenerator:
         ohlcv_df = None
         chimera_df = None
 
+        # 處理 stock_id 以符合內部 ohlcv_* 表格的 product_id 規範 (移除 .TW)
+        internal_stock_id_for_ohlcv = stock_id.replace(".TW", "") if isinstance(stock_id, str) and ".TW" in stock_id else stock_id
+        print(f"原始 stock_id (用於報告和 Chimera): '{stock_id}', 內部查詢 ohlcv 使用的 product_id: '{internal_stock_id_for_ohlcv}'")
+
         try:
             valid_timeframe = self._validate_timeframe(timeframe)
             ohlcv_table_name = f"ohlcv_{valid_timeframe}"
-            print(f"正在從資料表 '{ohlcv_table_name}' 讀取 {timeframe} OHLCV 數據...")
+            print(f"正在從資料表 '{ohlcv_table_name}' 讀取 {timeframe} OHLCV 數據 (product_id: {internal_stock_id_for_ohlcv})...")
 
             query_ohlcv = f"""
             SELECT timestamp, open, high, low, close, volume
             FROM {ohlcv_table_name}
-            WHERE product_id = $stock_id
+            WHERE product_id = $internal_stock_id_for_ohlcv
               AND timestamp >= CAST($start_date AS TIMESTAMP)
               AND timestamp <= CAST($end_date AS TIMESTAMP) + INTERVAL '1 day' - INTERVAL '1 second'
             ORDER BY timestamp;
             """
-            params_ohlcv = {'stock_id': stock_id, 'start_date': start_date_str, 'end_date': end_date_str}
+            params_ohlcv = {'internal_stock_id_for_ohlcv': internal_stock_id_for_ohlcv, 'start_date': start_date_str, 'end_date': end_date_str}
             ohlcv_df = con.execute(query_ohlcv, params_ohlcv).fetchdf()
 
             if ohlcv_df.empty:
-                print(f"未找到 {stock_id} 在 {start_date_str} 至 {end_date_str} ({timeframe} 週期) 的 OHLCV 數據。")
+                print(f"未找到 {internal_stock_id_for_ohlcv} (原始 {stock_id}) 在 {start_date_str} 至 {end_date_str} ({timeframe} 週期) 的 OHLCV 數據。")
                 return None, None
-            print(f"成功讀取 {len(ohlcv_df)} 筆 {stock_id} 的 {timeframe} OHLCV 數據。")
+            print(f"成功讀取 {len(ohlcv_df)} 筆 {internal_stock_id_for_ohlcv} (原始 {stock_id}) 的 {timeframe} OHLCV 數據。")
         except duckdb.CatalogException:
             print(f"錯誤：OHLCV 資料表 '{ohlcv_table_name}' (用於 timeframe '{timeframe}') 不存在於資料庫 {self.db_path} 中。")
             return None, None

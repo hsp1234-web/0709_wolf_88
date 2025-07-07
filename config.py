@@ -18,8 +18,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 #     {'yfinance_id': '2317.TW', 'finmind_id': '2317', 'name': 'Foxconn'},
 # ]
 # 目前先用簡單列表：
-TARGET_STOCK_IDS_YFINANCE = ['2330.TW', '2317.TW', '2454.TW', '0050.TW'] # yfinance 使用的ID
-TARGET_STOCK_IDS_FINMIND = [sid.replace('.TW', '') for sid in TARGET_STOCK_IDS_YFINANCE] # FinMind 使用的ID
+# TARGET_STOCK_IDS_YFINANCE = ['2330.TW', '2317.TW', '2454.TW', '0050.TW'] # yfinance 使用的ID
+# TARGET_STOCK_IDS_FINMIND = [sid.replace('.TW', '') for sid in TARGET_STOCK_IDS_YFINANCE] # FinMind 使用的ID
+
+# 全新的、統一的 TARGETS 列表
+TARGETS = [
+    {'id': '2330', 'yfinance_id': '2330.TW', 'name': '台積電'},
+    {'id': '2317', 'yfinance_id': '2317.TW', 'name': '鴻海'},
+    {'id': '2454', 'yfinance_id': '2454.TW', 'name': '聯發科'},
+    {'id': '0050', 'yfinance_id': '0050.TW', 'name': '元大台灣50'},
+]
 
 # --- 資料庫路徑 ---
 # 所有的分析結果和基礎數據都將存儲在這個 DuckDB 檔案中
@@ -70,7 +78,7 @@ YFINANCE_START_DATE_OFFSET_YEARS = 5
 INSTITUTIONAL_START_DATE_OFFSET_MONTHS = 12
 
 # 特徵分析 (Chimera) 的股票ID列表 (通常與 TARGET_STOCK_IDS_YFINANCE 一致)
-CHIMERA_ANALYSIS_STOCK_IDS = TARGET_STOCK_IDS_YFINANCE # 或者 TARGET_STOCK_IDS_FINMIND，取決於 feature_analyzer 內部如何處理 ID
+CHIMERA_ANALYSIS_STOCK_IDS = [target['yfinance_id'] for target in TARGETS] # 更新以使用新的 TARGETS 結構
 
 # 報告生成的時間範圍 (例如，生成最近3個月的報告)
 REPORT_START_DATE_OFFSET_MONTHS = 3
@@ -85,8 +93,11 @@ SUBPROCESS_TIMEOUT = 300 # 5 分鐘
 if __name__ == '__main__':
     # 打印配置以供檢查 (當直接運行此檔案時)
     print(f"專案根目錄: {PROJECT_ROOT}")
-    print(f"目標股票 (yfinance): {TARGET_STOCK_IDS_YFINANCE}")
-    print(f"目標股票 (FinMind): {TARGET_STOCK_IDS_FINMIND}")
+    # print(f"目標股票 (yfinance): {TARGET_STOCK_IDS_YFINANCE}") # 已廢除
+    # print(f"目標股票 (FinMind): {TARGET_STOCK_IDS_FINMIND}") # 已廢除
+    print(f"統一目標列表 (TARGETS):")
+    for target_info in TARGETS:
+        print(f"  - {target_info}")
     print(f"分析資料庫路徑: {ANALYTICS_DB_PATH}")
     print(f"報告輸出目錄: {REPORTS_OUTPUT_DIR}")
     print(f"日誌級別: {LOG_LEVEL_STR} ({LOG_LEVEL})")
