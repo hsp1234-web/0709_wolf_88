@@ -183,21 +183,94 @@ def analyze_features(analytics_db_path: Path):
         import traceback
         traceback.print_exc()
 
-def main():
-    parser = argparse.ArgumentParser(description="特徵分析儀：計算價格/量能變化四象限。")
-    parser.add_argument("--analytics_db", type=str, default=str(ANALYTICS_DB_PATH), help="分析結果資料庫路徑")
-    args = parser.parse_args()
+def main(args): # 修改這裡，讓 main 函數接受 args
+    # parser = argparse.ArgumentParser(description="特徵分析儀：計算價格/量能變化四象限。") # 解析器移到 if __name__ == "__main__":
+    # parser.add_argument("--analytics_db", type=str, default=str(ANALYTICS_DB_PATH), help="分析結果資料庫路徑")
+    # args = parser.parse_args() # 解析器移到 if __name__ == "__main__":
 
-    analytics_db_path = Path(args.analytics_db)
+    analytics_db_path = Path(args.analytics_db) # args 現在是傳入的
 
     # 確保 data 目錄存在 (如果 time_aggregator 未執行過)
     DEFAULT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    analyze_features(analytics_db_path)
+    # 根據參數選擇執行哪個分析
+    if args.run_correlation:
+        from .cross_market_analyzer import run_cross_market_correlation_analysis, CORE_ASSETS as CMA_CORE_ASSETS # 重新使用 CMA_CORE_ASSETS
+
+        assets_for_corr = args.correlation_assets if args.correlation_assets else CMA_CORE_ASSETS
+        window_for_corr = args.correlation_window if args.correlation_window else 30 # 匹配 cma 內部預設
+
+        print(f"準備執行跨市場相關性分析。")
+        run_cross_market_correlation_analysis(
+            assets_to_analyze=assets_for_corr,
+            window=window_for_corr,
+            market_db_path=args.market_data_db,
+            analytics_db_path=args.analytics_mart_db
+        )
+
+    if args.run_quadrant:
+        print("\n準備執行象限分析。")
+        # 舊的象限分析使用 --analytics_db 參數指定的路徑
+        analyze_features(analytics_db_path) # analytics_db_path 來自 args.analytics_db
+
+    if args.run_dealer_analysis:
+        from .dealer_position_analyzer import run_dealer_position_analysis # 只導入需要的
+        print(f"準備執行一級交易商持有量分析。")
+        run_dealer_position_analysis(
+            market_db_path=args.market_data_db, # 從 args 傳遞
+            analytics_db_path=args.analytics_mart_db # 從 args 傳遞
+        )
+
+    if not args.run_correlation and not args.run_quadrant and not args.run_dealer_analysis:
+        print("未指定要執行的分析類型。請使用 --run_correlation, --run_quadrant, 或 --run_dealer_analysis。")
+
 
 if __name__ == "__main__":
     # 設定 Pandas 以顯示所有欄位，方便調試
     pd.set_option('display.max_columns', None)
     pd.set_option('display.width', 1000)
     import numpy as np # numpy for np.select
-    main()
+
+    # 修改 ArgumentParser
+    parser = argparse.ArgumentParser(description="特徵分析儀：計算各種金融市場特徵。")
+    parser.add_argument(
+        "--market_data_db",
+        type=str,
+        default="market_data.duckdb", # 與各 client/analyzer 中的 DEFAULT 一致
+        help="來源市場數據資料庫路徑 (例如 market_data.duckdb)"
+    )
+    parser.add_argument(
+        "--analytics_mart_db",
+        type=str,
+        default="analytics_mart.duckdb", # 與各 analyzer 中的 DEFAULT 一致
+        help="目標分析結果資料庫路徑 (例如 analytics_mart.duckdb)"
+    )
+    # analytics_db 參數主要用於舊的象限分析，新的分析模組將使用 analytics_mart_db
+    # 為了兼容，保留 analytics_db，但新的分析優先使用 analytics_mart_db (如果它們不同)
+    # 或者，我們可以統一它們，讓 analytics_db 也指向 analytics_mart_db
+    # 這裡我們先假設 quadrant analysis 繼續用 --analytics_db (其內部預設為 ANALYTICS_DB_PATH)
+    # 而新的分析用 --analytics_mart_db
+    parser.add_argument("--analytics_db", type=str, default=str(ANALYTICS_DB_PATH), help="分析結果資料庫路徑 (主要用於舊的象限分析)")
+
+    parser.add_argument("--run_quadrant", action="store_true", help="執行價格/量能四象限分析")
+    parser.add_argument("--run_correlation", action="store_true", help="執行跨市場相關性分析")
+    parser.add_argument(
+        "--correlation_assets",
+        nargs="+",
+        default=None, # 將在 run_cross_market_correlation_analysis 中使用其內部 CORE_ASSETS 作為預設
+        help="用於相關性分析的資產代碼列表 (預設: cross_market_analyzer 中的 CORE_ASSETS)"
+    )
+    parser.add_argument(
+        "--correlation_window",
+        type=int,
+        default=None, # 將在 run_cross_market_correlation_analysis 中使用其內部預設窗口 (30)
+        help="相關性分析的滾動窗口大小 (預設: 30)"
+    )
+    parser.add_argument("--run_dealer_analysis", action="store_true", help="執行一級交易商持有量分析")
+
+    args = parser.parse_args()
+
+    if not args.run_quadrant and not args.run_correlation and not args.run_dealer_analysis:
+        print("提醒：未指定明確的分析任務。請使用 --run_quadrant, --run_correlation, 或 --run_dealer_analysis 來執行特定分析。")
+
+    main(args)
