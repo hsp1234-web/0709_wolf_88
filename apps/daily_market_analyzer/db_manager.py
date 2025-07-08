@@ -89,6 +89,20 @@ class DBManager:
                 con.execute(create_factor_store_sql)
                 print(f"INFO: 資料表 'FactorStore_Daily' 已在資料庫 '{self.db_path}' 中準備就緒。")
 
+                # 建立 StrategicDashboard_Daily 資料表
+                create_strategic_dashboard_sql = f"""
+                CREATE TABLE IF NOT EXISTS StrategicDashboard_Daily (
+                    date DATE NOT NULL,
+                    indicator_name TEXT NOT NULL,
+                    signal TEXT,
+                    value REAL,
+                    commentary TEXT,
+                    PRIMARY KEY (date, indicator_name)
+                );
+                """
+                con.execute(create_strategic_dashboard_sql)
+                print(f"INFO: 資料表 'StrategicDashboard_Daily' 已在資料庫 '{self.db_path}' 中準備就緒。")
+
         except Exception as e:
             print(f"錯誤: 資料庫設定失敗 (_setup_database): {e}")
             raise
@@ -503,6 +517,78 @@ class DBManager:
         except Exception as e:
             print(f"錯誤 (DBManager - insert_factors): 寫入因子數據到資料表 '{table_name}' 失敗: {e}")
             print(f"DEBUG: 嘗試寫入的因子 DataFrame (前5行):")
+            print(df_to_insert.head())
+            df_to_insert.info()
+
+    def insert_strategic_signals(self, signals_df: pd.DataFrame):
+        """
+        將符合 StrategicDashboard_Daily 結構的信號 DataFrame 寫入資料庫。
+        使用 INSERT OR REPLACE INTO (UPSERT) 語義。
+
+        Args:
+            signals_df (pd.DataFrame): 包含戰略信號數據的 DataFrame。
+                                   必須包含欄位: 'date', 'indicator_name', 'signal', 'value', 'commentary'。
+                                   'date' 欄位應為 datetime.date 或可轉換為 YYYY-MM-DD 字串的類型。
+        """
+        if signals_df.empty:
+            print("INFO (DBManager - insert_strategic_signals): 傳入的信號 DataFrame 為空，無需寫入。")
+            return
+
+        df_to_insert = signals_df.copy()
+
+        required_cols = ['date', 'indicator_name', 'signal', 'value', 'commentary']
+        actual_cols = df_to_insert.columns.tolist()
+
+        # 檢查必要欄位，允許 commentary 為空但必須存在
+        missing_cols = [col for col in required_cols if col not in actual_cols]
+        if any(col not in actual_cols for col in ['date', 'indicator_name', 'signal', 'value']): # commentary 可以是空的
+            # 重新檢查，嚴格要求 'date', 'indicator_name', 'signal', 'value'
+            strict_required = ['date', 'indicator_name', 'signal', 'value']
+            missing_strict = [col for col in strict_required if col not in actual_cols]
+            if missing_strict:
+                print(f"錯誤 (DBManager - insert_strategic_signals): DataFrame 缺少核心必要欄位: {', '.join(missing_strict)}。無法寫入 StrategicDashboard_Daily。")
+                df_to_insert.info()
+                return
+
+        # 確保所有 required_cols 都存在，如果 commentary 不存在則添加它並填充空字串
+        for col in required_cols:
+            if col not in df_to_insert.columns:
+                df_to_insert[col] = "" if col == 'commentary' else pd.NA # 或 np.nan for value if appropriate
+
+        # 數據類型轉換與準備
+        try:
+            if pd.api.types.is_datetime64_any_dtype(df_to_insert['date']):
+                df_to_insert['date'] = df_to_insert['date'].dt.strftime('%Y-%m-%d')
+            elif not all(isinstance(d, str) for d in df_to_insert['date']):
+                df_to_insert['date'] = pd.to_datetime(df_to_insert['date']).dt.strftime('%Y-%m-%d')
+
+            df_to_insert['indicator_name'] = df_to_insert['indicator_name'].astype(str)
+            df_to_insert['signal'] = df_to_insert['signal'].astype(str) # signal 通常是 'RED', 'GREEN', 'YELLOW'
+            # value 允許是 NA (例如某些指標可能沒有數值，只有信號)
+            df_to_insert['value'] = pd.to_numeric(df_to_insert['value'], errors='coerce') # coerce 會將無法轉換的變為 NaT/NaN
+            df_to_insert['commentary'] = df_to_insert['commentary'].astype(str).fillna('') # 確保是字串且 NaN 轉為空字串
+
+        except Exception as e:
+            print(f"錯誤 (DBManager - insert_strategic_signals): DataFrame 數據類型轉換失敗: {e}")
+            df_to_insert.info()
+            return
+
+        table_name = "StrategicDashboard_Daily"
+        try:
+            with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
+                con.register('df_signals_to_insert', df_to_insert[required_cols])
+                columns_str = ", ".join(required_cols)
+                upsert_sql = f"INSERT OR REPLACE INTO {table_name} ({columns_str}) SELECT {columns_str} FROM df_signals_to_insert"
+                con.execute(upsert_sql)
+                con.unregister('df_signals_to_insert')
+
+            num_rows = len(df_to_insert)
+            unique_indicators = df_to_insert['indicator_name'].nunique()
+            print(f"INFO (DBManager - insert_strategic_signals): 成功將 {num_rows} 筆戰略信號數據 ({unique_indicators} 個指標名) 寫入/更新至 '{table_name}'。")
+
+        except Exception as e:
+            print(f"錯誤 (DBManager - insert_strategic_signals): 寫入戰略信號數據到資料表 '{table_name}' 失敗: {e}")
+            print(f"DEBUG: 嘗試寫入的戰略信號 DataFrame (前5行):")
             print(df_to_insert.head())
             df_to_insert.info()
 
