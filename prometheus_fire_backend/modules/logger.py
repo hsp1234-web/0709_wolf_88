@@ -131,10 +131,12 @@ class LogManager:
             details_json: Optional[str] = None
             if details:
                 try:
-                    details_json = json.dumps(details)
-                except TypeError as te:
-                    module_logger.warning(f"無法將日誌詳情序列化為 JSON: {te}. 詳情: {details}")
-                    details_json = json.dumps({"error": "Serialization failed", "original_details": str(details)})
+                    # 加入 default=str 轉換，更穩健地處理無法序列化的對象
+                    details_json = json.dumps(details, default=str)
+                except TypeError as te: # 理論上 default=str 後，這個 TypeError 較難觸發，除非 str() 也失敗
+                    module_logger.warning(f"無法將日誌詳情序列化為 JSON，即使在 default=str 之後: {te}. 詳情: {details}")
+                    # 保留一個更明確的錯誤標記
+                    details_json = json.dumps({"error": "Serialization failed", "original_details_type": str(type(details)), "original_details_str": str(details)})
 
             sql = """
                 INSERT INTO system_logs

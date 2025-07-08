@@ -14,57 +14,61 @@ from prometheus_fire_backend.modules.orchestrator import MISSION_STATUS_SUCCESS 
 # --- 設定與常量 ---
 # 假設專案根目錄是此測試檔案的再上兩層 (tests -> prometheus_fire_backend -> project_root)
 PROJECT_BASE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-DATA_LAKE_PATH = os.path.join(PROJECT_BASE_PATH, "data_lake")
-MOCK_DATA_PATH = os.path.join(PROJECT_BASE_PATH, "mock_data") # TaifexClient 會用到此路徑的模擬數據
+# DATA_LAKE_PATH 指向 data_lake/raw/taifex，因為這是 TaifexClient 儲存 Parquet 檔案的地方
+DATA_LAKE_RAW_TAIFEX_PATH = os.path.join(PROJECT_BASE_PATH, "data_lake", "raw", "taifex")
+# MOCK_DATA_PATH 仍然可以保留，以防某些舊的、未被此測試覆蓋的輔助功能可能仍在使用它
+MOCK_DATA_PATH = os.path.join(PROJECT_BASE_PATH, "mock_data")
 
 TEST_DATE_STR = "2025-07-08" # 使用與黃金模擬數據一致的日期
 TEST_DATETIME_OBJ = datetime.strptime(TEST_DATE_STR, "%Y-%m-%d")
 
 MAX_POLL_ATTEMPTS = 30  # 最多輪詢次數 (例如 30 次)
 POLL_INTERVAL = 0.2  # 輪詢間隔秒數 (例如 0.2 秒)
+# 引入 pandas 用於讀取 parquet 和比較 dataframe
+import pandas as pd
+import pandas.testing # 用於比較 DataFrame
 
 # --- 輔助函數 ---
-def get_expected_json_output(data_type: str, date_obj: datetime) -> list:
-    """
-    從 mock_data CSV 檔案生成預期的 JSON 輸出內容。
-    這模擬了 TaifexClient 獲取、解析和轉換數據後的結果。
-    """
-    # 實例化一個臨時的 TaifexClient 來使用其解析邏輯
-    # 注意：這裡的 data_lake_path 對生成預期結果不重要，但 mock_data_path 很重要
-    temp_client = TaifexClient(use_mock_data=True, mock_data_path=MOCK_DATA_PATH, data_lake_path="temp_test_lake")
+# get_expected_json_output 函數將被移除，因為我們直接比較 Parquet 檔案
 
-    if data_type == "institutional_investors":
-        expected_data = temp_client.fetch_institutional_investors(date_obj)
-    elif data_type == "pc_ratio":
-        expected_data = temp_client.fetch_pc_ratio(date_obj)
-    else:
-        raise ValueError(f"未知的測試數據類型: {data_type}")
-
-    if expected_data is None:
-        pytest.fail(f"無法從模擬數據為 {data_type} 生成預期輸出。檢查模擬檔案是否存在且 TaifexClient 解析是否正常。")
-    return expected_data
-
-def clean_data_lake_for_test(date_str: str, data_type: str):
-    """清理特定測試在 data_lake 中可能生成的檔案。"""
-    file_path = os.path.join(DATA_LAKE_PATH, date_str, f"{data_type}.json")
+def clean_data_lake_for_test(date_str: str, data_type: str, data_lake_base_path: str = DATA_LAKE_RAW_TAIFEX_PATH):
+    """清理特定測試在 data_lake 中可能生成的 Parquet 檔案。"""
+    # 檔案路徑現在是 data_lake/raw/taifex/<data_type>/<date_str>.parquet
+    file_path = os.path.join(data_lake_base_path, data_type, f"{date_str}.parquet")
     if os.path.exists(file_path):
         os.remove(file_path)
-    # 可選：如果目錄為空則刪除目錄
-    dir_path = os.path.join(DATA_LAKE_PATH, date_str)
-    if os.path.exists(dir_path) and not os.listdir(dir_path):
-        os.rmdir(dir_path)
+        print(f"已清理舊檔案: {file_path}")
+
+    # 可選：如果 <data_type> 目錄為空則刪除
+    data_type_dir = os.path.join(data_lake_base_path, data_type)
+    if os.path.exists(data_type_dir) and not os.listdir(data_type_dir):
+        try:
+            os.rmdir(data_type_dir)
+            print(f"已清理空目錄: {data_type_dir}")
+        except OSError as e:
+            print(f"清理目錄 {data_type_dir} 失敗: {e}") # 可能因為非空或權限問題
 
 @pytest.fixture(autouse=True)
-def ensure_mock_data_exists():
-    """確保執行測試所需的模擬數據檔案存在。"""
-    if not os.path.exists(MOCK_DATA_PATH):
-        pytest.fail(f"測試前置失敗：模擬數據目錄 {MOCK_DATA_PATH} 不存在。請先運行之前的步驟生成模擬數據。")
-    if not os.path.exists(os.path.join(MOCK_DATA_PATH, "institutional_investors.csv")):
-        pytest.fail(f"測試前置失敗：{MOCK_DATA_PATH}/institutional_investors.csv 不存在。")
-    if not os.path.exists(os.path.join(MOCK_DATA_PATH, "pc_ratio.csv")):
-        pytest.fail(f"測試前置失敗：{MOCK_DATA_PATH}/pc_ratio.csv 不存在。")
-    # 確保 data_lake 目錄存在，因為 Orchestrator 和 TaifexClient 會嘗試寫入
-    os.makedirs(DATA_LAKE_PATH, exist_ok=True)
+def ensure_data_lake_path_exists():
+    """確保執行測試所需的 data_lake 基本路徑存在。"""
+    # 我們需要確保 DATA_LAKE_RAW_TAIFEX_PATH 下的 institutional_investors 和 pc_ratio 子目錄存在
+    # 因為 TaifexClient._save_to_data_lake 會預期這些目錄
+    os.makedirs(os.path.join(DATA_LAKE_RAW_TAIFEX_PATH, "institutional_investors"), exist_ok=True)
+    os.makedirs(os.path.join(DATA_LAKE_RAW_TAIFEX_PATH, "pc_ratio"), exist_ok=True)
+    print(f"確保 Data Lake 目錄結構存在於: {DATA_LAKE_RAW_TAIFEX_PATH}")
+
+# --- 定義模擬 CSV 內容 ---
+MOCK_INVESTORS_CSV_CONTENT = (
+    "日期,身份別,多方交易口數,多方交易契約金額(百萬元),空方交易口數,空方交易契約金額(百萬元),多空交易口數淨額,多空交易契約金額淨額(百萬元),多方未平倉口數,多方未平倉契約金額(百萬元),空方未平倉口數,空方未平倉契約金額(百萬元),多空未平倉口數淨額,多空未平倉契約金額淨額(百萬元)\n"
+    f"{TEST_DATE_STR.replace('-', '/')},自營商,266543,51886,240474,51465,26069,421,302016,101867,183199,43319,118817,58548\n"
+    f"{TEST_DATE_STR.replace('-', '/')},投信,1357,3511,2647,8580,-1290,-5069,55561,213816,14379,57387,41182,156429\n"
+    f"{TEST_DATE_STR.replace('-', '/')},外資及陸資,442679,367852,424911,334839,17768,33013,154210,139387,538032,416068,-383822,-276681\n"
+)
+
+MOCK_PC_RATIO_CSV_CONTENT = (
+    "日期,賣權成交量,買權成交量,買賣權成交量比率%,賣權未平倉量,買權未平倉量,買賣權未平倉量比率%\n"
+    f"{TEST_DATE_STR.replace('-', '/')},341931,385728,88.65,161864,150408,107.62,\n"
+)
 
 
 # --- 端到端測試 ---
@@ -73,27 +77,46 @@ async def test_fetch_taifex_e2e(async_client: httpx.AsyncClient):
     """
     端到端整合測試：
     1. 清理 data_lake (特定檔案)。
-    2. 通過 API 觸發 fetch_taifex 任務 (institutional_investors)。
+    2. 通過 API 觸發 fetch_taifex 任務 (institutional_investors)，使用模擬數據。
     3. 輪詢任務狀態直至成功。
-    4. 驗證 data_lake 中的 JSON 檔案是否已生成且內容正確。
+    4. 驗證 data_lake 中的 Parquet 檔案是否已生成且（可選地）內容符合預期。
     5. 對 pc_ratio 重複此過程。
     """
+    # 更新測試案例以包含 use_mock 和 mock_data
     test_cases = [
-        {"data_type": "institutional_investors", "params": {"type": "fetch_taifex", "data_type": "institutional_investors", "date": TEST_DATE_STR}},
-        {"data_type": "pc_ratio", "params": {"type": "fetch_taifex", "data_type": "pc_ratio", "date": TEST_DATE_STR}},
+        {
+            "data_type": "institutional_investors",
+            "params": {
+                "type": "fetch_taifex",
+                "date": TEST_DATE_STR,
+                "data_types": ["institutional_investors"], # 使用列表
+                "use_mock": True,
+                "mock_data": {"institutional_investors_csv": MOCK_INVESTORS_CSV_CONTENT}
+            }
+        },
+        {
+            "data_type": "pc_ratio",
+            "params": {
+                "type": "fetch_taifex",
+                "date": TEST_DATE_STR,
+                "data_types": ["pc_ratio"], # 使用列表
+                "use_mock": True,
+                "mock_data": {"pc_ratio_csv": MOCK_PC_RATIO_CSV_CONTENT}
+            }
+        },
     ]
 
     for case in test_cases:
         data_type_to_fetch = case["data_type"]
-        mission_api_params = case["params"]
+        mission_api_params = case["params"] # mission_api_params 現在已包含 use_mock 和 mock_data
 
         # 1. 清理 data_lake 中可能存在的舊檔案
-        clean_data_lake_for_test(TEST_DATE_STR, data_type_to_fetch)
-        print(f"\n[測試案例: {data_type_to_fetch}] 清理完成，準備發送 API 請求...")
+        clean_data_lake_for_test(TEST_DATE_STR, data_type_to_fetch) # 它會清理 .parquet
+        print(f"\n[測試案例: {data_type_to_fetch}] 清理完成，準備發送 API 請求: {mission_api_params}")
 
         # 2. 發送 API 請求以啟動任務
         response = await async_client.post("/api/v1/start_mission", json=mission_api_params)
-        assert response.status_code == 200, f"啟動任務 API 請求失敗: {response.text}"
+        assert response.status_code == 200, f"啟動任務 API 請求失敗 ({data_type_to_fetch}): {response.text}"
         response_json = response.json()
         mission_id = response_json.get("mission_id")
         assert mission_id, "API 回應中未找到 mission_id"
@@ -123,22 +146,30 @@ async def test_fetch_taifex_e2e(async_client: httpx.AsyncClient):
         assert mission_completed_successfully, f"任務 {mission_id} 在 {MAX_POLL_ATTEMPTS * POLL_INTERVAL} 秒內未完成。"
         print(f"[測試案例: {data_type_to_fetch}] 任務 {mission_id} 已成功完成。")
 
-        # 4. 驗證 data_lake 中的檔案和內容
-        expected_file_path = os.path.join(DATA_LAKE_PATH, TEST_DATE_STR, f"{data_type_to_fetch}.json")
-        assert os.path.exists(expected_file_path), f"預期的數據檔案 {expected_file_path} 未在 data_lake 中生成。"
-        print(f"[測試案例: {data_type_to_fetch}] 預期檔案 {expected_file_path} 已生成。")
+        # 4. 驗證 data_lake 中的 Parquet 檔案與黃金標準檔案是否一致
+        generated_file_name = f"{TEST_DATE_STR}.parquet"
+        actual_file_path = os.path.join(DATA_LAKE_RAW_TAIFEX_PATH, data_type_to_fetch, generated_file_name)
 
-        with open(expected_file_path, "r", encoding="utf-8") as f:
-            generated_json_content = json.load(f)
+        golden_fixture_filename = f"golden_{data_type_to_fetch}_{TEST_DATE_STR}.parquet"
+        expected_file_path = os.path.join(PROJECT_BASE_PATH, "prometheus_fire_backend", "tests", "fixtures", golden_fixture_filename)
 
-        expected_json_content = get_expected_json_output(data_type_to_fetch, TEST_DATETIME_OBJ)
+        assert os.path.exists(actual_file_path), f"實際生成的數據檔案 {actual_file_path} 未在 data_lake 中生成。"
+        print(f"[測試案例: {data_type_to_fetch}] 實際檔案 {actual_file_path} 已生成。")
+        assert os.path.exists(expected_file_path), f"黃金標準檔案 {expected_file_path} 未找到。請先生成。"
+        print(f"[測試案例: {data_type_to_fetch}] 黃金標準檔案 {expected_file_path} 已找到。")
 
-        # 比較生成的 JSON 和預期的 JSON
-        # 注意：順序可能重要，取決於 TaifexClient 如何生成列表。
-        # 如果 TaifexClient 的輸出順序是固定的，直接比較列表即可。
-        assert generated_json_content == expected_json_content, \
-            f"生成的 JSON 內容與預期不符。\n預期: {expected_json_content}\n實際: {generated_json_content}"
-        print(f"[測試案例: {data_type_to_fetch}] 檔案內容驗證成功！")
+        try:
+            actual_df = pd.read_parquet(actual_file_path)
+            expected_df = pd.read_parquet(expected_file_path)
+        except Exception as e:
+            pytest.fail(f"讀取 Parquet 檔案時發生錯誤: {e}")
+
+        # 比較 DataFrame
+        # check_dtype=False 因為從 CSV轉換過來的類型可能與直接構造的 Parquet 略有差異，但內容應一致
+        # 如果TaifexClient內部有嚴格的類型轉換，可以設為True
+        # 對於某些浮點數比較，可能需要設定 rtol 或 atol
+        pandas.testing.assert_frame_equal(actual_df, expected_df, check_dtype=True) # 先嘗試嚴格比較
+        print(f"[測試案例: {data_type_to_fetch}] Parquet 檔案內容驗證成功！")
 
         # 可選：測試後清理
         # clean_data_lake_for_test(TEST_DATE_STR, data_type_to_fetch)

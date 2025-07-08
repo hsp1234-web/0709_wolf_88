@@ -7,7 +7,7 @@ import os # 用於推斷 project_base_path
 
 from prometheus_fire_backend.modules.logger import LogManager
 from prometheus_fire_backend.modules.orchestrator import MainOrchestrator # 匯入 MainOrchestrator
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List # <--- 加入 List
 
 # --- 全局變數與設定 ---
 LOG_DB_PATH = "logs/api_logs.sqlite"
@@ -79,8 +79,16 @@ class MissionParameters(BaseModel):
     """
     type: str = Field(..., description="任務類型，例如 'fetch_taifex'。")
     # 針對 fetch_taifex 的特定參數 (可選，取決於任務類型)
-    data_type: Optional[str] = Field(None, description="數據類型，例如 'institutional_investors' 或 'pc_ratio'。")
+    data_type: Optional[str] = Field(None, description="數據類型，例如 'institutional_investors' 或 'pc_ratio'。") # 將在 Orchestrator 中組合成 list
     date: Optional[str] = Field(None, description="目標日期，格式 YYYY-MM-DD。")
+
+    # 新增 use_mock 參數
+    use_mock: bool = Field(True, description="是否使用模擬數據。True 表示使用模擬數據，False 表示嘗試真實數據獲取。")
+
+    # 允許多個 data_types
+    data_types: Optional[List[str]] = Field(None, description="要抓取的數據類型列表，例如 ['institutional_investors', 'pc_ratio']。如果提供，將覆蓋單一 data_type。")
+
+
     # 可以添加其他通用參數或特定任務的參數
     # extra_params: Optional[Dict[str, Any]] = Field(None, description="其他任務特定參數")
 

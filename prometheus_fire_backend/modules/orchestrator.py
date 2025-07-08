@@ -5,15 +5,22 @@ from typing import Any, Dict, Optional
 from datetime import datetime
 import os
 
-# 假設 TaifexClient 位於 src.taifex_data_fetcher.client
-# 為了讓 MainOrchestrator 能夠找到它，需要確保PYTHONPATH設定正確，
-# 或者使用相對路徑導入（如果結構允許）。
-# 這裡我們假設執行環境的PYTHONPATH包含了專案根目錄。
-from src.taifex_data_fetcher.client import TaifexClient
+# 引入 DataFetcher 和 HttpClient
+from .data_fetcher import DataFetcher
+from .http_client import HttpClient
+# from src.taifex_data_fetcher.client import TaifexClient # TaifexClient 現在由 DataFetcher 間接使用
 
 # 配置基本的日誌記錄器
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# logger = logging.getLogger(__name__) # 改為使用模組級 logger，避免全域 basicConfig 衝突
+orchestrator_logger = logging.getLogger(__name__) # 獨立的 logger
+if not orchestrator_logger.hasHandlers(): # 避免重複添加 handler
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    orchestrator_logger.addHandler(handler)
+    orchestrator_logger.setLevel(logging.INFO)
+
 
 # 任務狀態常量
 MISSION_STATUS_PENDING = "pending"
@@ -27,34 +34,30 @@ class MainOrchestrator:
     總調度器 (Main Orchestrator)。
     負責接收任務，編排 data_fetcher、data_fuser 等模組完成整個情報處理流程。
     """
-    # 簡單的內存任務狀態存儲 (用於模擬)
-    # 在生產環境中，這應該是一個持久化的存儲，如 Redis 或資料庫
     _mission_states: Dict[str, Dict[str, Any]] = {}
 
-    def __init__(self, data_fetcher: Optional[Any] = None, data_fuser: Optional[Any] = None, log_manager: Optional[Any] = None, base_path: Optional[str] = None):
+    def __init__(self, log_manager: Any, base_path: Optional[str] = None): # data_fetcher 和 data_fuser 移除，將在內部創建
         """
         初始化總調度器。
 
         Args:
-            data_fetcher: (可選) 通用資料獲取器實例。
-            data_fuser: (可選) 通用資料融合器實例。
-            log_manager: (可選) 日誌管理器實例。
-            base_path: (可選) 專案的根目錄路徑，用於解析相對路徑如 mock_data 和 data_lake。
-                       如果為 None，則嘗試使用當前工作目錄的上一層作為根目錄（假設 modules 在根目錄的子目錄中）。
+            log_manager: 日誌管理器實例。
+            base_path: (可選) 專案的根目錄路徑。
         """
-        self.data_fetcher = data_fetcher
-        self.data_fuser = data_fuser
         self.log_manager = log_manager
+        self.http_client = HttpClient() # 創建 HttpClient 實例
+
+        # 初始化 DataFetcher，傳入 log_manager 和 http_client
+        # execution_mode 可以先設為一個預設值，因為實際行為由 mission_params['use_mock'] 控制
+        self.data_fetcher = DataFetcher(log_manager=self.log_manager, http_client=self.http_client, execution_mode="ADAPTIVE")
+        self.data_fuser = None # 暫時未使用
 
         if base_path:
             self.project_base_path = base_path
         else:
-            # 假設 orchestrator.py 在 prometheus_fire_backend/modules/ 下
-            # 則 project_base_path 是 ../../ (相對於此檔案)
             self.project_base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-        logger.info(f"總調度器 (MainOrchestrator) 初始化完畢。專案根目錄設定為: {self.project_base_path}")
-        # 清理舊的任務狀態，以便測試時環境乾淨
+        orchestrator_logger.info(f"總調度器 (MainOrchestrator) 初始化完畢。專案根目錄設定為: {self.project_base_path}")
         MainOrchestrator._mission_states.clear()
 
 
@@ -74,148 +77,208 @@ class MainOrchestrator:
         mission_id = self._generate_mission_id()
 
         if not mission_params:
-            mission_params = {}
+            mission_params = {} # 確保 mission_params 是字典
 
-        logger.info(f"任務 {mission_id} 開始。參數: {mission_params}")
+        mission_id = self._generate_mission_id()
+
+        # 從 API 傳來的 params 中提取 use_mock，預設為 True
+        use_mock = mission_params.get("use_mock", True)
+        # 處理 data_types
+        data_types_param = mission_params.get("data_types")
+        single_data_type_param = mission_params.get("data_type")
+
+        final_data_types = []
+        if data_types_param: # 如果提供了 data_types 列表
+            final_data_types.extend(data_types_param)
+        elif single_data_type_param: # 否則，如果提供了單一 data_type
+            final_data_types.append(single_data_type_param)
+
+        # 如果都沒有提供，預設抓取兩者 (或根據需求調整)
+        if not final_data_types:
+            final_data_types = ["institutional_investors", "pc_ratio"]
+
+        # 更新 mission_params 以包含最終的 data_types 和 use_mock，以便 DataFetcher 使用
+        internal_mission_params = mission_params.copy() # 創建副本以避免修改原始 API 參數字典
+        internal_mission_params["data_types"] = final_data_types
+        internal_mission_params["use_mock"] = use_mock # 確保 use_mock 被傳遞
+
+        orchestrator_logger.info(f"任務 {mission_id} 開始。原始參數: {mission_params}, 處理後參數: {internal_mission_params}")
         MainOrchestrator._mission_states[mission_id] = {
             "status": MISSION_STATUS_PENDING,
-            "params": mission_params,
+            "params": internal_mission_params, # 儲存處理後的參數
             "message": "任務已接收，等待處理。",
-            "details": {}
+            "details": {},
+            "start_time": datetime.now().isoformat()
         }
 
         if self.log_manager:
-            self.log_manager.log_event("mission_started", {"mission_id": mission_id, "params": mission_params})
+            self.log_manager.log_event(
+                event_type="mission_started",
+                message=f"任務 {mission_id} 已啟動",
+                details={"mission_id": mission_id, "params": internal_mission_params},
+                source_module="MainOrchestrator",
+                mission_id=mission_id
+            )
 
-        mission_type = mission_params.get("type")
+        mission_type = internal_mission_params.get("type")
 
         if mission_type == "fetch_taifex":
-            self._execute_fetch_taifex_task(mission_id, mission_params)
-        # elif mission_type == "other_type":
-            # self._execute_other_task(mission_id, mission_params)
+            # 現在 _execute_fetch_taifex_task 將使用 data_fetcher
+            self._execute_fetch_taifex_task_with_datafetcher(mission_id, internal_mission_params)
         else:
-            logger.warning(f"任務 {mission_id}: 未知的任務類型 '{mission_type}' 或未提供任務類型。")
+            orchestrator_logger.warning(f"任務 {mission_id}: 未知的任務類型 '{mission_type}' 或未提供任務類型。")
             MainOrchestrator._mission_states[mission_id].update({
                 "status": MISSION_STATUS_FAILED,
-                "message": f"任務失敗：未知的任務類型 '{mission_type}' 或未提供任務類型。"
+                "message": f"任務失敗：未知的任務類型 '{mission_type}' 或未提供任務類型。",
+                "end_time": datetime.now().isoformat()
             })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} 因未知類型失敗。", details={"type": mission_type}, level="ERROR", mission_id=mission_id)
 
         return mission_id
 
-    def _execute_fetch_taifex_task(self, mission_id: str, params: Dict[str, Any]):
-        """執行獲取台指期數據的子任務。"""
-        MainOrchestrator._mission_states[mission_id]["status"] = MISSION_STATUS_PROCESSING
-        MainOrchestrator._mission_states[mission_id]["message"] = "正在處理 fetch_taifex 任務..."
-        logger.info(f"任務 {mission_id}: 正在執行 fetch_taifex 任務。")
+    def _execute_fetch_taifex_task_with_datafetcher(self, mission_id: str, params: Dict[str, Any]):
+        """使用 DataFetcher 執行獲取台指期數據的子任務。"""
+        MainOrchestrator._mission_states[mission_id].update({
+            "status": MISSION_STATUS_PROCESSING,
+            "message": "正在透過 DataFetcher 處理 fetch_taifex 任務..."
+        })
+        orchestrator_logger.info(f"任務 {mission_id}: 正在執行 fetch_taifex 任務 (DataFetcher)。參數: {params}")
 
-        data_type = params.get("data_type")
         date_str = params.get("date")
+        # data_types 已經在 start_mission 中處理好了，直接從 params 取用
+        data_types_to_fetch = params.get("data_types", [])
+        use_mock = params.get("use_mock", True) # 從 params 中獲取 use_mock
 
-        if not data_type or not date_str:
-            logger.error(f"任務 {mission_id}: fetch_taifex 任務缺少 'data_type' 或 'date' 參數。")
+        if not date_str:
+            orchestrator_logger.error(f"任務 {mission_id}: fetch_taifex 任務缺少 'date' 參數。")
             MainOrchestrator._mission_states[mission_id].update({
                 "status": MISSION_STATUS_FAILED,
-                "message": "任務失敗：fetch_taifex 任務缺少 'data_type' 或 'date' 參數。"
+                "message": "任務失敗：fetch_taifex 任務缺少 'date' 參數。",
+                "end_time": datetime.now().isoformat()
             })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} 因缺少日期參數失敗。", level="ERROR", mission_id=mission_id)
+            return
+
+        if not data_types_to_fetch:
+            orchestrator_logger.error(f"任務 {mission_id}: fetch_taifex 任務缺少 'data_types' 參數。")
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED,
+                "message": "任務失敗：fetch_taifex 任務缺少 'data_types' 參數。",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} 因缺少 data_types 參數失敗。", level="ERROR", mission_id=mission_id)
             return
 
         try:
-            target_date = datetime.strptime(date_str, "%Y-%m-%d")
-        except ValueError:
-            logger.error(f"任務 {mission_id}: 日期格式錯誤 '{date_str}'，應為 YYYY-MM-DD。")
-            MainOrchestrator._mission_states[mission_id].update({
-                "status": MISSION_STATUS_FAILED,
-                "message": f"任務失敗：日期格式錯誤 '{date_str}'。"
-            })
-            return
+            # DataFetcher 會處理模擬數據和真實數據的邏輯
+            # 我們需要將 API 傳來的 mission_params 轉換為 DataFetcher 的 mission_params
+            # DataFetcher 的 fetch_data_for_mission 預期 task_type, date, data_types, use_mock 等
+            fetcher_params = {
+                "task_type": "FETCH_TAIFEX", # DataFetcher 內部識別用
+                "date": date_str,
+                "data_types": data_types_to_fetch,
+                "use_mock": use_mock
+            }
 
-        # 設定 mock_data 和 data_lake 的路徑，相對於專案根目錄
-        mock_data_path = os.path.join(self.project_base_path, "mock_data")
-        data_lake_path = os.path.join(self.project_base_path, "data_lake")
-
-        # 確保 TaifexClient 使用的目錄存在
-        os.makedirs(mock_data_path, exist_ok=True) # 雖然 mock 檔案應該已存在
-        os.makedirs(data_lake_path, exist_ok=True)
+            # 如果 use_mock 為 True，且 API 請求中包含 mock_data (例如直接的 CSV 內容)
+            # 則需要將其傳遞給 DataFetcher
+            if use_mock and params.get("mock_data"):
+                 fetcher_params["mock_data"] = params["mock_data"]
 
 
-        try:
-            # 根據指令，總是使用 use_mock_data=True
-            taifex_client = TaifexClient(
-                use_mock_data=True,
-                mock_data_path=mock_data_path,
-                data_lake_path=data_lake_path
-            )
+            fetch_results = self.data_fetcher.fetch_data_for_mission(mission_id, fetcher_params)
 
-            fetched_data = None
-            if data_type == "institutional_investors":
-                logger.info(f"任務 {mission_id}: 正在獲取三大法人籌碼數據 ({date_str})。")
-                fetched_data = taifex_client.fetch_institutional_investors(target_date)
-            elif data_type == "pc_ratio":
-                logger.info(f"任務 {mission_id}: 正在獲取買賣權比率數據 ({date_str})。")
-                fetched_data = taifex_client.fetch_pc_ratio(target_date)
-            else:
-                logger.error(f"任務 {mission_id}: fetch_taifex 任務中未知的 data_type '{data_type}'。")
-                MainOrchestrator._mission_states[mission_id].update({
-                    "status": MISSION_STATUS_FAILED,
-                    "message": f"任務失敗：未知的 data_type '{data_type}'。"
-                })
-                return
+            # DataFetcher 返回的 results 是一個字典，鍵可能是 "taifex_institutional_investors" 或 "taifex_pc_ratio_error" 等
+            # 我們需要檢查這些結果
+            all_successful = True
+            errors_found = []
+            successful_fetches = {}
 
-            if fetched_data:
-                logger.info(f"任務 {mission_id}: 數據獲取成功，準備儲存。")
-                taifex_client.save_data(data=fetched_data, data_type=data_type, date=target_date)
+            for dt in data_types_to_fetch:
+                if f"taifex_{dt}" in fetch_results and fetch_results[f"taifex_{dt}"] is not None:
+                    # 假設 DataFetcher 已經將數據保存到 data_lake (TaifexClient 做的)
+                    # 我們可以從 TaifexClient 的 _save_to_data_lake 返回的路徑來填充 details
+                    # 但 DataFetcher 目前不直接返回檔案路徑，而是返回 DataFrame
+                    # 為了簡單起見，我們先假設成功，並記錄數據類型
+                    successful_fetches[dt] = f"Data for {dt} processed." # 或者可以記錄 DataFrame 的 shape
+                    orchestrator_logger.info(f"任務 {mission_id}: {dt} 數據已由 DataFetcher 處理。")
+                else:
+                    all_successful = False
+                    error_message = fetch_results.get(f"taifex_{dt}_error", f"獲取 {dt} 數據時發生未知問題。")
+                    errors_found.append(f"{dt}: {error_message}")
+                    orchestrator_logger.warning(f"任務 {mission_id}: DataFetcher 未能成功獲取 {dt} 數據。錯誤: {error_message}")
+
+            if all_successful and not errors_found:
                 MainOrchestrator._mission_states[mission_id].update({
                     "status": MISSION_STATUS_SUCCESS,
-                    "message": f"任務成功：{data_type} 數據已獲取並儲存。",
-                    "details": {"file_path": os.path.join(data_lake_path, target_date.strftime("%Y-%m-%d"), f"{data_type}.json")}
+                    "message": f"任務成功：所有請求的 Taifex 數據 ({', '.join(data_types_to_fetch)}) 已處理。",
+                    "details": {"processed_data_types": data_types_to_fetch, "fetch_results_summary": successful_fetches},
+                    "end_time": datetime.now().isoformat()
                 })
-                logger.info(f"任務 {mission_id}: {data_type} 數據已成功儲存。")
+                orchestrator_logger.info(f"任務 {mission_id} 成功完成。")
+                if self.log_manager:
+                    self.log_manager.log_event(event_type="mission_succeeded", message=f"任務 {mission_id} 成功。", details=successful_fetches, mission_id=mission_id)
             else:
-                logger.warning(f"任務 {mission_id}: 未能從 TaifexClient ({data_type}, {date_str}) 獲取到數據。")
+                error_summary = "; ".join(errors_found)
                 MainOrchestrator._mission_states[mission_id].update({
-                    "status": MISSION_STATUS_FAILED, # 或者一個更特定的狀態，如 "no_data_fetched"
-                    "message": f"任務警告/失敗：未能從 TaifexClient 獲取到 {data_type} 數據。"
+                    "status": MISSION_STATUS_FAILED,
+                    "message": f"任務部分或完全失敗：{error_summary}",
+                    "details": {"errors": errors_found, "successful_fetches": successful_fetches if successful_fetches else None},
+                    "end_time": datetime.now().isoformat()
                 })
+                orchestrator_logger.error(f"任務 {mission_id} 失敗或部分失敗。錯誤: {error_summary}")
+                if self.log_manager:
+                     self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} 失敗或部分失敗。", details={"errors": errors_found}, level="ERROR", mission_id=mission_id)
 
         except Exception as e:
-            logger.error(f"任務 {mission_id}: 執行 fetch_taifex 任務時發生錯誤: {e}", exc_info=True)
+            orchestrator_logger.error(f"任務 {mission_id}: 執行 DataFetcher 任務時發生嚴重錯誤: {e}", exc_info=True)
             MainOrchestrator._mission_states[mission_id].update({
                 "status": MISSION_STATUS_FAILED,
-                "message": f"任務失敗：執行時發生內部錯誤 - {str(e)}"
+                "message": f"任務失敗：執行 DataFetcher 時發生內部錯誤 - {str(e)}",
+                "end_time": datetime.now().isoformat()
             })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} 因 DataFetcher 執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
 
 
     def get_mission_status(self, mission_id: str) -> Dict[str, Any]:
         """
         獲取指定任務的狀態。
-
-        Args:
-            mission_id: 任務 ID。
-
-        Returns:
-            Dict[str, Any]: 包含任務狀態的字典。如果任務不存在，返回特定訊息。
         """
-        logger.info(f"查詢任務 {mission_id} 的狀態。")
+        orchestrator_logger.info(f"查詢任務 {mission_id} 的狀態。")
         if self.log_manager:
-            self.log_manager.log_event("status_queried", {"mission_id": mission_id})
-
+            self.log_manager.log_event(
+                event_type="status_queried",
+                message=f"查詢任務 {mission_id} 狀態",
+                details={"mission_id": mission_id},
+                source_module="MainOrchestrator",
+                mission_id=mission_id
+            )
         state = MainOrchestrator._mission_states.get(mission_id)
         if state:
             # 為了符合 MissionStatusResponse，我們需要確保返回的字典結構一致
             return {
                 "mission_id": mission_id,
-                "status": state.get("status", MISSION_STATUS_FAILED), # 提供預設值
-                "progress": 0.0, # 簡單模擬，可以根據狀態細化
+                "status": state.get("status", MISSION_STATUS_FAILED),
+                "progress": 1.0 if state.get("status") == MISSION_STATUS_SUCCESS else (0.5 if state.get("status") == MISSION_STATUS_PROCESSING else 0.0),
                 "message": state.get("message", "狀態訊息未提供。"),
-                "details": state.get("details", {})
+                "details": state.get("details", {}),
+                "start_time": state.get("start_time"), # 確保 start_time 被返回
+                "end_time": state.get("end_time") # 確保 end_time 被返回 (如果任務已結束)
             }
         else:
+            # 對於不存在的任務，也保持一致的返回結構
             return {
                 "mission_id": mission_id,
-                "status": MISSION_STATUS_FAILED, # 或者 "not_found"
+                "status": MISSION_STATUS_FAILED,
                 "progress": 0.0,
                 "message": "任務 ID 不存在。",
-                "details": {}
+                "details": {"error": "Mission ID not found."},
+                "start_time": None,
+                "end_time": datetime.now().isoformat() # 可以標記查詢時間為結束時間
             }
 
 
@@ -229,86 +292,78 @@ class MainOrchestrator:
 if __name__ == '__main__':
     # 簡易測試 (未來應移至 pytest)
     class MockLogManager:
-        def log_event(self, event_type: str, data: dict):
-            logger.info(f"[MockLogManager] 事件: {event_type}, 資料: {data}")
+        # def log_event(self, event_type: str, data: dict): # 舊簽名
+        #     orchestrator_logger.info(f"[MockLogManager] 事件: {event_type}, 資料: {data}")
 
-    logger.info("--- 測試 MainOrchestrator ---")
+        def log_event(self, event_type: str, message: Optional[str] = None, details: Optional[Dict[str, Any]] = None, source_module: Optional[str] = None, mission_id: Optional[str] = None, level: str = "INFO", raw_request: Optional[str] = None, raw_response: Optional[str] = None):
+            log_entry = f"[{level}] ({source_module or 'MockSource'}) Mission ({mission_id or 'N/A'}): {event_type} - {message}. Details: {details}"
+            print(log_entry)
+
+
+    orchestrator_logger.info("--- 測試 MainOrchestrator ---")
     mock_logger_instance = MockLogManager()
 
-    # 測試時，我們假設 mock_data 和 data_lake 目錄在專案根目錄下
-    # MainOrchestrator 會嘗試使用 ../../ 作為 base_path
-    # 執行此 __main__ 時，os.path.dirname(__file__) 是 prometheus_fire_backend/modules
-    # ../../ 應該指向專案根目錄
-
-    # 為了讓此處測試能找到 mock_data，我們需要確保 mock_data 目錄和其中的檔案存在
-    # 假設執行 `python -m prometheus_fire_backend.modules.orchestrator` 從根目錄
-    # 或者 `python prometheus_fire_backend/modules/orchestrator.py`
     current_script_path = os.path.dirname(os.path.abspath(__file__))
     project_root_for_test = os.path.abspath(os.path.join(current_script_path, "..", ".."))
 
-    MOCK_DATA_DIR_FOR_TEST = os.path.join(project_root_for_test, "mock_data")
-    DATA_LAKE_DIR_FOR_TEST = os.path.join(project_root_for_test, "data_lake")
-
-    os.makedirs(MOCK_DATA_DIR_FOR_TEST, exist_ok=True)
-    os.makedirs(DATA_LAKE_DIR_FOR_TEST, exist_ok=True)
-
-    # 創建虛擬的模擬數據檔案給 __main__ 測試用
-    dummy_institutional_investors_csv = os.path.join(MOCK_DATA_DIR_FOR_TEST, "institutional_investors.csv")
-    with open(dummy_institutional_investors_csv, "w", encoding="utf-8") as f:
-        f.write("日期,身份別,多方交易口數,多方交易契約金額(百萬元),空方交易口數,空方交易契約金額(百萬元),多空交易口數淨額,多空交易契約金額淨額(百萬元),多方未平倉口數,多方未平倉契約金額(百萬元),空方未平倉口數,空方未平倉契約金額(百萬元),多空未平倉口數淨額,多空未平倉契約金額淨額(百萬元)\n")
-        f.write("2025/07/08,自營商,1,1,1,1,0,0,1,1,1,1,0,0\n")
-
-    dummy_pc_ratio_csv = os.path.join(MOCK_DATA_DIR_FOR_TEST, "pc_ratio.csv")
-    with open(dummy_pc_ratio_csv, "w", encoding="utf-8") as f:
-        f.write("日期,賣權成交量,買權成交量,買賣權成交量比率%,賣權未平倉量,買權未平倉量,買賣權未平倉量比率%\n")
-        f.write("2025/07/08,100,100,100.00,100,100,100.00,\n")
-
-
     orchestrator = MainOrchestrator(log_manager=mock_logger_instance, base_path=project_root_for_test)
 
-    # 測試 fetch_taifex - institutional_investors
-    mission_params_inst = {
-        "type": "fetch_taifex",
-        "data_type": "institutional_investors",
-        "date": "2025-07-08"
+    # data_lake 目錄結構假設由 TaifexClient 內部處理
+    DATA_LAKE_TAIFEX_ROOT = os.path.join(project_root_for_test, "data_lake", "raw", "taifex")
+    os.makedirs(os.path.join(DATA_LAKE_TAIFEX_ROOT, "institutional_investors"), exist_ok=True)
+    os.makedirs(os.path.join(DATA_LAKE_TAIFEX_ROOT, "pc_ratio"), exist_ok=True)
+
+    mock_investors_csv_content = (
+        "日期,身份別,多方交易口數,多方交易契約金額(百萬元),空方交易口數,空方交易契約金額(百萬元),多空交易口數淨額,多空交易契約金額淨額(百萬元),多方未平倉口數,多方未平倉契約金額(百萬元),空方未平倉口數,空方未平倉契約金額(百萬元),多空未平倉口數淨額,多空未平倉契約金額淨額(百萬元)\n"
+        "2025/07/08,自營商,1,1,1,1,0,0,1,1,1,1,0,0\n"
+    )
+    mock_pc_ratio_csv_content = (
+        "日期,賣權成交量,買權成交量,買賣權成交量比率%,賣權未平倉量,買權未平倉量,買賣權未平倉量比率%\n"
+        "2025/07/08,100,100,100.00,100,100,100.00,\n"
+    )
+
+    print("\n--- 測試 1: fetch_taifex - institutional_investors (模擬) ---")
+    mission_params_inst_mock = {
+        "type": "fetch_taifex", "date": "2025-07-08", "data_types": ["institutional_investors"], "use_mock": True,
+        "mock_data": {"institutional_investors_csv": mock_investors_csv_content}
     }
-    mission_id_inst = orchestrator.start_mission(mission_params_inst)
-    print(f"啟動的 fetch_taifex (institutional_investors) 任務 ID: {mission_id_inst}")
-    status_inst = orchestrator.get_mission_status(mission_id_inst)
-    print(f"任務狀態 (institutional_investors): {status_inst}")
-    if status_inst.get("status") == MISSION_STATUS_SUCCESS:
-        print(f"  >> 檔案應儲存於: {status_inst.get('details', {}).get('file_path')}")
+    mission_id_inst_mock = orchestrator.start_mission(mission_params_inst_mock)
+    status_inst_mock = orchestrator.get_mission_status(mission_id_inst_mock)
+    print(f"任務 {mission_id_inst_mock} 狀態: {status_inst_mock}")
+    assert status_inst_mock.get("status") == MISSION_STATUS_SUCCESS
 
-
-    # 測試 fetch_taifex - pc_ratio
-    mission_params_pc = {
-        "type": "fetch_taifex",
-        "data_type": "pc_ratio",
-        "date": "2025-07-08"
+    print("\n--- 測試 2: fetch_taifex - pc_ratio (模擬) ---")
+    mission_params_pc_mock = {
+        "type": "fetch_taifex", "date": "2025-07-08", "data_types": ["pc_ratio"], "use_mock": True,
+        "mock_data": {"pc_ratio_csv": mock_pc_ratio_csv_content}
     }
-    mission_id_pc = orchestrator.start_mission(mission_params_pc)
-    print(f"啟動的 fetch_taifex (pc_ratio) 任務 ID: {mission_id_pc}")
-    status_pc = orchestrator.get_mission_status(mission_id_pc)
-    print(f"任務狀態 (pc_ratio): {status_pc}")
-    if status_pc.get("status") == MISSION_STATUS_SUCCESS:
-         print(f"  >> 檔案應儲存於: {status_pc.get('details', {}).get('file_path')}")
+    mission_id_pc_mock = orchestrator.start_mission(mission_params_pc_mock)
+    status_pc_mock = orchestrator.get_mission_status(mission_id_pc_mock)
+    print(f"任務 {mission_id_pc_mock} 狀態: {status_pc_mock}")
+    assert status_pc_mock.get("status") == MISSION_STATUS_SUCCESS
 
-    # 測試未知任務類型
-    mission_params_unknown = {"type": "unknown_type"}
-    mission_id_unknown = orchestrator.start_mission(mission_params_unknown)
-    print(f"啟動的未知類型任務 ID: {mission_id_unknown}")
-    status_unknown = orchestrator.get_mission_status(mission_id_unknown)
-    print(f"任務狀態 (unknown): {status_unknown}")
+    print("\n--- 測試 3: fetch_taifex - 真實數據模式 (預期 DataFetcher 內的 TaifexClient 嘗試網路請求) ---")
+    # 此測試在無網路或目標網站無數據時，TaifexClient 的 fetch_* 方法應返回 None，
+    # DataFetcher 應將此情況標記為錯誤。
+    mission_params_live = {
+        "type": "fetch_taifex", "date": "2030-01-01", # 未來日期，確保無數據
+        "data_types": ["institutional_investors"], "use_mock": False
+    }
+    mission_id_live = orchestrator.start_mission(mission_params_live)
+    status_live = orchestrator.get_mission_status(mission_id_live)
+    print(f"任務 {mission_id_live} 狀態: {status_live}")
+    assert status_live.get("status") == MISSION_STATUS_FAILED # 預期因無數據而失敗
 
-    # 測試不存在的任務
-    status_non_existent = orchestrator.get_mission_status("non_existent_id_123")
-    print(f"不存在的任務狀態: {status_non_existent}")
+    print("\n--- 測試 4: 缺少日期 ---")
+    mission_params_no_date = {"type": "fetch_taifex", "data_types": ["pc_ratio"], "use_mock": True}
+    mission_id_no_date = orchestrator.start_mission(mission_params_no_date)
+    status_no_date = orchestrator.get_mission_status(mission_id_no_date)
+    print(f"任務 {mission_id_no_date} 狀態: {status_no_date}")
+    assert status_no_date.get("status") == MISSION_STATUS_FAILED
+    assert "缺少 'date' 參數" in status_no_date.get("message", "")
 
-    logger.info("--- Orchestrator __main__ 測試完畢 ---")
-    # 清理創建的虛擬檔案和目錄 (可選)
-    # os.remove(dummy_institutional_investors_csv)
-    # os.remove(dummy_pc_ratio_csv)
-    # if not os.listdir(MOCK_DATA_DIR_FOR_TEST): os.rmdir(MOCK_DATA_DIR_FOR_TEST)
-    # if not os.listdir(DATA_LAKE_DIR_FOR_TEST): os.rmdir(DATA_LAKE_DIR_FOR_TEST)
-    # 注意：如果 data_lake 內已有其他測試產生的檔案，這裡的 rmdir 會失敗
-    # 更安全的做法是測試後清理特定的檔案，或在測試開始前確保 data_lake/2025-07-08 目錄是空的。
+    orchestrator_logger.info("--- Orchestrator __main__ 測試完畢 ---")
+
+    if hasattr(orchestrator, 'http_client') and orchestrator.http_client:
+        orchestrator.http_client.close()
+        orchestrator_logger.info("Orchestrator 的 HttpClient 已關閉。")

@@ -5,16 +5,13 @@ from typing import Any, Dict, List, Optional
 
 # Imports for TaifexClient and DataFetcher
 import pandas as pd
-import requests
-import time
+import requests # HttpClient 可能會拋出 requests.exceptions.RequestException
+import time # HttpClient 內部有延遲機制
 import os
 from io import StringIO # 用於將文字內容視為檔案進行讀取
+from .http_client import HttpClient # 引入新的 HttpClient
 
 # Module-level logger
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-# The above basicConfig should ideally be called only once at the application entry point.
-# For a module, it's better to just get the logger.
-# The handler and level setting for __main__ testing will be in the __main__ block.
 logger = logging.getLogger(__name__)
 
 
@@ -22,46 +19,21 @@ class TaifexClient:
     """
     臺灣期貨交易所 (TAIFEX) 資料客戶端。
     負責抓取三大法人未平倉量、P/C Ratio 等數據。
+    使用 HttpClient 進行網路請求。
     """
-    BASE_URL_FUT_CONTRACTS = "https://www.taifex.com.tw/cht/3/futContractsDate"
-    BASE_URL_PC_RATIO = "https://www.taifex.com.tw/cht/3/pcRatio"
-
-    DEFAULT_HEADERS = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-        'Accept-Language': 'en-US,en;q=0.9,zh-TW;q=0.8,zh;q=0.7',
-        'Connection': 'keep-alive',
-        'Referer': 'https://www.taifex.com.tw/cht/3/futDataWarehouse'
-    }
+    # 這些 URL 是 CSV 下載的 POST 目標
+    URL_FUT_CONTRACTS_CSV = "https://www.taifex.com.tw/cht/3/futContractsDateCsv"
+    URL_PC_RATIO_CSV = "https://www.taifex.com.tw/cht/3/pcRatioCsv"
 
     DATA_LAKE_ROOT = "data_lake/raw/taifex"
 
-    def __init__(self, log_manager: Any, request_delay: float = 1.0):
+    def __init__(self, log_manager: Any, http_client: HttpClient):
         self.log_manager = log_manager
-        self.request_delay = request_delay
-        self.session = requests.Session()
-        self.session.headers.update(self.DEFAULT_HEADERS)
-        logger.info("TaifexClient 初始化完畢。")
+        self.http_client = http_client
+        logger.info("TaifexClient 初始化完畢，使用 HttpClient。")
 
-    def _make_request(self, url: str, params: Optional[Dict[str, str]] = None, method: str = "GET", data: Optional[Dict[str, str]] = None) -> Optional[requests.Response]:
-        try:
-            time.sleep(self.request_delay)
-            if method.upper() == "POST":
-                response = self.session.post(url, params=params, data=data, timeout=15)
-            else:
-                response = self.session.get(url, params=params, timeout=15)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            logger.error(f"TaifexClient 請求失敗: {url}, 錯誤: {e}")
-            if self.log_manager:
-                self.log_manager.log_event(
-                    event_type="taifex_request_failed",
-                    message=f"請求 {url} 失敗。",
-                    details={"error": str(e), "url": url, "params": params, "method": method},
-                    level="ERROR", source_module="TaifexClient"
-                )
-            return None
+    # _make_request 方法不再需要，將直接使用 http_client
+    # def _make_request(...)
 
     def _save_to_data_lake(self, df: pd.DataFrame, data_type: str, date_str: str, source: str = "taifex") -> Optional[str]:
         dir_path = os.path.join(self.DATA_LAKE_ROOT, data_type)
@@ -83,104 +55,183 @@ class TaifexClient:
                 )
             return None
 
-    def fetch_institutional_investors(self, date_str: str, mock_csv_content: Optional[str] = None) -> Optional[pd.DataFrame]:
-        logger.info(f"開始抓取 {date_str} 的三大法人數據...")
+    def fetch_institutional_investors(self, date_str: str, use_mock_data: bool = True, mock_csv_content: Optional[str] = None) -> Optional[pd.DataFrame]:
+        logger.info(f"開始抓取 {date_str} 的三大法人數據... (use_mock_data: {use_mock_data})")
         taifex_date_str = date_str.replace('-', '/')
-        download_url = "https://www.taifex.com.tw/cht/3/futContractsDateCsv"
         form_data = {'queryType': '1', 'goDay': '', 'doQuery': '1', 'queryDate': taifex_date_str}
 
         csv_text_content: Optional[str] = None
-        if mock_csv_content is not None:
-            logger.info(f"使用提供的模擬 CSV 內容進行三大法人數據處理 ({date_str})。")
-            csv_text_content = mock_csv_content
-        else:
-            logger.warning(f"TaifexClient: 網路請求已禁用於 {date_str} 的三大法人數據抓取 (因無 mock_csv_content)。")
-            return None
+        source_type = "模擬"
+
+        if use_mock_data:
+            if mock_csv_content is not None:
+                logger.info(f"使用提供的模擬 CSV 內容進行三大法人數據處理 ({date_str})。")
+                csv_text_content = mock_csv_content
+            else:
+                # 如果 use_mock_data 為 True 但沒有 mock_csv_content，我們可以選擇返回 None 或記錄警告
+                logger.warning(f"TaifexClient: 要求使用模擬數據，但未提供 mock_csv_content for institutional_investors ({date_str})。")
+                return None
+        else: # 真實數據抓取
+            source_type = "網路"
+            logger.info(f"TaifexClient: 嘗試從網路抓取 {date_str} 的三大法人數據。URL: {self.URL_FUT_CONTRACTS_CSV}")
+            try:
+                # 期交所的 CSV 下載通常是 POST 請求，Content-Type 可能是 application/x-www-form-urlencoded
+                # HttpClient 的 post 方法預設 data 參數會使用 form-urlencoded
+                response = self.http_client.post(self.URL_FUT_CONTRACTS_CSV, data=form_data)
+                response.raise_for_status() # 確認請求成功
+                # 需要注意期交所回應的編碼，常見的是 'cp950' 或 'big5'
+                # requests 函式庫會嘗試猜測編碼，但有時可能需要手動指定
+                # response.encoding = response.apparent_encoding # 或者直接設為 'cp950'
+                # 為求穩定，若期交所固定用某編碼，可直接指定
+                # 檢查回應內容是否為 CSV，而不是錯誤頁面的 HTML
+                if 'text/csv' in response.headers.get('Content-Type', '').lower() or "日期" in response.text[:100]: # 簡單檢查
+                    csv_text_content = response.text
+                    logger.info(f"成功從網路獲取三大法人 CSV 內容 ({date_str})。")
+                else:
+                    logger.error(f"從網路獲取三大法人數據失敗 ({date_str})：回應非預期 CSV。Content-Type: {response.headers.get('Content-Type')}, Preview: {response.text[:200]}")
+                    if self.log_manager:
+                        self.log_manager.log_event(
+                            event_type="taifex_fetch_unexpected_content",
+                            message=f"獲取三大法人數據時得到非CSV回應 ({date_str})。",
+                            details={"url": self.URL_FUT_CONTRACTS_CSV, "date": date_str, "content_type": response.headers.get('Content-Type')},
+                            level="ERROR", source_module="TaifexClient"
+                        )
+                    return None
+
+            except requests.exceptions.RequestException as e:
+                logger.error(f"TaifexClient 網路請求失敗 (三大法人, {date_str}): {e}")
+                if self.log_manager:
+                    self.log_manager.log_event(
+                        event_type="taifex_request_failed",
+                        message=f"請求三大法人數據失敗 ({date_str})。",
+                        details={"error": str(e), "url": self.URL_FUT_CONTRACTS_CSV, "date": date_str, "data_type": "institutional_investors"},
+                        level="ERROR", source_module="TaifexClient"
+                    )
+                return None
+            except Exception as e: # 其他未知錯誤
+                logger.error(f"處理三大法人網路回應時發生未知錯誤 ({date_str}): {e}", exc_info=True)
+                if self.log_manager:
+                    self.log_manager.log_event(event_type="taifex_response_process_error", message=f"處理三大法人網路回應失敗 ({date_str})", details={"error": str(e)}, level="ERROR", source_module="TaifexClient")
+                return None
 
         if csv_text_content is not None:
             try:
-                if not csv_text_content.strip() or "查無資料" in csv_text_content or "<html" in csv_text_content.lower():
-                    logger.warning(f"{date_str} ({taifex_date_str}) 的三大法人數據查無資料或格式不符。")
+                # 處理期交所CSV常見問題：可能以Big5編碼，且內容中可能有 "查無資料" 或 HTML 錯誤訊息
+                if "查無資料" in csv_text_content or "<html" in csv_text_content.lower():
+                    logger.warning(f"{date_str} ({taifex_date_str}) 的三大法人數據查無資料或格式不符 (來源: {source_type})。")
                     if self.log_manager:
-                         self.log_manager.log_event(event_type="data_fetch_nodata", message=f"{date_str} 的三大法人數據查無資料。", details={"date": date_str, "source": "taifex", "data_type": "institutional_investors"}, level="WARNING", source_module="TaifexClient")
+                         self.log_manager.log_event(event_type="data_fetch_nodata", message=f"{date_str} 的三大法人數據查無資料。", details={"date": date_str, "source": "taifex", "data_type": "institutional_investors", "fetch_source": source_type}, level="WARNING", source_module="TaifexClient")
                     return None
-                if "html" in csv_text_content.lower()[:100]:
-                    logger.error(f"{date_str} 的三大法人數據內容看起來像HTML，非預期CSV。")
-                    return None
+
+                # 使用 StringIO 將 CSV 字串讀取為 DataFrame
                 df = pd.read_csv(StringIO(csv_text_content))
-                df.dropna(how='all', inplace=True)
+                df.dropna(how='all', inplace=True) # 去除全為NA的行
+
                 if df.empty:
-                    logger.warning(f"{date_str} 的三大法人數據解析後為空 DataFrame。")
+                    logger.warning(f"{date_str} 的三大法人數據解析後為空 DataFrame (來源: {source_type})。")
                     return None
-                logger.info(f"成功解析 {date_str} 的三大法人數據，共 {len(df)} 筆。")
+
+                logger.info(f"成功解析 {date_str} 的三大法人數據 (來源: {source_type})，共 {len(df)} 筆。")
                 file_path = self._save_to_data_lake(df, "institutional_investors", date_str)
                 if file_path and self.log_manager:
                     self.log_manager.log_event(
                         event_type="data_fetch_success", message=f"成功抓取並儲存 {date_str} 的三大法人數據。",
-                        details={"source": "taifex", "data_type": "institutional_investors", "date": date_str, "path": file_path, "rows": len(df), "columns": list(df.columns)},
+                        details={"source": "taifex", "data_type": "institutional_investors", "date": date_str, "path": file_path, "rows": len(df), "columns": list(df.columns), "fetch_source": source_type},
                         level="INFO", source_module="TaifexClient"
                     )
                 return df
             except Exception as e:
-                logger.error(f"處理 {date_str} 的三大法人數據時發生錯誤 (使用 {'模擬' if mock_csv_content else '網路'} 內容): {e}", exc_info=True)
+                logger.error(f"處理 {date_str} 的三大法人數據時發生錯誤 (來源: {source_type}, 內容預覽: {csv_text_content[:200]}): {e}", exc_info=True)
                 if self.log_manager:
-                    self.log_manager.log_event(event_type="data_process_failed", message=f"處理 {date_str} 的三大法人數據時失敗。",details={"error": str(e), "date": date_str, "data_type": "institutional_investors"}, level="ERROR", source_module="TaifexClient")
+                    self.log_manager.log_event(event_type="data_process_failed", message=f"處理 {date_str} 的三大法人數據時失敗。",details={"error": str(e), "date": date_str, "data_type": "institutional_investors", "fetch_source": source_type}, level="ERROR", source_module="TaifexClient")
                 return None
         return None
 
-    def fetch_pc_ratio(self, date_str: str, mock_csv_content: Optional[str] = None) -> Optional[pd.DataFrame]:
-        logger.info(f"開始抓取 {date_str} 的 P/C Ratio 數據...")
+    def fetch_pc_ratio(self, date_str: str, use_mock_data: bool = True, mock_csv_content: Optional[str] = None) -> Optional[pd.DataFrame]:
+        logger.info(f"開始抓取 {date_str} 的 P/C Ratio 數據... (use_mock_data: {use_mock_data})")
         taifex_date_str = date_str.replace('-', '/')
-        download_url = "https://www.taifex.com.tw/cht/3/pcRatioCsv"
         form_data = {'queryType': '1', 'goDay': '', 'doQuery': '1', 'queryDate': taifex_date_str }
 
         csv_text_content: Optional[str] = None
-        if mock_csv_content is not None:
-            logger.info(f"使用提供的模擬 CSV 內容進行 P/C Ratio 數據處理 ({date_str})。")
-            csv_text_content = mock_csv_content
-        else:
-            logger.warning(f"TaifexClient: 網路請求已禁用於 {date_str} 的P/C Ratio數據抓取 (因無 mock_csv_content)。")
-            return None
+        source_type = "模擬"
+
+        if use_mock_data:
+            if mock_csv_content is not None:
+                logger.info(f"使用提供的模擬 CSV 內容進行 P/C Ratio 數據處理 ({date_str})。")
+                csv_text_content = mock_csv_content
+            else:
+                logger.warning(f"TaifexClient: 要求使用模擬數據，但未提供 mock_csv_content for pc_ratio ({date_str})。")
+                return None
+        else: # 真實數據抓取
+            source_type = "網路"
+            logger.info(f"TaifexClient: 嘗試從網路抓取 {date_str} 的 P/C Ratio 數據。URL: {self.URL_PC_RATIO_CSV}")
+            try:
+                response = self.http_client.post(self.URL_PC_RATIO_CSV, data=form_data)
+                response.raise_for_status()
+                if 'text/csv' in response.headers.get('Content-Type', '').lower() or "日期" in response.text[:100]:
+                    csv_text_content = response.text
+                    logger.info(f"成功從網路獲取 P/C Ratio CSV 內容 ({date_str})。")
+                else:
+                    logger.error(f"從網路獲取 P/C Ratio 數據失敗 ({date_str})：回應非預期 CSV。Content-Type: {response.headers.get('Content-Type')}, Preview: {response.text[:200]}")
+                    if self.log_manager:
+                        self.log_manager.log_event(
+                            event_type="taifex_fetch_unexpected_content",
+                            message=f"獲取 P/C Ratio 數據時得到非CSV回應 ({date_str})。",
+                            details={"url": self.URL_PC_RATIO_CSV, "date": date_str, "content_type": response.headers.get('Content-Type')},
+                            level="ERROR", source_module="TaifexClient"
+                        )
+                    return None
+            except requests.exceptions.RequestException as e:
+                logger.error(f"TaifexClient 網路請求失敗 (P/C Ratio, {date_str}): {e}")
+                if self.log_manager:
+                    self.log_manager.log_event(
+                        event_type="taifex_request_failed",
+                        message=f"請求 P/C Ratio 數據失敗 ({date_str})。",
+                        details={"error": str(e), "url": self.URL_PC_RATIO_CSV, "date": date_str, "data_type": "pc_ratio"},
+                        level="ERROR", source_module="TaifexClient"
+                    )
+                return None
+            except Exception as e:
+                logger.error(f"處理 P/C Ratio 網路回應時發生未知錯誤 ({date_str}): {e}", exc_info=True)
+                if self.log_manager:
+                    self.log_manager.log_event(event_type="taifex_response_process_error", message=f"處理 P/C Ratio 網路回應失敗 ({date_str})", details={"error": str(e)}, level="ERROR", source_module="TaifexClient")
+                return None
 
         if csv_text_content is not None:
             try:
-                if not csv_text_content.strip() or "查無資料" in csv_text_content or "<html" in csv_text_content.lower():
-                    logger.warning(f"{date_str} ({taifex_date_str}) 的 P/C Ratio 數據查無資料或格式不符。")
+                if "查無資料" in csv_text_content or "<html" in csv_text_content.lower():
+                    logger.warning(f"{date_str} ({taifex_date_str}) 的 P/C Ratio 數據查無資料或格式不符 (來源: {source_type})。")
                     if self.log_manager:
-                        self.log_manager.log_event(event_type="data_fetch_nodata",message=f"{date_str} 的 P/C Ratio 數據查無資料。",details={"date": date_str, "source": "taifex", "data_type": "pc_ratio"},level="WARNING",source_module="TaifexClient")
+                        self.log_manager.log_event(event_type="data_fetch_nodata",message=f"{date_str} 的 P/C Ratio 數據查無資料。",details={"date": date_str, "source": "taifex", "data_type": "pc_ratio", "fetch_source": source_type},level="WARNING",source_module="TaifexClient")
                     return None
 
+                # P/C Ratio 的 CSV 可能最後一列是空的，導致解析問題，需要特別處理
                 header_line = csv_text_content.splitlines(keepends=False)[0]
                 num_expected_cols = len(header_line.split(','))
-                use_cols_range = range(num_expected_cols-1 if header_line.endswith(',') and num_expected_cols > 1 else num_expected_cols)
+                # 如果最後一個字元是逗號，表示最後一欄可能為空，pd.read_csv 可能會多讀一欄都是 NaN
+                # 因此 usecols 只取到倒數第二欄 (如果原始欄數大於1)
+                use_cols_range = range(num_expected_cols -1 if header_line.endswith(',') and num_expected_cols > 1 else num_expected_cols)
 
-                df = pd.read_csv(StringIO(csv_text_content), usecols=use_cols_range)
-                logger.debug(f"P/C Ratio - DataFrame after read_csv with usecols={use_cols_range} (before dropna):\n{df}")
-                logger.debug(f"P/C Ratio - dtypes after read_csv (before dropna):\n{df.dtypes}")
-
+                df = pd.read_csv(StringIO(csv_text_content), usecols=use_cols_range if len(use_cols_range) > 0 else None)
                 df.dropna(how='all', inplace=True)
-                logger.debug(f"P/C Ratio - DataFrame after dropna(how='all'):\n{df}")
-                logger.debug(f"P/C Ratio - Columns after dropna(how='all'): {df.columns.tolist()}")
-
-                logger.debug(f"P/C Ratio - DataFrame after cleanup:\n{df}")
-                logger.debug(f"P/C Ratio - dtypes after custom cleanup:\n{df.dtypes}")
 
                 if df.empty:
-                    logger.warning(f"{date_str} 的 P/C Ratio 數據解析後為空 DataFrame。")
+                    logger.warning(f"{date_str} 的 P/C Ratio 數據解析後為空 DataFrame (來源: {source_type})。")
                     return None
-                logger.info(f"成功解析 {date_str} 的 P/C Ratio 數據，共 {len(df)} 筆。")
+
+                logger.info(f"成功解析 {date_str} 的 P/C Ratio 數據 (來源: {source_type})，共 {len(df)} 筆。")
                 file_path = self._save_to_data_lake(df, "pc_ratio", date_str)
                 if file_path and self.log_manager:
                     self.log_manager.log_event(
                         event_type="data_fetch_success", message=f"成功抓取並儲存 {date_str} 的 P/C Ratio 數據。",
-                        details={"source": "taifex", "data_type": "pc_ratio", "date": date_str, "path": file_path, "rows": len(df), "columns": list(df.columns)},
+                        details={"source": "taifex", "data_type": "pc_ratio", "date": date_str, "path": file_path, "rows": len(df), "columns": list(df.columns), "fetch_source": source_type},
                         level="INFO", source_module="TaifexClient"
                     )
                 return df
             except Exception as e:
-                logger.error(f"處理 {date_str} 的 P/C Ratio 數據時發生錯誤 (使用 {'模擬' if mock_csv_content else '網路'} 內容): {e}", exc_info=True)
+                logger.error(f"處理 {date_str} 的 P/C Ratio 數據時發生錯誤 (來源: {source_type}, 內容預覽: {csv_text_content[:200]}): {e}", exc_info=True)
                 if self.log_manager:
-                     self.log_manager.log_event(event_type="data_process_failed",message=f"處理 {date_str} 的 P/C Ratio 數據時失敗。",details={"error": str(e), "date": date_str, "data_type": "pc_ratio"},level="ERROR",source_module="TaifexClient")
+                     self.log_manager.log_event(event_type="data_process_failed",message=f"處理 {date_str} 的 P/C Ratio 數據時失敗。",details={"error": str(e), "date": date_str, "data_type": "pc_ratio", "fetch_source": source_type},level="ERROR",source_module="TaifexClient")
                 return None
         return None
 
@@ -191,14 +242,17 @@ class DataFetcher:
     """
     def __init__(self,
                  log_manager: Any,
-                 execution_mode: str = "SIMULATION",
+                 http_client: HttpClient, # HttpClient 必須傳入
+                 execution_mode: str = "SIMULATION", # 保留 execution_mode 以便未來擴展
                  clients: Optional[Dict[str, Any]] = None):
         self.log_manager = log_manager
-        self.execution_mode = execution_mode
+        self.http_client = http_client # 保存 HttpClient 實例
+        self.execution_mode = execution_mode # 目前主要由 mission_params 中的 use_mock 控制
         self.clients = clients if clients else {}
-        self.taifex_client = TaifexClient(log_manager=self.log_manager)
+        # 初始化 TaifexClient 時傳入 HttpClient
+        self.taifex_client = TaifexClient(log_manager=self.log_manager, http_client=self.http_client)
 
-        logger.info(f"資料獲取器 (DataFetcher) 初始化完畢。執行模式: {self.execution_mode}")
+        logger.info(f"資料獲取器 (DataFetcher) 初始化完畢。Execution_mode: {self.execution_mode}")
         if self.clients:
             logger.info(f"已配置的外部客戶端: {list(self.clients.keys())}")
 
@@ -207,11 +261,13 @@ class DataFetcher:
         results: Dict[str, Any] = {}
         task_type = mission_params.get("task_type")
         target_date = mission_params.get("date")
+        # 從 mission_params 獲取 use_mock，預設為 True (模擬)
+        use_mock: bool = mission_params.get("use_mock", True)
 
         self.log_manager.log_event(
             event_type="data_fetcher_task_started",
-            message=f"DataFetcher 開始處理任務 {mission_id}，類型: {task_type}",
-            details={"mission_id": mission_id, "task_type": task_type, "params": mission_params},
+            message=f"DataFetcher 開始處理任務 {mission_id}，類型: {task_type}, use_mock: {use_mock}",
+            details={"mission_id": mission_id, "task_type": task_type, "params": mission_params, "use_mock": use_mock},
             source_module="DataFetcher", mission_id=mission_id
         )
 
@@ -224,62 +280,77 @@ class DataFetcher:
 
             data_types_to_fetch = mission_params.get("data_types", ["institutional_investors", "pc_ratio"])
 
-            if self.execution_mode == "SIMULATION":
-                logger.info(f"任務 {mission_id} (FETCH_TAIFEX): 模擬模式執行。")
-                mock_data_root = "mock_data/taifex"
-                for dt in data_types_to_fetch:
-                    mock_file_path = os.path.join(mock_data_root, dt, f"{target_date}.parquet")
-                    if os.path.exists(mock_file_path):
-                        try:
-                            df = pd.read_parquet(mock_file_path)
-                            results[f"taifex_{dt}"] = df
-                            logger.info(f"任務 {mission_id}: 從模擬數據文件 {mock_file_path} 加載了 {dt} 數據。")
-                            self.log_manager.log_event(event_type="mock_data_loaded", message=f"成功從 {mock_file_path} 加載模擬數據", details={"path": mock_file_path, "data_type": dt}, source_module="DataFetcher", mission_id=mission_id)
-                        except Exception as e:
-                            logger.error(f"任務 {mission_id}: 讀取模擬數據文件 {mock_file_path} 失敗: {e}")
-                            results[f"taifex_{dt}_error"] = f"讀取模擬文件 {mock_file_path} 失敗: {e}"
-                            self.log_manager.log_event(event_type="mock_data_load_failed", message=f"讀取模擬文件 {mock_file_path} 失敗", details={"error": str(e)}, level="ERROR", source_module="DataFetcher", mission_id=mission_id)
-                    else:
-                        logger.warning(f"任務 {mission_id}: 模擬數據文件 {mock_file_path} 未找到。")
-                        results[f"taifex_{dt}_error"] = f"模擬文件 {mock_file_path} 未找到。"
-                        self.log_manager.log_event(event_type="mock_data_not_found", message=f"模擬文件 {mock_file_path} 未找到", level="WARNING", source_module="DataFetcher", mission_id=mission_id)
+            # SIMULATION mode (透過 use_mock=True 控制)
+            if use_mock:
+                logger.info(f"任務 {mission_id} (FETCH_TAIFEX): 模擬模式執行 (use_mock=True)。")
+                mock_data_root = "mock_data/taifex" # 模擬數據的 Parquet 檔案位置
 
-            elif self.execution_mode == "PRODUCTION":
-                logger.info(f"任務 {mission_id} (FETCH_TAIFEX): 生產模式執行。將調用 TaifexClient。")
-                mock_data_to_use = {}
-                if target_date == "2025-07-08":
-                    mock_data_to_use["institutional_investors"] = (
-                        "日期,身份別,多方交易口數,多方交易契約金額(百萬元),空方交易口數,空方交易契約金額(百萬元),多空交易口數淨額,多空交易契約金額淨額(百萬元),多方未平倉口數,多方未平倉契約金額(百萬元),空方未平倉口數,空方未平倉契約金額(百萬元),多空未平倉口數淨額,多空未平倉契約金額淨額(百萬元)\n"
-                        "2025/07/08,自營商,266543,51886,240474,51465,26069,421,302016,101867,183199,43319,118817,58548\n"
-                        "2025/07/08,投信,1357,3511,2647,8580,-1290,-5069,55561,213816,14379,57387,41182,156429\n"
-                        "2025/07/08,外資及陸資,442679,367852,424911,334839,17768,33013,154210,139387,538032,416068,-383822,-276681\n"
-                    )
-                    mock_data_to_use["pc_ratio"] = (
-                        "日期,賣權成交量,買權成交量,買賣權成交量比率%,賣權未平倉量,買權未平倉量,買賣權未平倉量比率%\n"
-                        "2025/07/08,341931,385728,88.65,161864,150408,107.62,\n"
-                    )
-                else:
-                    logger.warning(f"任務 {mission_id}: PRODUCTION mode 下請求日期 {target_date} 非黃金數據日期 (2025-07-08)，將不返回數據。")
+                # 當 use_mock 為 True 時，我們仍然可以選擇性地使用 mock_csv_content (如果有的話)
+                # 或者從 mock_data/taifex 目錄讀取 Parquet 檔案作為更高優先級的模擬數據
+                # 目前 TaifexClient 的 fetch_* 方法在 use_mock_data=True 時，優先使用 mock_csv_content
+                # 如果要改成優先讀取 parquet，則需調整 TaifexClient 或此處邏輯
+
+                # 這裡的邏輯是，如果 use_mock=True，我們將依賴 TaifexClient 內部用 mock_csv_content (若有)
+                # 或其自身的模擬邏輯 (如果 TaifexClient 有此設計)。
+                # 在目前的 TaifexClient 實作中，若 use_mock_data=True 且 mock_csv_content=None，它會返回 None。
+                # 這意味著若要使用 mock_data/taifex 下的 Parquet 檔案，需要在 Orchestrator 層面準備好 CSV 內容。
+                # 或者，我們在這裡直接讀取 Parquet 檔案，繞過 TaifexClient 的 fetch。
+                # 為了與第二階段的運作方式一致 (Orchestrator 提供 mock CSV)，我們暫時保持 Orchestrator 準備 mock CSV。
+                # 如果 Orchestrator 沒有提供 mock CSV，則 TaifexClient 的 fetch 會返回 None。
+
+                # 此處的 SIMULATION 邏輯現在由 TaifexClient 的 use_mock_data=True 控制。
+                # 如果 mission_params 包含 mock_csv_content，它將被傳遞下去。
+                mock_institutional_investors_csv = mission_params.get("mock_data", {}).get("institutional_investors_csv")
+                mock_pc_ratio_csv = mission_params.get("mock_data", {}).get("pc_ratio_csv")
 
                 if "institutional_investors" in data_types_to_fetch:
                     df_inv = self.taifex_client.fetch_institutional_investors(
                         date_str=target_date,
-                        mock_csv_content=mock_data_to_use.get("institutional_investors")
+                        use_mock_data=True, # 強制使用模擬數據
+                        mock_csv_content=mock_institutional_investors_csv
                     )
                     if df_inv is not None:
                         results["taifex_institutional_investors"] = df_inv
                     else:
-                        results["taifex_institutional_investors_error"] = f"為日期 {target_date} 獲取三大法人數據失敗。"
+                        results["taifex_institutional_investors_error"] = f"為日期 {target_date} 獲取三大法人模擬數據失敗。"
 
                 if "pc_ratio" in data_types_to_fetch:
                     df_pc = self.taifex_client.fetch_pc_ratio(
                         date_str=target_date,
-                        mock_csv_content=mock_data_to_use.get("pc_ratio")
+                        use_mock_data=True, # 強制使用模擬數據
+                        mock_csv_content=mock_pc_ratio_csv
                     )
                     if df_pc is not None:
                         results["taifex_pc_ratio"] = df_pc
                     else:
-                        results["taifex_pc_ratio_error"] = f"為日期 {target_date} 獲取P/C Ratio數據失敗。"
+                        results["taifex_pc_ratio_error"] = f"為日期 {target_date} 獲取P/C Ratio模擬數據失敗。"
+
+            # PRODUCTION/LIVE mode (透過 use_mock=False 控制)
+            else: # use_mock is False
+                logger.info(f"任務 {mission_id} (FETCH_TAIFEX): 真實數據抓取模式執行 (use_mock=False)。將調用 TaifexClient 進行網路請求。")
+
+                # 在真實模式下，mock_csv_content 參數應為 None
+                if "institutional_investors" in data_types_to_fetch:
+                    df_inv = self.taifex_client.fetch_institutional_investors(
+                        date_str=target_date,
+                        use_mock_data=False, # 指示進行真實抓取
+                        mock_csv_content=None
+                    )
+                    if df_inv is not None:
+                        results["taifex_institutional_investors"] = df_inv
+                    else:
+                        results["taifex_institutional_investors_error"] = f"為日期 {target_date} 獲取三大法人真實數據失敗。"
+
+                if "pc_ratio" in data_types_to_fetch:
+                    df_pc = self.taifex_client.fetch_pc_ratio(
+                        date_str=target_date,
+                        use_mock_data=False, # 指示進行真實抓取
+                        mock_csv_content=None
+                    )
+                    if df_pc is not None:
+                        results["taifex_pc_ratio"] = df_pc
+                    else:
+                        results["taifex_pc_ratio_error"] = f"為日期 {target_date} 獲取P/C Ratio真實數據失敗。"
         else:
             logger.warning(f"任務 {mission_id}: 未知的 task_type '{task_type}' 或未實現的處理邏輯。")
             results["error"] = f"未知的 task_type: {task_type}"
