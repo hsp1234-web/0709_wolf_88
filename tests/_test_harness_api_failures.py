@@ -1,114 +1,167 @@
 # -*- coding: utf-8 -*-
-"""
-整合測試腳本：API 通訊故障模擬
-
-此腳本用於驗證系統在遭遇外部 API (FinMind) 服務不穩定或拒絕服務時的健壯性。
-"""
 import unittest
-from unittest.mock import patch, Mock
-import requests.exceptions
-import io
+from unittest.mock import patch, MagicMock
+import subprocess
 import sys
+import tempfile
+from pathlib import Path
+import asyncio
+import aiohttp # 需要導入以模擬其內部的錯誤類型
+import os # 需要 os 來輔助路徑校正
 
-# 假設被測試的模組和函數位於上一層目錄的 finmind_ETF_scraper.py
-# 為了讓測試腳本能夠找到該模組，我們可能需要調整 sys.path
-# 或者期望測試執行器 (如 pytest 或 python -m unittest) 能正確處理路徑
-# 這裡我們假設 finmind_ETF_scraper 在 Python 的搜索路徑中
-# 如果不在，執行時需要PYTHONPATH=. python tests/_test_harness_api_failures.py
+# --- 標準化「路徑自我校正」樣板碼 START ---
 try:
-    from finmind_ETF_scraper import fetch_etf_data
-except ImportError:
-    # 如果直接執行此文件且 finmind_ETF_scraper.py 在父目錄
-    import os
-    # 將父目錄添加到 sys.path
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(current_dir)
-    if parent_dir not in sys.path:
-        sys.path.insert(0, parent_dir)
-    from finmind_ETF_scraper import fetch_etf_data
+    current_script_path = Path(__file__).resolve()
+    project_root = current_script_path.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+except NameError:
+    project_root = Path(os.getcwd())
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    print(f"警告：__file__ 未定義於 _test_harness_api_failures.py，專案路徑校正可能不準確。", file=sys.stderr)
+# --- 標準化「路徑自我校正」樣板碼 END ---
 
-class TestAPIFailures(unittest.TestCase):
-    """
-    測試 API 通訊故障情境。
-    """
+TARGET_SCRIPT_MODULE = "apps.taifex_data_pipeline.run"
+
+class TestApiFailures(unittest.TestCase):
+    temp_output_dir: Path
 
     def setUp(self):
-        """
-        每個測試方法執行前都會呼叫此方法。
-        用於設置捕獲 stdout。
-        """
-        self.held_stdout = sys.stdout
-        sys.stdout = io.StringIO()
+        # 使用基於類名和方法名的臨時目錄，方便追蹤
+        test_method_name = self.id().split('.')[-1]
+        self.temp_output_dir = Path(tempfile.mkdtemp(prefix=f"taifex_api_fail_{test_method_name}_"))
+        # print(f"\n[SETUP] 測試 {test_method_name} 的臨時目錄已創建: {self.temp_output_dir}")
+
 
     def tearDown(self):
-        """
-        每個測試方法執行後都會呼叫此方法。
-        用於恢復 stdout 並關閉 StringIO 物件。
-        """
-        sys.stdout.close()
-        sys.stdout = self.held_stdout
+        import shutil
+        # print(f"[TEARDOWN] 準備清理測試 {self.id().split('.')[-1]} 的臨時目錄: {self.temp_output_dir}")
+        if self.temp_output_dir.exists():
+            try:
+                shutil.rmtree(self.temp_output_dir)
+                # print(f"[TEARDOWN] 臨時目錄已成功刪除: {self.temp_output_dir}")
+            except Exception as e:
+                print(f"[TEARDOWN_ERROR] 清理臨時目錄 {self.temp_output_dir} 失敗: {e}", file=sys.stderr)
+        # else:
+            # print(f"[TEARDOWN] 臨時目錄不存在，無需清理: {self.temp_output_dir}")
 
-    @patch('finmind_ETF_scraper.requests.get')
-    def test_api_forbidden_error(self, mock_requests_get):
-        """
-        情境一：測試 API 回應 403 Forbidden 錯誤。
 
-        驗證：
-        1. 系統不會因此崩潰。
-        2. 系統能捕獲異常並打印出對指揮官友善的作戰報告。
+    def _run_script_and_assert_failure(self, target_date: str, expected_error_log_片段: str, expected_exit_code: int = 1, mock_session_get_config=None):
         """
-        # 設定 mock_requests_get 的行為
-        # 當 requests.get 被呼叫時，模擬一個 HTTP 403 錯誤
-        mock_response = Mock()
-        mock_response.status_code = 403
-        # raise_for_status() 方法在狀態碼為 4xx 或 5xx 時應拋出 HTTPError
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
-            "模擬的 403 Forbidden 錯誤", response=mock_response
+        執行 run.py 腳本並斷言其失敗行為。
+        mock_session_get_config: 一個字典，用於配置 mock_session_get 的行為, e.g. {'side_effect': SomeError} or {'return_value': mock_response}
+        """
+
+        # 使用 patch.object 或 patch 來模擬 aiohttp.ClientSession.get
+        # 這裡我們在調用此輔助函數之前已經在測試方法中應用了 @patch
+
+        cmd = [
+            sys.executable,
+            "-m", TARGET_SCRIPT_MODULE,
+            "--date", target_date,
+            "--output-dir", str(self.temp_output_dir),
+            "--log-level", "ERROR" # 我們關心 ERROR 級別的日誌 for failure cases
+        ]
+        # print(f"\n[RUN_SCRIPT] 執行指令: {' '.join(cmd)}")
+        process = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+
+        # print(f"\n[TEST STDOUT for {self.id()} with date {target_date}]:\n{process.stdout}")
+        # print(f"[TEST STDERR for {self.id()} with date {target_date}]:\n{process.stderr}")
+
+        self.assertEqual(process.returncode, expected_exit_code,
+                         f"腳本應以返回碼 {expected_exit_code} 退出，實際為 {process.returncode}。\nstdout:\n{process.stdout}\nstderr:\n{process.stderr}")
+
+        # core.utils.setup_logger 預設將日誌輸出到 stdout
+        # 我們需要檢查 stdout 是否包含錯誤日誌片段
+        # 注意: 錯誤日誌中可能包含 "[ERROR]" 前綴，這取決於 logger 的格式設定
+        # run.py 中 download_taifex_data 函數的 logger.error 訊息格式是 "[ERROR] {message}"
+        # main 函數中捕獲 TaifexDownloadError 後的 logger.error 訊息格式是 "捕獲到 TAIFEX 下載錯誤: {e}"
+        # 我們應該檢查由 download_taifex_data 直接產生的錯誤訊息，因為那是 mock 的目標
+        self.assertIn(expected_error_log_片段, process.stdout,
+                      f"預期的錯誤日誌片段 '{expected_error_log_片段}' 未在 stdout 中找到。\nstdout:\n{process.stdout}")
+
+        items_in_output_dir = list(self.temp_output_dir.iterdir())
+        self.assertEqual(len(items_in_output_dir), 0,
+                         f"輸出目錄 {self.temp_output_dir} 在失敗情境下應為空，但包含: {[item.name for item in items_in_output_dir]}")
+
+    @patch('aiohttp.ClientSession.get')
+    def test_download_handles_client_connector_error(self, mock_get: MagicMock):
+        """測試 run.py 在 aiohttp.ClientConnectorError 時的行為"""
+        mock_get.side_effect = aiohttp.ClientConnectorError(
+            MagicMock(spec=aiohttp.connector.Connection), # connection_key (修正: ConnectionKey -> Connection)
+            OSError("Simulated OS error for connector")
         )
-        mock_requests_get.return_value = mock_response
+        target_date = "2024-01-15"
+        # 預期 download_taifex_data 函數內的日誌
+        error_log_snippet = f"[ERROR] Network connection error for {target_date}: Simulated OS error for connector. URL: https://www.taifex.com.tw/file/taifex/Dailydownload/DailydownloadCSV/Data_{target_date.replace('-', '')}.zip"
+        print(f"\n[INFO] 執行 test_download_handles_client_connector_error (目標日期: {target_date})")
+        self._run_script_and_assert_failure(target_date, error_log_snippet)
 
-        # 呼叫被測試的函數
-        # 我們期望它能處理這個異常，而不是讓測試本身因未捕獲的異常而失敗
-        result = fetch_etf_data("2023-01-15")
+    @patch('aiohttp.ClientSession.get')
+    def test_download_handles_server_error_503(self, mock_get: MagicMock):
+        """測試 run.py 在伺服器返回 503 錯誤時的行為"""
+        mock_response = MagicMock(spec=aiohttp.ClientResponse)
+        mock_response.status = 503
+        mock_response.reason = "Service Unavailable"
 
-        # 驗證1：系統不會崩潰 (即 fetch_etf_data 正常返回，這裡預期返回 None)
-        self.assertIsNone(result, "fetch_etf_data 在 403 錯誤後應返回 None")
+        # 模擬 response context manager
+        async def mock_response_context_manager(*args, **kwargs):
+            return mock_response
 
-        # 驗證2：檢查 stdout 是否包含預期的作戰報告
-        output = sys.stdout.getvalue()
-        expected_report = "指揮官，數據獲取模組在連接 FinMind API 時遇到權限問題 (403 Forbidden)。請檢查 API 金鑰或權限設定。"
-        self.assertIn(expected_report, output, "未找到 403 錯誤的作戰報告")
-        # 也可以檢查初始的嘗試連接訊息
-        self.assertIn("指揮官，數據獲取模組開始嘗試連接 FinMind API", output)
+        mock_get.return_value.__aenter__ = mock_response_context_manager
+        mock_get.return_value.__aexit__ = MagicMock(return_value=None) # 異步的 __aexit__
 
-    @patch('finmind_ETF_scraper.requests.get')
-    def test_api_timeout_error(self, mock_requests_get):
-        """
-        情境二：測試 API 請求超時。
+        target_date = "2024-01-16"
+        error_log_snippet = f"[ERROR] Failed to download data for {target_date}. HTTP Status: 503. URL: https://www.taifex.com.tw/file/taifex/Dailydownload/DailydownloadCSV/Data_{target_date.replace('-', '')}.zip"
+        print(f"\n[INFO] 執行 test_download_handles_server_error_503 (目標日期: {target_date})")
+        self._run_script_and_assert_failure(target_date, error_log_snippet)
 
-        驗證：
-        1. 系統不會因此崩潰。
-        2. 系統能捕獲異常並打印出對指揮官友善的作戰報告。
-        """
-        # 設定 mock_requests_get 的行為
-        # 當 requests.get 被呼叫時，拋出 Timeout 異常
-        mock_requests_get.side_effect = requests.exceptions.Timeout("模擬的請求超時")
+    @patch('aiohttp.ClientSession.get')
+    def test_download_handles_timeout_error(self, mock_get: MagicMock):
+        """測試 run.py 在 asyncio.TimeoutError 時的行為"""
+        mock_get.side_effect = asyncio.TimeoutError("Simulated timeout")
 
-        # 呼叫被測試的函數
-        result = fetch_etf_data("2023-01-16")
+        target_date = "2024-01-17"
+        error_log_snippet = f"[ERROR] Timeout during download for {target_date}. URL: https://www.taifex.com.tw/file/taifex/Dailydownload/DailydownloadCSV/Data_{target_date.replace('-', '')}.zip"
+        print(f"\n[INFO] 執行 test_download_handles_timeout_error (目標日期: {target_date})")
+        self._run_script_and_assert_failure(target_date, error_log_snippet)
 
-        # 驗證1：系統不會崩潰 (即 fetch_etf_data 正常返回，這裡預期返回 None)
-        self.assertIsNone(result, "fetch_etf_data 在超時錯誤後應返回 None")
+    @patch('aiohttp.ClientSession.get')
+    def test_download_preserves_no_data_behavior_on_404(self, mock_get: MagicMock):
+        """測試 run.py 在 404 時是否保持「無數據」的行為 (返回碼0)"""
+        mock_response = MagicMock(spec=aiohttp.ClientResponse)
+        mock_response.status = 404
 
-        # 驗證2：檢查 stdout 是否包含預期的作戰報告
-        output = sys.stdout.getvalue()
-        expected_report = "指揮官，數據獲取模組在連接 FinMind API 時因超時而失敗。網路連線可能不穩定或 API 服務繁忙。"
-        self.assertIn(expected_report, output, "未找到超時錯誤的作戰報告")
-        # 也可以檢查初始的嘗試連接訊息
-        self.assertIn("指揮官，數據獲取模組開始嘗試連接 FinMind API", output)
+        async def mock_response_context_manager(*args, **kwargs):
+            return mock_response
+
+        mock_get.return_value.__aenter__ = mock_response_context_manager
+        mock_get.return_value.__aexit__ = MagicMock(return_value=None)
+
+        target_date = "2024-01-18"
+        cmd = [
+            sys.executable,
+            "-m", TARGET_SCRIPT_MODULE,
+            "--date", target_date,
+            "--output-dir", str(self.temp_output_dir),
+            "--log-level", "INFO" # 這次需要INFO來看 "No data available"
+        ]
+        # print(f"\n[RUN_SCRIPT] 執行指令 for 404 test: {' '.join(cmd)}")
+        process = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+
+        # print(f"\n[TEST STDOUT for 404 test {target_date}]:\n{process.stdout}")
+        # print(f"[TEST STDERR for 404 test {target_date}]:\n{process.stderr}")
+
+        self.assertEqual(process.returncode, 0,
+                         f"腳本在404時應以返回碼 0 退出，實際為 {process.returncode}。\nstdout:\n{process.stdout}\nstderr:\n{process.stderr}")
+        self.assertIn(f"[INFO] No data available for {target_date}", process.stdout, # run.py prints YYYY-MM-DD
+                      f"stdout 未包含預期的 'No data available' 日誌。\nstdout:\n{process.stdout}")
+
+        items_in_output_dir = list(self.temp_output_dir.iterdir())
+        self.assertEqual(len(items_in_output_dir), 0,
+                         f"輸出目錄 {self.temp_output_dir} 在404情況下應為空，但包含: {[item.name for item in items_in_output_dir]}")
+        print(f"\n[INFO] 執行 test_download_preserves_no_data_behavior_on_404 (目標日期: {target_date})")
 
 if __name__ == '__main__':
-    # 這允許直接從命令行運行測試
-    # 例如：python tests/_test_harness_api_failures.py
-    # 或者使用 unittest 發現機制：python -m unittest discover tests
     unittest.main()

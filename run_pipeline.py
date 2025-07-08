@@ -36,11 +36,14 @@ def run_subprocess_command(cmd_list: list[str], log_label: str, timeout: int = c
     :param timeout: 命令超時時間 (秒)。
     :return: True 如果命令成功執行 (返回碼為0)，否則 False。
     """
-    logger.info(f"開始執行 [{log_label}]: {' '.join(cmd_list)}")
+    # 確保 cmd_list 中的所有元素都是字串，以兼容 subprocess.run 和 str.join
+    cmd_list_str = [str(item) for item in cmd_list]
+
+    logger.info(f"開始執行 [{log_label}]: {' '.join(cmd_list_str)}")
     start_time = time.time()
     try:
         process = subprocess.run(
-            cmd_list,
+            cmd_list_str, # 使用轉換後的字串列表
             capture_output=True,
             text=True,
             check=False, # 設置為 False，手動檢查返回碼
@@ -70,7 +73,7 @@ def run_subprocess_command(cmd_list: list[str], log_label: str, timeout: int = c
         logger.error(f"[{log_label}] 執行超時 (超過 {timeout} 秒，實際耗時: {elapsed_time:.2f} 秒)。")
         return False
     except FileNotFoundError:
-        logger.error(f"[{log_label}] 命令未找到，請檢查路徑: {cmd_list[0]}")
+        logger.error(f"[{log_label}] 命令未找到，請檢查路徑: {cmd_list_str[0]}") # 使用 cmd_list_str
         return False
     except Exception as e:
         elapsed_time = time.time() - start_time

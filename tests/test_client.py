@@ -125,9 +125,21 @@ class TestTaifexClientMockData(unittest.TestCase):
         os.rename(temp_path, original_path)
 
     def test_init_invalid_mock_data_path(self):
-        """測試初始化時若 use_mock_data 為 True 但 mock_data_path 無效，應拋出 ValueError。"""
-        with self.assertRaises(ValueError):
-            TaifexClient(use_mock_data=True, mock_data_path="non_existent_path")
+        """測試初始化時若 use_mock_data 為 True 但 mock_data_path 指向一個檔案，應拋出 FileExistsError。"""
+        # 創建一個臨時檔案作為無效的 mock_data_path
+        # self.DATA_LAKE_PATH 是在 setUpClass 中創建的臨時目錄
+        invalid_path_as_file = os.path.join(self.DATA_LAKE_PATH, "i_am_a_file.txt")
+        with open(invalid_path_as_file, "w") as f:
+            f.write("This is a file, not a directory for mock data.")
+
+        # TaifexClient 的 __init__ 中 self.mock_data_path.mkdir(parents=True, exist_ok=True)
+        # 如果 mock_data_path 是一個檔案，mkdir 會拋出 FileExistsError。
+        with self.assertRaises(FileExistsError):
+            TaifexClient(use_mock_data=True, mock_data_path=invalid_path_as_file)
+
+        # 清理創建的臨時檔案
+        if os.path.exists(invalid_path_as_file):
+            os.remove(invalid_path_as_file)
 
     @patch('src.taifex_data_fetcher.client.TaifexClient._fetch_from_url')
     def test_fetch_live_data_restricted(self, mock_fetch_from_url):
