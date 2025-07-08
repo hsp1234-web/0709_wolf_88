@@ -66,15 +66,38 @@ class YFinancePulseEngine:
             print(f"錯誤 (YFinancePulseEngine): 日期格式無效。請使用 YYYY-MM-DD。 Start: {start_date_str}, End: {end_date_str}")
             return
 
-        dates_to_process = pd.date_range(s_date, e_date).strftime("%Y-%m-%d").tolist()
+        dates_to_process = pd.date_range(s_date, e_date).tolist() # 生成 datetime.date 對象列表
 
         tasks = []
+        total_potential_tasks = len(tickers) * len(dates_to_process)
+        print(f"INFO (YFinancePulseEngine): 正在檢查 {total_potential_tasks} 個潛在的 (ticker, date) 組合的快取狀態...")
+
         for ticker in tickers:
-            for date_str in dates_to_process:
-                tasks.append({'ticker': ticker, 'date_str': date_str})
+            request_hash = self.hydrator._create_request_hash(ticker) # 使用 hydrator 內部的方法
+            missing_dates_for_ticker = []
+            for date_obj in dates_to_process:
+                date_str = date_obj.strftime("%Y-%m-%d")
+                if force_refresh: # 如果強制刷新，則所有日期都視為需要處理
+                    missing_dates_for_ticker.append(date_str)
+                else:
+                    cached_status_info = self.hydrator.db_manager.check_request_status(request_hash, date_str)
+                    if not cached_status_info or cached_status_info['status'] not in ["SUCCESS", "NO_DATA"]:
+                        # 如果沒有快取記錄，或者狀態不是 SUCCESS 或 NO_DATA，則認為是缺失或需要重試
+                        missing_dates_for_ticker.append(date_str)
+                    else:
+                        # 打印快取命中訊息，以便追蹤
+                        # print(f"DEBUG (YFinancePulseEngine): Ticker={ticker}, Date={date_str} 快取命中 (Status: {cached_status_info['status']}). 跳過任務生成。")
+                        pass # 避免過多日誌刷屏，可以在需要時取消註釋
+
+            if missing_dates_for_ticker:
+                print(f"INFO (YFinancePulseEngine): Ticker={ticker} 有 {len(missing_dates_for_ticker)} 個日期需要處理: {missing_dates_for_ticker[:5]}... (如果過長則截斷顯示)")
+                for date_str_to_hydrate in missing_dates_for_ticker:
+                    tasks.append({'ticker': ticker, 'date_str': date_str_to_hydrate})
+            else:
+                print(f"INFO (YFinancePulseEngine): Ticker={ticker} 在指定日期範圍內所有數據均已快取且狀態為 SUCCESS/NO_DATA (或 force_refresh=false)。")
 
         if not tasks:
-            print("INFO (YFinancePulseEngine): 沒有生成任何 (ticker, date) 回填任務。")
+            print("INFO (YFinancePulseEngine): 根據快取檢查，沒有生成任何需要執行的 (ticker, date) 回填任務。")
             return
 
         print(f"INFO (YFinancePulseEngine): 共生成 {len(tasks)} 個 (ticker, date) 回填任務。")

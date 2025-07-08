@@ -711,6 +711,49 @@ class YFinanceHydrator:
         else: # m1 > m2
             return -1 # interval1 更粗糙 (持續時間更長)
 
+    def _convert_missing_dates_to_ranges(self, missing_dates: list[date_obj]) -> list[tuple[date_obj, date_obj]]:
+        """
+        將離散的缺失日期列表 (已排序) 合併為連續的日期區間列表。
+        例如：[date(2023,1,1), date(2023,1,2), date(2023,1,4)]
+        會轉換為：[(date(2023,1,1), date(2023,1,2)), (date(2023,1,4), date(2023,1,4))]
+
+        Args:
+            missing_dates (list[date_obj]): 一個已排序的 datetime.date 物件列表。
+
+        Returns:
+            list[tuple[date_obj, date_obj]]: 一個包含 (start_date, end_date) 元組的列表。
+        """
+        if not missing_dates:
+            return []
+
+        # 確保日期是排序的，儘管調用者應該保證
+        # sorted_dates = sorted(list(set(missing_dates))) # 去重並排序，如果輸入不能保證
+        # 假設 missing_dates 已經是排序好的 date 物件列表
+
+        ranges = []
+        if not missing_dates:
+            return ranges
+
+        start_of_range = missing_dates[0]
+        end_of_range = missing_dates[0]
+
+        for i in range(1, len(missing_dates)):
+            current_date = missing_dates[i]
+            # 檢查是否連續 (相差一天)
+            if (current_date - end_of_range).days == 1:
+                end_of_range = current_date
+            else:
+                # 上一個範圍結束
+                ranges.append((start_of_range, end_of_range))
+                # 開始新範圍
+                start_of_range = current_date
+                end_of_range = current_date
+
+        # 添加最後一個範圍
+        ranges.append((start_of_range, end_of_range))
+
+        return ranges
+
 # 命令行測試接口 (可選)
 if __name__ == '__main__':
     print("--- YFinanceHydrator 命令行測試介面 ---")
