@@ -1,140 +1,120 @@
-# config.py
+# -*- coding: utf-8 -*-
+"""
+核心設定模組
+"""
+import yaml
+import json
+import sys
 import os
-from pathlib import Path
-import logging # 為了 LOG_LEVEL
 
-# --- 基本路徑設定 ---
-# __file__ 是目前檔案 (core/config.py) 的路徑
-# .parent 會得到 core/
-# .parent.parent 會得到專案的根目錄
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-# --- 目標標的 ---
-# 注意：yfinance 對於台股，通常需要在股票代號後加上 ".TW"
-# FinMind API 使用的股票代號則不需要後綴 (例如 "2330")
-# 主控腳本在調用各客戶端時需要注意此差異，或在此處統一處理。
-# 為簡單起見，這裡先使用 yfinance 格式，FinMind 調用時需去除 .TW。
-# 或者，可以維護一個更複雜的字典結構，例如：
-# TARGETS = [
-#     {'yfinance_id': '2330.TW', 'finmind_id': '2330', 'name': 'TSMC'},
-#     {'yfinance_id': '2317.TW', 'finmind_id': '2317', 'name': 'Foxconn'},
-# ]
-# 目前先用簡單列表：
-# TARGET_STOCK_IDS_YFINANCE = ['2330.TW', '2317.TW', '2454.TW', '0050.TW'] # yfinance 使用的ID
-# TARGET_STOCK_IDS_FINMIND = [sid.replace('.TW', '') for sid in TARGET_STOCK_IDS_YFINANCE] # FinMind 使用的ID
-
-# 全新的、統一的 TARGETS 列表
-TARGETS = [
-    {'id': '2330', 'yfinance_id': '2330.TW', 'name': '台積電'},
-    {'id': '2317', 'yfinance_id': '2317.TW', 'name': '鴻海'},
-    {'id': '2454', 'yfinance_id': '2454.TW', 'name': '聯發科'},
-    {'id': '0050', 'yfinance_id': '0050.TW', 'name': '元大台灣50'},
-]
-
-# --- 資料庫路徑 ---
-# 所有的分析結果和基礎數據都將存儲在這個 DuckDB 檔案中
-ANALYTICS_DB_NAME = "analytics_mart.duckdb"
-_default_analytics_db_path = str(PROJECT_ROOT / ANALYTICS_DB_NAME)
-ANALYTICS_DB_PATH = os.getenv("KRONOS_ANALYTICS_DB_PATH", _default_analytics_db_path)
-
-# --- 源 Tick 資料庫路徑 ---
-# Time Aggregator 將從此資料庫讀取原始 Tick 數據
-SOURCE_TICKS_DB_NAME = "taifex_ticks.duckdb"  # 建議的源資料庫名稱
-_default_source_ticks_db_path = str(PROJECT_ROOT / SOURCE_TICKS_DB_NAME)
-SOURCE_TICKS_DB_PATH = os.getenv("KRONOS_SOURCE_TICKS_DB_PATH", _default_source_ticks_db_path)
-
-# --- TAIFEX 原始數據目錄 ---
-# 此目錄包含所有預先下載好的 TAIFEX 原始數據檔案 (例如 .zip, .csv, .txt 等)
-TAIFEX_RAW_DATA_DIR_NAME = "taifex_raw_data" # 資料夾名稱
-_default_taifex_raw_data_dir = str(PROJECT_ROOT / "data" / TAIFEX_RAW_DATA_DIR_NAME)
-TAIFEX_RAW_DATA_DIR = os.getenv("ATHENA_TAIFEX_RAW_DATA_DIR", _default_taifex_raw_data_dir)
-
-# --- TAIFEX 原始數據庫目錄 ---
-# taifex_data_pipeline 的輸出位置
-TAIFEX_RAW_DB_DIR_NAME = "raw_taifex"
-_default_taifex_raw_db_dir = str(PROJECT_ROOT / "data" / TAIFEX_RAW_DB_DIR_NAME)
-TAIFEX_RAW_DB_DIR = os.getenv("ATHENA_TAIFEX_RAW_DB_DIR", _default_taifex_raw_db_dir)
-# 內部 DuckDB 檔案的名稱
-TAIFEX_RAW_DB_FILENAME = "raw_taifex.duckdb"
+# 確定專案根目錄的策略：
+# 假設此 core/config.py 檔案位於 <PROJECT_ROOT>/core/config.py
+# 因此，專案根目錄是此檔案所在目錄的父目錄。
+# 這種方式比依賴 __main__ 更可靠，尤其當模組被其他部分導入時。
+try:
+    # 如果此檔案是 <PROJECT_ROOT>/core/config.py
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+except NameError:
+    # 如果 __file__ 未定義 (例如在某些特殊執行環境)，退回到當前工作目錄
+    # 這在測試時可能需要調整，或通過環境變數設定 PROJECT_ROOT
+    PROJECT_ROOT = os.getcwd()
 
 
-# --- 報告輸出目錄 ---
-REPORTS_OUTPUT_DIR_NAME = "output_reports" # 修改目錄名以更清晰
-_default_reports_output_dir = str(PROJECT_ROOT / REPORTS_OUTPUT_DIR_NAME)
-REPORTS_OUTPUT_DIR = os.getenv("KRONOS_REPORTS_OUTPUT_DIR", _default_reports_output_dir)
+CONFIG_YAML_NAME = "config.yaml"
+SOURCE_PRIORITY_JSON_NAME = "source_priority.json"
 
-# --- 日誌級別 ---
-# 可選值: 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
-LOG_LEVEL_STR = os.getenv("LOG_LEVEL", "INFO").upper()
-LOG_LEVEL = getattr(logging, LOG_LEVEL_STR, logging.INFO)
+# 檔案的絕對路徑
+CONFIG_YAML_PATH = os.path.join(PROJECT_ROOT, CONFIG_YAML_NAME)
+SOURCE_PRIORITY_JSON_PATH = os.path.join(PROJECT_ROOT, SOURCE_PRIORITY_JSON_NAME)
 
-# --- API Tokens ---
-# FinMind API Token (用於法人籌碼數據)
-# 強烈建議從環境變數讀取，不要硬編碼在程式碼中
-FINMIND_API_TOKEN = os.getenv("FINMIND_API_TOKEN")
-# 如果需要 FMP (Financial Modeling Prep) API Token
-# FMP_API_TOKEN = os.getenv("FMP_API_TOKEN")
+def load_app_config():
+    """
+    在系統啟動時讀取所有必要的設定檔，並返回一個統一的設定物件。
 
+    職責：
+    1. 讀取位於專案根目錄的 'config.yaml'。
+    2. 讀取位於專案根目錄的 'source_priority.json'。
+    3. 如果任一關鍵設定檔缺失，則捕獲 FileNotFoundError，
+       向 stdout 打印友善的錯誤報告，並以 SystemExit(1) 終止程式。
+    4. 如果檔案格式錯誤，也打印報告並以 SystemExit(1) 終止。
+    5. 如果所有設定檔成功讀取，則返回一個包含設定內容的字典。
+    """
+    config_data = {}
+    priority_data = {}
 
-# --- 各微應用 run.py 的相對路徑 (相對於專案根目錄) ---
-# 這些是預設路徑，如果您的結構不同，可以在此修改
-# 或者在主控腳本中動態構建
-YFINANCE_CLIENT_RUN_PATH = str(PROJECT_ROOT / "apps" / "yfinance_client" / "run.py")
-INSTITUTIONAL_ANALYZER_RUN_PATH = str(PROJECT_ROOT / "apps" / "institutional_analyzer" / "run.py")
-FEATURE_ANALYZER_RUN_PATH = str(PROJECT_ROOT / "apps" / "feature_analyzer" / "run.py")
-REPORT_GENERATOR_RUN_PATH = str(PROJECT_ROOT / "apps" / "report_generator" / "run.py")
-TIME_AGGREGATOR_RUN_PATH = str(PROJECT_ROOT / "apps" / "time_aggregator" / "run.py") # 新增時間聚合器路徑
-TAIFEX_DATA_PIPELINE_RUN_PATH = str(PROJECT_ROOT / "apps" / "taifex_data_pipeline" / "run.py") # 新增 TAIFEX 數據載入器路徑
-TAIFEX_DATA_TRANSFORMER_RUN_PATH = str(PROJECT_ROOT / "apps" / "taifex_data_transformer" / "run.py") # 新增 TAIFEX 數據轉換器路徑
+    # 1. 讀取 config.yaml
+    try:
+        # print(f"DEBUG: Attempting to open {CONFIG_YAML_PATH}") # 用於測試時調試路徑
+        with open(CONFIG_YAML_PATH, 'r', encoding='utf-8') as f_yaml:
+            config_data = yaml.safe_load(f_yaml)
+            if config_data is None: # 空的 yaml 檔案會 parse 成 None
+                print(f"指揮官注意：核心配置檔案 '{CONFIG_YAML_NAME}' 為空或格式無效，將使用預設空配置。", file=sys.stdout)
+                config_data = {}
+        # print(f"DEBUG: Successfully loaded {CONFIG_YAML_NAME}")
+    except FileNotFoundError:
+        print(f"指揮官，系統啟動時發現核心配置檔案 '{CONFIG_YAML_NAME}' 缺失 (預期路徑: {CONFIG_YAML_PATH})。系統無法初始化，任務已終止。", file=sys.stdout)
+        sys.exit(1)
+    except yaml.YAMLError as e:
+        print(f"指揮官，核心配置檔案 '{CONFIG_YAML_NAME}' (路徑: {CONFIG_YAML_PATH}) 格式錯誤：{e}。系統無法初始化，任務已終止。", file=sys.stdout)
+        sys.exit(1)
 
-# --- 數據更新與分析的時間範圍參數 ---
-# 這些可以根據需求調整
-# yfinance OHLCV 數據獲取起始日期 (例如，獲取過去5年的數據)
-YFINANCE_START_DATE_OFFSET_YEARS = 5
+    # 2. 讀取 source_priority.json
+    try:
+        # print(f"DEBUG: Attempting to open {SOURCE_PRIORITY_JSON_PATH}")
+        with open(SOURCE_PRIORITY_JSON_PATH, 'r', encoding='utf-8') as f_json:
+            priority_data = json.load(f_json)
+            if priority_data is None: # 空的 json 檔案可能 parse 成 None (取決於內容)
+                print(f"指揮官注意：數據源優先級檔案 '{SOURCE_PRIORITY_JSON_NAME}' 為空或格式無效，將使用預設空配置。", file=sys.stdout)
+                priority_data = {}
+        # print(f"DEBUG: Successfully loaded {SOURCE_PRIORITY_JSON_NAME}")
+    except FileNotFoundError:
+        print(f"指揮官，系統啟動時發現數據源優先級檔案 '{SOURCE_PRIORITY_JSON_NAME}' 缺失 (預期路徑: {SOURCE_PRIORITY_JSON_PATH})。無法執行數據融合，任務已終止。", file=sys.stdout)
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"指揮官，數據源優先級檔案 '{SOURCE_PRIORITY_JSON_NAME}' (路徑: {SOURCE_PRIORITY_JSON_PATH}) 格式錯誤：{e}。無法執行數據融合，任務已終止。", file=sys.stdout)
+        sys.exit(1)
 
-# 法人籌碼數據獲取起始日期 (例如，獲取過去1年的數據)
-# FinMind API 對歷史數據範圍可能有免費版限制
-INSTITUTIONAL_START_DATE_OFFSET_MONTHS = 12
-
-# 特徵分析 (Chimera) 的股票ID列表 (通常與 TARGET_STOCK_IDS_YFINANCE 一致)
-CHIMERA_ANALYSIS_STOCK_IDS = [target['yfinance_id'] for target in TARGETS] # 更新以使用新的 TARGETS 結構
-
-# 報告生成的時間範圍 (例如，生成最近3個月的報告)
-# 為了TAIFEX P/C Ratio測試，臨時擴大到36個月以覆蓋模擬數據日期
-REPORT_START_DATE_OFFSET_MONTHS = 36
-
-# --- 其他配置 ---
-# 例如，subprocess 調用的超時時間 (秒)
-SUBPROCESS_TIMEOUT = 300 # 5 分鐘
-
-# 確保報告輸出目錄存在 (主控腳本也會檢查，但這裡也可以先定義)
-# Path(REPORTS_OUTPUT_DIR).mkdir(parents=True, exist_ok=True) # 移到主控腳本中執行
+    # 合併設定
+    return {
+        "general_config": config_data,
+        "source_priority": priority_data,
+        "status": "Successfully loaded all configurations."
+    }
 
 if __name__ == '__main__':
-    # 打印配置以供檢查 (當直接運行此檔案時)
-    print(f"專案根目錄: {PROJECT_ROOT}")
-    # print(f"目標股票 (yfinance): {TARGET_STOCK_IDS_YFINANCE}") # 已廢除
-    # print(f"目標股票 (FinMind): {TARGET_STOCK_IDS_FINMIND}") # 已廢除
-    print(f"統一目標列表 (TARGETS):")
-    for target_info in TARGETS:
-        print(f"  - {target_info}")
-    print(f"分析資料庫路徑: {ANALYTICS_DB_PATH}")
-    print(f"源 Tick 資料庫路徑: {SOURCE_TICKS_DB_PATH}")
-    print(f"TAIFEX 原始數據目錄: {TAIFEX_RAW_DATA_DIR}")
-    print(f"TAIFEX 原始數據庫目錄: {TAIFEX_RAW_DB_DIR}")
-    print(f"報告輸出目錄: {REPORTS_OUTPUT_DIR}")
-    print(f"日誌級別: {LOG_LEVEL_STR} ({LOG_LEVEL})")
-    print(f"FinMind API Token (是否已設定): {'是' if FINMIND_API_TOKEN else '否'}")
+    # 為了在本機直接執行此檔案進行基本測試，
+    # 你可以在專案根目錄手動創建或移除 config.yaml 和 source_priority.json
+    print("--- 模擬: 嘗試載入應用程式設定 ---")
 
-    print(f"\nYFinance Client Run Path: {YFINANCE_CLIENT_RUN_PATH}")
-    print(f"Institutional Analyzer Run Path: {INSTITUTIONAL_ANALYZER_RUN_PATH}")
-    print(f"Feature Analyzer Run Path: {FEATURE_ANALYZER_RUN_PATH}")
-    print(f"Report Generator Run Path: {REPORT_GENERATOR_RUN_PATH}")
-    print(f"Time Aggregator Run Path: {TIME_AGGREGATOR_RUN_PATH}")
-    print(f"TAIFEX Data Pipeline Run Path: {TAIFEX_DATA_PIPELINE_RUN_PATH}")
-    print(f"TAIFEX Data Transformer Run Path: {TAIFEX_DATA_TRANSFORMER_RUN_PATH}")
+    # 檢查並報告預期檔案路徑 (方便本地調試)
+    print(f"預期 config.yaml 路徑: {CONFIG_YAML_PATH}")
+    print(f"預期 source_priority.json 路徑: {SOURCE_PRIORITY_JSON_PATH}")
 
-    print(f"\nYFinance Start Date Offset (Years): {YFINANCE_START_DATE_OFFSET_YEARS}")
-    print(f"Institutional Data Start Date Offset (Months): {INSTITUTIONAL_START_DATE_OFFSET_MONTHS}")
-    print(f"Report Start Date Offset (Months): {REPORT_START_DATE_OFFSET_MONTHS}")
-    print(f"Subprocess Timeout: {SUBPROCESS_TIMEOUT} seconds")
+    # 創建臨時檔案以供測試 (如果不存在)
+    temp_files_created = []
+    if not os.path.exists(CONFIG_YAML_PATH):
+        with open(CONFIG_YAML_PATH, 'w', encoding='utf-8') as f:
+            yaml.dump({"sample_config": "value from temp file"}, f)
+        print(f"提示: 創建了臨時 {CONFIG_YAML_NAME} 以供直接執行測試。")
+        temp_files_created.append(CONFIG_YAML_PATH)
+
+    if not os.path.exists(SOURCE_PRIORITY_JSON_PATH):
+        with open(SOURCE_PRIORITY_JSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump({"default_source": "primary from temp file"}, f)
+        print(f"提示: 創建了臨時 {SOURCE_PRIORITY_JSON_NAME} 以供直接執行測試。")
+        temp_files_created.append(SOURCE_PRIORITY_JSON_PATH)
+
+    try:
+        app_settings = load_app_config()
+        print("\n--- 模擬: 設定載入成功 ---")
+        print(f"設定內容: {app_settings}")
+    except SystemExit as e:
+        # load_app_config 內部已經打印了錯誤訊息
+        print(f"--- 模擬: 系統已按預期終止 (SystemExit code: {e.code}) ---")
+    finally:
+        # 清理此腳本創建的臨時檔案
+        for temp_file_path in temp_files_created:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+                print(f"提示: 移除了臨時 {os.path.basename(temp_file_path)}。")
+        print("--- 模擬: 執行完畢 ---")
