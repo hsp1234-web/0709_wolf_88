@@ -15,6 +15,7 @@ from .http_client import HttpClient
 from .data_fuser import DataFuser # <--- 導入 DataFuser
 from .factor_engine import FactorEngine # <--- 導入 FactorEngine
 from .backtester import Backtester # <--- 導入 Backtester
+from .optimizer import PortfolioOptimizer # <--- 導入 PortfolioOptimizer
 import importlib # <--- 導入 importlib
 
 # 配置基本的日誌記錄器
@@ -61,6 +62,7 @@ class MainOrchestrator:
         self.data_fuser = DataFuser() # <--- 初始化 DataFuser
         self.factor_engine = FactorEngine() # <--- 初始化 FactorEngine
         self.backtester = Backtester(log_manager=self.log_manager) # <--- 初始化 Backtester
+        self.portfolio_optimizer = PortfolioOptimizer(log_manager=self.log_manager) # <--- 初始化 PortfolioOptimizer
 
         orchestrator_logger.info(f"總調度器 (MainOrchestrator) 初始化完畢。專案根目錄使用: {PROJECT_ROOT}")
         MainOrchestrator._mission_states.clear()
@@ -135,8 +137,10 @@ class MainOrchestrator:
             self._execute_fusion_task(mission_id, internal_mission_params)
         elif mission_type == "calculate_factors":
             self._execute_factor_calculation_task(mission_id, internal_mission_params)
-        elif mission_type == "backtest": # <--- 新增回測任務類型
+        elif mission_type == "backtest":
             self._execute_backtest_task(mission_id, internal_mission_params)
+        elif mission_type == "portfolio_optimization": # <--- 新增投資組合優化任務類型
+            self._execute_optimization_task(mission_id, internal_mission_params)
         else:
             orchestrator_logger.warning(f"任務 {mission_id}: 未知的任務類型 '{mission_type}' 或未提供任務類型。")
             MainOrchestrator._mission_states[mission_id].update({
@@ -700,6 +704,157 @@ class MainOrchestrator:
             })
             if self.log_manager:
                 self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Backtest) 因執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
+
+    def _execute_optimization_task(self, mission_id: str, params: Dict[str, Any]):
+        """執行投資組合優化子任務。"""
+        MainOrchestrator._mission_states[mission_id].update({
+            "status": MISSION_STATUS_PROCESSING,
+            "message": "正在處理投資組合優化任務..."
+        })
+        orchestrator_logger.info(f"任務 {mission_id}: 正在執行投資組合優化任務。參數: {params}")
+
+        asset_price_paths_dict = params.get("asset_price_paths_dict") # Dict[str, str]
+        optimization_target = params.get("optimization_target")
+        risk_free_rate = params.get("risk_free_rate", 0.02)
+        target_volatility = params.get("target_volatility")
+        target_return = params.get("target_return")
+        weight_bounds_list = params.get("weight_bounds", [0, 1]) # API可能傳list
+        weight_bounds = tuple(weight_bounds_list) if isinstance(weight_bounds_list, list) and len(weight_bounds_list) == 2 else (0,1)
+
+        # covariance_method 和 expected_returns_method 可以從 params 獲取，或使用預設值
+        covariance_method = params.get("covariance_method", "ledoit_wolf") # Ledoit-Wolf 通常更穩健
+        expected_returns_method = params.get("expected_returns_method", "mean_historical_return")
+
+
+        required_params_check = {
+            "asset_price_paths_dict": asset_price_paths_dict,
+            "optimization_target": optimization_target,
+        }
+        missing_params_check = [k for k, v in required_params_check.items() if v is None]
+        if missing_params_check:
+            error_msg = f"任務 {mission_id} (Optimization): 缺少必要參數: {', '.join(missing_params_check)}。"
+            orchestrator_logger.error(error_msg)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED, "message": f"任務失敗：{error_msg}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=error_msg, details=params, level="ERROR", mission_id=mission_id)
+            return
+
+        if not isinstance(asset_price_paths_dict, dict) or not asset_price_paths_dict:
+            error_msg = f"任務 {mission_id} (Optimization): 'asset_price_paths_dict' 必須是非空字典。"
+            orchestrator_logger.error(error_msg)
+            # ... (更新狀態並記錄，同上)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED, "message": f"任務失敗：{error_msg}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=error_msg, details=params, level="ERROR", mission_id=mission_id)
+            return
+
+        try:
+            # 1. 載入並合併價格數據
+            orchestrator_logger.info(f"任務 {mission_id}: 開始載入資產價格數據。資產數量: {len(asset_price_paths_dict)}")
+            all_prices_list = []
+            for asset_id, path_str in asset_price_paths_dict.items():
+                asset_path = Path(path_str)
+                if not asset_path.exists():
+                    raise FileNotFoundError(f"資產 '{asset_id}' 的價格數據檔案不存在: {asset_path}")
+
+                # 假設 Parquet 檔案中包含 'Close' 欄位，並且索引是日期時間
+                # 如果檔案是 OHLCV，則取 'Close'；如果是單純的收盤價序列，則直接使用
+                df_asset = pd.read_parquet(asset_path)
+                if 'Close' in df_asset.columns:
+                    asset_series = df_asset['Close'].rename(asset_id)
+                elif len(df_asset.columns) == 1: # 假設只有一欄，即為收盤價
+                    asset_series = df_asset.iloc[:, 0].rename(asset_id)
+                else:
+                    raise ValueError(f"資產 '{asset_id}' 的價格數據檔案 {asset_path} 格式無法識別 (需要 'Close' 欄或單一價格欄)。")
+
+                if not isinstance(asset_series.index, pd.DatetimeIndex):
+                    asset_series.index = pd.to_datetime(asset_series.index)
+                all_prices_list.append(asset_series)
+
+            if not all_prices_list:
+                raise ValueError("未能成功載入任何資產的價格數據。")
+
+            # 合併所有資產的收盤價序列
+            prices_df_combined = pd.concat(all_prices_list, axis=1)
+            # 處理缺失值：向前填充後向後填充，確保數據連續性，但仍可能存在 NaN（如果整個序列開始或結束時缺失）
+            prices_df_combined = prices_df_combined.ffill().bfill()
+            # 再次檢查是否有 NaN，如果優化器不能處理，則可能需要 dropna(how='any') 或更複雜的插值
+            if prices_df_combined.isnull().values.any():
+                orchestrator_logger.warning(f"任務 {mission_id}: 合併後的價格數據中仍存在 NaN 值。行數: {prices_df_combined.shape[0]} -> {prices_df_combined.dropna().shape[0]}")
+                prices_df_combined.dropna(inplace=True) # 簡單移除包含 NaN 的行
+                if prices_df_combined.empty:
+                    raise ValueError("價格數據在移除 NaN 後變為空。")
+
+            orchestrator_logger.info(f"任務 {mission_id}: 資產價格數據載入並合併完成。Shape: {prices_df_combined.shape}")
+
+            # 2. 執行投資組合優化
+            weights, performance, error_msg = self.portfolio_optimizer.optimize_portfolio(
+                prices_df=prices_df_combined,
+                optimization_target=optimization_target,
+                risk_free_rate=risk_free_rate,
+                target_volatility=target_volatility,
+                target_return=target_return,
+                weight_bounds=weight_bounds,
+                covariance_method=covariance_method,
+                expected_returns_method=expected_returns_method
+            )
+
+            if error_msg:
+                raise Exception(f"投資組合優化失敗: {error_msg}")
+            if weights is None or performance is None:
+                raise Exception("投資組合優化未返回有效權重或績效數據，但也沒有明確錯誤訊息。")
+
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_SUCCESS,
+                "message": f"任務成功：投資組合優化 ('{optimization_target}') 完成。",
+                "details": {
+                    "optimization_target": optimization_target,
+                    "risk_free_rate": risk_free_rate,
+                    "asset_ids": list(asset_price_paths_dict.keys()),
+                    "optimized_weights": weights,
+                    "expected_performance": performance
+                },
+                "end_time": datetime.now().isoformat()
+            })
+            orchestrator_logger.info(f"任務 {mission_id} (Optimization) 成功完成。目標: {optimization_target}")
+            if self.log_manager:
+                self.log_manager.log_event(
+                    event_type="mission_succeeded",
+                    message=f"任務 {mission_id} (Optimization) for target {optimization_target} 成功。",
+                    details={"target": optimization_target, "num_assets": len(weights)},
+                    mission_id=mission_id
+                )
+
+        except FileNotFoundError as fnf_e:
+            orchestrator_logger.error(f"任務 {mission_id} (Optimization): 數據檔案未找到: {fnf_e}", exc_info=False)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED, "message": f"任務失敗：數據檔案未找到 - {str(fnf_e)}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Optimization) 因數據檔案未找到失敗。", details={"error": str(fnf_e)}, level="ERROR", mission_id=mission_id)
+        except ValueError as val_e: # 捕捉數據處理相關的 ValueError
+            orchestrator_logger.error(f"任務 {mission_id} (Optimization): 數據處理錯誤: {val_e}", exc_info=True)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED, "message": f"任務失敗：數據處理錯誤 - {str(val_e)}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Optimization) 因數據處理錯誤失敗。", details={"error": str(val_e)}, level="ERROR", mission_id=mission_id)
+        except Exception as e:
+            orchestrator_logger.error(f"任務 {mission_id} (Optimization): 執行優化任務時發生嚴重錯誤: {e}", exc_info=True)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED, "message": f"任務失敗：執行優化時發生內部錯誤 - {str(e)}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Optimization) 因執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
 
 
     def get_mission_status(self, mission_id: str) -> Dict[str, Any]:

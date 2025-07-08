@@ -242,6 +242,23 @@ class BacktestMissionParameters(BaseModel):
         "extra": "allow" # 允許 Orchestrator 可能需要的其他參數
     }
 
+class OptimizationMissionParameters(BaseModel):
+    """
+    啟動投資組合優化任務時傳遞的參數模型。
+    """
+    asset_price_paths_dict: Dict[str, str] = Field(..., description="一個字典，鍵為資產ID，值為該資產歷史價格數據 (Parquet) 的路徑。")
+    optimization_target: str = Field(..., description="優化目標，例如 'max_sharpe', 'min_volatility', 'hrp'。")
+    risk_free_rate: float = Field(0.02, description="無風險利率，用於夏普比率等計算。")
+    target_volatility: Optional[float] = Field(None, description="目標年化波動率 (用於 'efficient_risk' 優化)。")
+    target_return: Optional[float] = Field(None, description="目標年化回報率 (用於 'efficient_return' 優化)。")
+    weight_bounds: Optional[List[float]] = Field([0.0, 1.0], description="個別資產權重的上下限列表，例如 [0, 1]。")
+    covariance_method: Optional[str] = Field("ledoit_wolf", description="計算協方差矩陣的方法。")
+    expected_returns_method: Optional[str] = Field("mean_historical_return", description="計算預期回報的方法。")
+
+    model_config = {
+        "extra": "allow"
+    }
+
 # --- API Endpoints ---
 
 @app.post("/api/v1/start_mission", response_model=StartMissionResponse, tags=["Mission Control"])
@@ -500,6 +517,64 @@ async def start_backtest_mission_endpoint(params: BacktestMissionParameters, req
                 error_message=str(e)
             )
         raise HTTPException(status_code=500, detail=f"啟動回測任務時發生內部錯誤: {str(e)}")
+
+
+@app.post("/api/v1/start_optimization_mission", response_model=StartMissionResponse, tags=["Portfolio Optimization"])
+async def start_optimization_mission_endpoint(params: OptimizationMissionParameters, request: Request):
+    """
+    啟動一個新的投資組合優化任務。
+    """
+    current_orchestrator = getattr(request.app.state, 'orchestrator', None)
+    current_log_manager = getattr(request.app.state, 'log_manager', None)
+
+    if not current_orchestrator:
+        api_logger.error("API Error: Orchestrator not found in app.state during optimization mission start.")
+        raise HTTPException(status_code=503, detail="總調度器尚未初始化，服務暫不可用。")
+
+    mission_params_dict = {
+        "type": "portfolio_optimization",
+        "asset_price_paths_dict": params.asset_price_paths_dict,
+        "optimization_target": params.optimization_target,
+        "risk_free_rate": params.risk_free_rate,
+        "target_volatility": params.target_volatility,
+        "target_return": params.target_return,
+        "weight_bounds": params.weight_bounds,
+        "covariance_method": params.covariance_method,
+        "expected_returns_method": params.expected_returns_method
+    }
+    api_logger.info(f"API 接收到投資組合優化任務啟動請求。參數: {mission_params_dict}")
+
+    try:
+        mission_id = current_orchestrator.start_mission(mission_params=mission_params_dict)
+        initial_status_dict = current_orchestrator.get_mission_status(mission_id)
+
+        response_data = StartMissionResponse(
+            mission_id=mission_id,
+            message=f"投資組合優化任務 {mission_id} (目標: {params.optimization_target}) 已成功啟動。",
+            initial_status=initial_status_dict
+        )
+
+        if current_log_manager:
+            current_log_manager.log_api_call(
+                endpoint="/api/v1/start_optimization_mission",
+                method="POST",
+                mission_id=mission_id,
+                request_body=mission_params_dict,
+                response_body=response_data.model_dump(),
+                status_code=200
+            )
+        return response_data
+    except Exception as e:
+        api_logger.error(f"啟動投資組合優化任務時發生錯誤: {e}", exc_info=True)
+        if current_log_manager:
+             current_log_manager.log_api_call(
+                endpoint="/api/v1/start_optimization_mission",
+                method="POST",
+                request_body=mission_params_dict,
+                status_code=500,
+                error_message=str(e)
+            )
+        raise HTTPException(status_code=500, detail=f"啟動投資組合優化任務時發生內部錯誤: {str(e)}")
 
 
 # 為了能夠透過 uvicorn 運行，我們可以在這裡加入一個簡易的啟動方式
