@@ -258,6 +258,8 @@ class DataFetcher:
         self.clients = clients if clients else {}
         # 初始化 TaifexClient 時傳入 HttpClient
         self.taifex_client = TaifexClient(log_manager=self.log_manager, http_client=self.http_client)
+        # 初始化 YFinanceClient 時傳入 HttpClient
+        self.yfinance_client = YFinanceClient(log_manager=self.log_manager, http_client=self.http_client)
 
         logger.info(f"資料獲取器 (DataFetcher) 初始化完畢。Execution_mode: {self.execution_mode}")
         if self.clients:
@@ -267,7 +269,7 @@ class DataFetcher:
         logger.info(f"任務 {mission_id}: 開始獲取數據。參數: {mission_params}")
         results: Dict[str, Any] = {}
         task_type = mission_params.get("task_type")
-        target_date = mission_params.get("date")
+
         # 從 mission_params 獲取 use_mock，預設為 True (模擬)
         use_mock: bool = mission_params.get("use_mock", True)
 
@@ -279,6 +281,7 @@ class DataFetcher:
         )
 
         if task_type == "FETCH_TAIFEX":
+            target_date = mission_params.get("date")
             if not target_date:
                 logger.error(f"任務 {mission_id} (FETCH_TAIFEX): 未指定日期 (date)。")
                 results["error"] = "FETCH_TAIFEX 任務未指定日期。"
@@ -287,33 +290,15 @@ class DataFetcher:
 
             data_types_to_fetch = mission_params.get("data_types", ["institutional_investors", "pc_ratio"])
 
-            # SIMULATION mode (透過 use_mock=True 控制)
             if use_mock:
                 logger.info(f"任務 {mission_id} (FETCH_TAIFEX): 模擬模式執行 (use_mock=True)。")
-                mock_data_root = "mock_data/taifex" # 模擬數據的 Parquet 檔案位置
-
-                # 當 use_mock 為 True 時，我們仍然可以選擇性地使用 mock_csv_content (如果有的話)
-                # 或者從 mock_data/taifex 目錄讀取 Parquet 檔案作為更高優先級的模擬數據
-                # 目前 TaifexClient 的 fetch_* 方法在 use_mock_data=True 時，優先使用 mock_csv_content
-                # 如果要改成優先讀取 parquet，則需調整 TaifexClient 或此處邏輯
-
-                # 這裡的邏輯是，如果 use_mock=True，我們將依賴 TaifexClient 內部用 mock_csv_content (若有)
-                # 或其自身的模擬邏輯 (如果 TaifexClient 有此設計)。
-                # 在目前的 TaifexClient 實作中，若 use_mock_data=True 且 mock_csv_content=None，它會返回 None。
-                # 這意味著若要使用 mock_data/taifex 下的 Parquet 檔案，需要在 Orchestrator 層面準備好 CSV 內容。
-                # 或者，我們在這裡直接讀取 Parquet 檔案，繞過 TaifexClient 的 fetch。
-                # 為了與第二階段的運作方式一致 (Orchestrator 提供 mock CSV)，我們暫時保持 Orchestrator 準備 mock CSV。
-                # 如果 Orchestrator 沒有提供 mock CSV，則 TaifexClient 的 fetch 會返回 None。
-
-                # 此處的 SIMULATION 邏輯現在由 TaifexClient 的 use_mock_data=True 控制。
-                # 如果 mission_params 包含 mock_csv_content，它將被傳遞下去。
                 mock_institutional_investors_csv = mission_params.get("mock_data", {}).get("institutional_investors_csv")
                 mock_pc_ratio_csv = mission_params.get("mock_data", {}).get("pc_ratio_csv")
 
                 if "institutional_investors" in data_types_to_fetch:
                     df_inv = self.taifex_client.fetch_institutional_investors(
                         date_str=target_date,
-                        use_mock_data=True, # 強制使用模擬數據
+                        use_mock_data=True,
                         mock_csv_content=mock_institutional_investors_csv
                     )
                     if df_inv is not None:
@@ -324,23 +309,19 @@ class DataFetcher:
                 if "pc_ratio" in data_types_to_fetch:
                     df_pc = self.taifex_client.fetch_pc_ratio(
                         date_str=target_date,
-                        use_mock_data=True, # 強制使用模擬數據
+                        use_mock_data=True,
                         mock_csv_content=mock_pc_ratio_csv
                     )
                     if df_pc is not None:
                         results["taifex_pc_ratio"] = df_pc
                     else:
                         results["taifex_pc_ratio_error"] = f"為日期 {target_date} 獲取P/C Ratio模擬數據失敗。"
-
-            # PRODUCTION/LIVE mode (透過 use_mock=False 控制)
-            else: # use_mock is False
-                logger.info(f"任務 {mission_id} (FETCH_TAIFEX): 真實數據抓取模式執行 (use_mock=False)。將調用 TaifexClient 進行網路請求。")
-
-                # 在真實模式下，mock_csv_content 參數應為 None
+            else: # not use_mock (real data)
+                logger.info(f"任務 {mission_id} (FETCH_TAIFEX): 真實數據抓取模式執行 (use_mock=False)。")
                 if "institutional_investors" in data_types_to_fetch:
                     df_inv = self.taifex_client.fetch_institutional_investors(
                         date_str=target_date,
-                        use_mock_data=False, # 指示進行真實抓取
+                        use_mock_data=False,
                         mock_csv_content=None
                     )
                     if df_inv is not None:
@@ -351,13 +332,83 @@ class DataFetcher:
                 if "pc_ratio" in data_types_to_fetch:
                     df_pc = self.taifex_client.fetch_pc_ratio(
                         date_str=target_date,
-                        use_mock_data=False, # 指示進行真實抓取
+                        use_mock_data=False,
                         mock_csv_content=None
                     )
                     if df_pc is not None:
                         results["taifex_pc_ratio"] = df_pc
                     else:
                         results["taifex_pc_ratio_error"] = f"為日期 {target_date} 獲取P/C Ratio真實數據失敗。"
+
+        elif task_type == "FETCH_YFINANCE":
+            target_date = mission_params.get("date")
+            ticker_symbol = mission_params.get("ticker_symbol")
+
+            if not target_date or not ticker_symbol:
+                error_msg = f"任務 {mission_id} (FETCH_YFINANCE): 未指定日期 (date) 或股票代號 (ticker_symbol)。"
+                logger.error(error_msg)
+                results["error"] = error_msg
+                self.log_manager.log_event(event_type="data_fetcher_task_failed", message="FETCH_YFINANCE 任務參數錯誤。", details={"mission_id": mission_id, "missing_date": not target_date, "missing_ticker": not ticker_symbol}, level="ERROR", source_module="DataFetcher", mission_id=mission_id)
+                return results
+
+            if use_mock:
+                logger.info(f"任務 {mission_id} (FETCH_YFINANCE): 模擬模式執行 (use_mock=True) for {ticker_symbol} on {target_date}.")
+                mock_payload = mission_params.get("mock_data", {}).get("ohlcv_df")
+                mock_ohlcv_df_for_client: Optional[pd.DataFrame] = None
+
+                if isinstance(mock_payload, dict):
+                    try:
+                        # 假設 API 傳來的 dict 是 to_dict(orient='split') 的結果
+                        mock_ohlcv_df_for_client = pd.DataFrame.from_dict(mock_payload, orient='split')
+                        # yfinance history() 返回的 DataFrame 索引是基於時區的 DatetimeIndex (例如 'America/New_York')
+                        # to_dict(orient='split') 會將索引轉換為 ISO 格式的字串列表。
+                        # from_dict(orient='split') 會將其讀回為普通 Index。
+                        # 我們需要將其轉換回 DatetimeIndex 以匹配 YFinanceClient 儲存和比較時的預期。
+                        if 'index' in mock_payload and mock_payload['index']:
+                             mock_ohlcv_df_for_client.index = pd.to_datetime(mock_ohlcv_df_for_client.index)
+                        logger.info(f"成功從 dict 重建 mock_ohlcv_df for {ticker_symbol}, shape: {mock_ohlcv_df_for_client.shape}")
+                    except Exception as e:
+                        logger.error(f"從 dict 重建 mock_ohlcv_df 失敗 for {ticker_symbol}: {e}", exc_info=True)
+                        results[f"yfinance_ohlcv_{ticker_symbol.replace('.', '_')}_error"] = f"為股票 {ticker_symbol} 日期 {target_date} 重建模擬數據 DataFrame 失敗: {e}"
+                        # 如果重建失敗，則不繼續調用 fetch_ohlcv
+                        final_message = f"DataFetcher 完成任務 {mission_id}。結果鍵: {list(results.keys())}"
+                        logger.info(final_message)
+                        self.log_manager.log_event(
+                            event_type="data_fetcher_task_completed",
+                            message=final_message,
+                            details={"mission_id": mission_id, "results_summary": {k:type(v).__name__ for k,v in results.items()}},
+                            source_module="DataFetcher", mission_id=mission_id
+                        )
+                        return results
+                elif isinstance(mock_payload, pd.DataFrame): # 如果直接傳入 DataFrame (例如非 API 調用時)
+                    mock_ohlcv_df_for_client = mock_payload
+                else:
+                    logger.warning(f"未提供有效的 ohlcv_df 模擬數據 (應為 dict 或 DataFrame) for {ticker_symbol}。")
+
+                df_ohlcv = self.yfinance_client.fetch_ohlcv(
+                    ticker_symbol=ticker_symbol,
+                    date_str=target_date,
+                    use_mock_data=True,
+                    mock_data_content=mock_ohlcv_df
+                )
+                if df_ohlcv is not None:
+                    results[f"yfinance_ohlcv_{ticker_symbol.replace('.', '_')}"] = df_ohlcv
+                else:
+                    results[f"yfinance_ohlcv_{ticker_symbol.replace('.', '_')}_error"] = f"為股票 {ticker_symbol} 日期 {target_date} 獲取 OHLCV 模擬數據失敗。"
+
+            else: # not use_mock (real data)
+                logger.info(f"任務 {mission_id} (FETCH_YFINANCE): 真實數據抓取模式執行 (use_mock=False) for {ticker_symbol} on {target_date}.")
+                df_ohlcv = self.yfinance_client.fetch_ohlcv(
+                    ticker_symbol=ticker_symbol,
+                    date_str=target_date,
+                    use_mock_data=False,
+                    mock_data_content=None # 真實抓取時不應有 mock_data_content
+                )
+                if df_ohlcv is not None:
+                    results[f"yfinance_ohlcv_{ticker_symbol.replace('.', '_')}"] = df_ohlcv
+                else:
+                    results[f"yfinance_ohlcv_{ticker_symbol.replace('.', '_')}_error"] = f"為股票 {ticker_symbol} 日期 {target_date} 獲取 OHLCV 真實數據失敗。"
+
         else:
             logger.warning(f"任務 {mission_id}: 未知的 task_type '{task_type}' 或未實現的處理邏輯。")
             results["error"] = f"未知的 task_type: {task_type}"
@@ -506,3 +557,157 @@ if __name__ == '__main__':
          print(f"PRODUCTION (非黃金數據日期) - institutional_investors data is None (as expected).")
 
     print("\n--- DataFetcher 測試完畢 ---")
+
+
+class YFinanceClient:
+    """
+    Yahoo Finance 資料客戶端。
+    負責抓取股票的日線 OHLCV 數據。
+    """
+    def __init__(self, log_manager: Any, http_client: HttpClient): # http_client 暫時未直接使用，但保持 API 一致性
+        self.log_manager = log_manager
+        self.http_client = http_client # yfinance 內部處理其請求，但保留 http_client 以符合統一接口和未來可能的擴展
+        self.data_lake_root = PROJECT_ROOT / "data_lake" / "raw" / "yfinance" / "ohlcv"
+        logger.info(f"YFinanceClient 初始化完畢。Data Lake Root: {self.data_lake_root}")
+
+    def _save_to_data_lake(self, df: pd.DataFrame, ticker_symbol: str, date_str: str) -> Optional[Path]:
+        """
+        將 DataFrame 儲存到 Data Lake 的 Parquet 檔案中。
+        路徑結構: data_lake/raw/yfinance/ohlcv/{ticker_symbol}/{date_str}.parquet
+        """
+        dir_path: Path = self.data_lake_root / ticker_symbol
+        file_path: Path = dir_path / f"{date_str}.parquet"
+        try:
+            dir_path.mkdir(parents=True, exist_ok=True)
+            df.to_parquet(file_path, index=True) # yfinance 的 history() 返回的 DataFrame 索引是 Date
+            logger.info(f"股票 {ticker_symbol} 的 OHLCV 數據已儲存到: {file_path}")
+            return file_path
+        except Exception as e:
+            logger.error(f"儲存股票 {ticker_symbol} 的 OHLCV 數據到 {file_path} 失敗: {e}")
+            if self.log_manager:
+                self.log_manager.log_event(
+                    event_type="data_save_failed",
+                    message=f"儲存股票 {ticker_symbol} 的 OHLCV 數據到 {str(file_path)} 失敗。",
+                    details={"error": str(e), "path": str(file_path), "ticker": ticker_symbol, "date": date_str},
+                    level="ERROR", source_module="YFinanceClient"
+                )
+            return None
+
+    def fetch_ohlcv(self, ticker_symbol: str, date_str: str, use_mock_data: bool = True, mock_data_content: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
+        """
+        獲取指定股票和日期的日線 OHLCV 數據。
+        yfinance 的 history() 方法獲取的是一個時間段的數據。
+        為了獲取特定一天的數據，我們需要將 start 設定為 date_str，end 設定為 date_str 的後一天。
+        """
+        logger.info(f"開始抓取股票 {ticker_symbol} 在日期 {date_str} 的 OHLCV 數據... (use_mock_data: {use_mock_data})")
+
+        source_type = "模擬"
+        df_ohlcv: Optional[pd.DataFrame] = None
+
+        if use_mock_data:
+            if mock_data_content is not None and isinstance(mock_data_content, pd.DataFrame):
+                logger.info(f"使用提供的模擬 DataFrame 進行 {ticker_symbol} ({date_str}) 的 OHLCV 數據處理。")
+                df_ohlcv = mock_data_content
+            else:
+                # 可以選擇從預定義的模擬檔案路徑讀取，或簡單返回 None
+                logger.warning(f"YFinanceClient: 要求使用模擬數據，但未提供有效的 mock_data_content (DataFrame) for {ticker_symbol} ({date_str})。")
+                # 在此樁實現中，若無 mock_data_content 則返回 None
+                # 未來可以擴展為從 mock_data/yfinance/ohlcv/{ticker_symbol}/{date_str}.parquet 讀取
+                return None
+        else: # 真實數據抓取
+            source_type = "網路 (yfinance)"
+            logger.info(f"YFinanceClient: 嘗試從 yfinance 抓取 {ticker_symbol} 在 {date_str} 的 OHLCV 數據。")
+            try:
+                import yfinance as yf
+                ticker = yf.Ticker(ticker_symbol)
+
+                # 計算結束日期 (開始日期的後一天)
+                from datetime import datetime, timedelta
+                start_date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                end_date_obj = start_date_obj + timedelta(days=1)
+                end_date_str = end_date_obj.strftime("%Y-%m-%d")
+
+                # 獲取歷史數據
+                # yfinance 的 history() 返回的 DataFrame，其索引是 DatetimeIndex
+                # 如果指定日期沒有數據 (例如假日或非交易日)，返回的 DataFrame 會是空的
+                hist_df = ticker.history(start=date_str, end=end_date_str, interval="1d")
+
+                if hist_df.empty:
+                    logger.warning(f"YFinanceClient: 股票 {ticker_symbol} 在日期 {date_str} (查詢區間 {date_str} 至 {end_date_str}) 查無 OHLCV 數據 (來源: {source_type})。可能是假日或非交易日。")
+                    if self.log_manager:
+                        self.log_manager.log_event(
+                            event_type="data_fetch_nodata",
+                            message=f"股票 {ticker_symbol} 在 {date_str} 查無 OHLCV 數據。",
+                            details={"ticker": ticker_symbol, "date": date_str, "source": "yfinance", "data_type": "ohlcv", "fetch_source": source_type},
+                            level="WARNING", source_module="YFinanceClient"
+                        )
+                    return None
+
+                # 篩選確保只取目標日期的數據 (儘管 yfinance 通常只會返回該日)
+                # hist_df.index 是 DatetimeIndex，需要比較日期部分
+                # df_ohlcv = hist_df[hist_df.index.strftime('%Y-%m-%d') == date_str]
+                # 由於我們查詢的是單日，如果 hist_df 非空，它就應該是我們要的數據
+                df_ohlcv = hist_df.copy() # 創建副本以避免 SettingWithCopyWarning
+
+                if df_ohlcv.empty: # 再次檢查，以防萬一
+                    logger.warning(f"YFinanceClient: 篩選後，股票 {ticker_symbol} 在日期 {date_str} 仍無 OHLCV 數據 (來源: {source_type})。")
+                    return None
+
+                logger.info(f"成功從 yfinance 獲取 {ticker_symbol} 在 {date_str} 的 OHLCV 數據，共 {len(df_ohlcv)} 筆 (來源: {source_type})。")
+
+            except ImportError:
+                logger.error("YFinanceClient: yfinance 套件未安裝。請先安裝 yfinance。")
+                # 這種情況通常不應該發生在已部署的環境，但在開發時可能遇到
+                raise
+            except Exception as e: # 捕捉 yfinance 可能拋出的其他錯誤，或網路問題
+                logger.error(f"YFinanceClient: 抓取 {ticker_symbol} ({date_str}) OHLCV 數據時發生錯誤: {e}", exc_info=True)
+                if self.log_manager:
+                    self.log_manager.log_event(
+                        event_type="yfinance_fetch_failed",
+                        message=f"抓取 {ticker_symbol} OHLCV 數據失敗 ({date_str})。",
+                        details={"error": str(e), "ticker": ticker_symbol, "date": date_str, "data_type": "ohlcv"},
+                        level="ERROR", source_module="YFinanceClient"
+                    )
+                return None
+
+        if df_ohlcv is not None and not df_ohlcv.empty:
+            try:
+                # 可在此處添加對 df_ohlcv 的欄位檢查或轉換 (例如確保 Open, High, Low, Close, Volume 存在)
+                # yfinance 返回的欄位名通常是 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'
+                # 我們主要關心 OHLCV
+                required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+                missing_cols = [col for col in required_cols if col not in df_ohlcv.columns]
+                if missing_cols:
+                    logger.warning(f"YFinanceClient: 從 {source_type} 獲取的 {ticker_symbol} ({date_str}) OHLCV 數據缺少必要欄位: {missing_cols}。可用欄位: {df_ohlcv.columns.tolist()}")
+                    # 根據需求決定是否要返回部分數據或 None
+                    # 此處選擇如果缺少核心欄位則返回 None
+                    return None
+
+                # 為了與 TaifexClient 的儲存行為保持某種程度的一致性 (雖然 TaifexClient 目前不處理 OHLCV)
+                # 我們將 DataFrame 儲存，並返回 DataFrame 本身
+                file_path = self._save_to_data_lake(df_ohlcv, ticker_symbol, date_str)
+
+                if file_path and self.log_manager:
+                    self.log_manager.log_event(
+                        event_type="data_fetch_success",
+                        message=f"成功抓取並儲存 {ticker_symbol} 在 {date_str} 的 OHLCV 數據。",
+                        details={"source": "yfinance", "data_type": "ohlcv", "ticker": ticker_symbol, "date": date_str, "path": str(file_path), "rows": len(df_ohlcv), "columns": list(df_ohlcv.columns), "fetch_source": source_type},
+                        level="INFO", source_module="YFinanceClient"
+                    )
+                # 如果儲存失敗，file_path 會是 None，但我們仍然返回獲取的 df_ohlcv
+                # 或者，我們可以選擇如果儲存失敗則也返回 None，取決於需求
+                return df_ohlcv
+            except Exception as e:
+                logger.error(f"YFinanceClient: 處理或儲存 {ticker_symbol} ({date_str}) OHLCV 數據時發生錯誤: {e}", exc_info=True)
+                if self.log_manager:
+                    self.log_manager.log_event(
+                        event_type="data_process_failed",
+                        message=f"處理或儲存 {ticker_symbol} OHLCV 數據時失敗 ({date_str})。",
+                        details={"error": str(e), "ticker": ticker_symbol, "date": date_str, "data_type": "ohlcv", "fetch_source": source_type},
+                        level="ERROR", source_module="YFinanceClient"
+                    )
+                return None
+        elif df_ohlcv is not None and df_ohlcv.empty: # 如果模擬數據是空的 DataFrame
+             logger.warning(f"YFinanceClient: 提供的模擬數據 for {ticker_symbol} ({date_str}) 是空的 DataFrame。")
+
+        return None # 如果 df_ohlcv 是 None (例如抓取失敗或無模擬數據)
