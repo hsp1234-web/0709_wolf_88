@@ -3,7 +3,10 @@
 import logging
 from typing import Any, Dict, Optional
 from datetime import datetime
-import os
+from pathlib import Path # <--- 導入 Path
+
+# 引入核心設定
+from core.config import PROJECT_ROOT # <--- 導入 PROJECT_ROOT
 
 # 引入 DataFetcher 和 HttpClient
 from .data_fetcher import DataFetcher
@@ -36,28 +39,32 @@ class MainOrchestrator:
     """
     _mission_states: Dict[str, Dict[str, Any]] = {}
 
-    def __init__(self, log_manager: Any, base_path: Optional[str] = None): # data_fetcher 和 data_fuser 移除，將在內部創建
+    def __init__(self, log_manager: Any): # <--- 移除 base_path 參數
         """
         初始化總調度器。
 
         Args:
             log_manager: 日誌管理器實例。
-            base_path: (可選) 專案的根目錄路徑。
         """
         self.log_manager = log_manager
         self.http_client = HttpClient() # 創建 HttpClient 實例
 
+        # self.project_root = PROJECT_ROOT # <--- 使用導入的 PROJECT_ROOT
+        # self.data_lake_path = self.project_root / "data_lake" # <--- 定義 data_lake_path
+        # self.mock_data_path = self.project_root / "mock_data" # <--- 定義 mock_data_path
+
         # 初始化 DataFetcher，傳入 log_manager 和 http_client
-        # execution_mode 可以先設為一個預設值，因為實際行為由 mission_params['use_mock'] 控制
-        self.data_fetcher = DataFetcher(log_manager=self.log_manager, http_client=self.http_client, execution_mode="ADAPTIVE")
+        # DataFetcher 內部會處理其自身的路徑需求，基於 PROJECT_ROOT
+        # 我們將在 DataFetcher 的重構中處理這一點
+        self.data_fetcher = DataFetcher(
+            log_manager=self.log_manager,
+            http_client=self.http_client,
+            execution_mode="ADAPTIVE"
+            # project_root=self.project_root # 或者直接將 PROJECT_ROOT 傳給它
+        )
         self.data_fuser = None # 暫時未使用
 
-        if base_path:
-            self.project_base_path = base_path
-        else:
-            self.project_base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-
-        orchestrator_logger.info(f"總調度器 (MainOrchestrator) 初始化完畢。專案根目錄設定為: {self.project_base_path}")
+        orchestrator_logger.info(f"總調度器 (MainOrchestrator) 初始化完畢。專案根目錄使用: {PROJECT_ROOT}")
         MainOrchestrator._mission_states.clear()
 
 
@@ -303,15 +310,28 @@ if __name__ == '__main__':
     orchestrator_logger.info("--- 測試 MainOrchestrator ---")
     mock_logger_instance = MockLogManager()
 
-    current_script_path = os.path.dirname(os.path.abspath(__file__))
-    project_root_for_test = os.path.abspath(os.path.join(current_script_path, "..", ".."))
+    # project_root_for_test = os.path.abspath(os.path.join(current_script_path, "..", "..")) # 改用 PROJECT_ROOT
+    # orchestrator = MainOrchestrator(log_manager=mock_logger_instance, base_path=project_root_for_test) # base_path 已移除
+    orchestrator = MainOrchestrator(log_manager=mock_logger_instance)
 
-    orchestrator = MainOrchestrator(log_manager=mock_logger_instance, base_path=project_root_for_test)
 
     # data_lake 目錄結構假設由 TaifexClient 內部處理
-    DATA_LAKE_TAIFEX_ROOT = os.path.join(project_root_for_test, "data_lake", "raw", "taifex")
-    os.makedirs(os.path.join(DATA_LAKE_TAIFEX_ROOT, "institutional_investors"), exist_ok=True)
-    os.makedirs(os.path.join(DATA_LAKE_TAIFEX_ROOT, "pc_ratio"), exist_ok=True)
+    # 在這裡創建測試用的目錄時，也應該使用 pathlib 和 PROJECT_ROOT
+    # 不過，TaifexClient 的重構會使其自行處理基於 PROJECT_ROOT 的路徑創建
+    # DATA_LAKE_TAIFEX_ROOT = PROJECT_ROOT / "data_lake" / "raw" / "taifex" # TaifexClient 會處理
+    # (DATA_LAKE_TAIFEX_ROOT / "institutional_investors").mkdir(parents=True, exist_ok=True)
+    # (DATA_LAKE_TAIFEX_ROOT / "pc_ratio").mkdir(parents=True, exist_ok=True)
+    # 由於 TaifexClient (prometheus_fire_backend/modules/data_fetcher.py 中的版本)
+    # 內部有 DATA_LAKE_ROOT = "data_lake/raw/taifex" 並使用 os.makedirs，
+    # 這裡暫時不需要手動創建，等待 TaifexClient 重構。
+    # 為了讓測試能跑通，我們暫時保留 os.makedirs 但改用 PROJECT_ROOT。
+    # 理想情況是 TaifexClient 初始化時就能處理好這些路徑。
+    # 暫時保留舊的 os 導入以便 os.makedirs 能運作，之後會清理。
+    # import os # <--- TaifexClient 現在會自行創建目錄，此處不再需要手動創建。
+    # _test_data_lake_taifex_root = PROJECT_ROOT / "data_lake" / "raw" / "taifex"
+    # os.makedirs(_test_data_lake_taifex_root / "institutional_investors", exist_ok=True)
+    # os.makedirs(_test_data_lake_taifex_root / "pc_ratio", exist_ok=True)
+
 
     mock_investors_csv_content = (
         "日期,身份別,多方交易口數,多方交易契約金額(百萬元),空方交易口數,空方交易契約金額(百萬元),多空交易口數淨額,多空交易契約金額淨額(百萬元),多方未平倉口數,多方未平倉契約金額(百萬元),空方未平倉口數,空方未平倉契約金額(百萬元),多空未平倉口數淨額,多空未平倉契約金額淨額(百萬元)\n"

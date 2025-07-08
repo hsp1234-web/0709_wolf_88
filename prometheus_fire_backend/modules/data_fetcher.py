@@ -2,14 +2,16 @@
 
 import logging
 from typing import Any, Dict, List, Optional
+from pathlib import Path # <--- 導入 Path
 
 # Imports for TaifexClient and DataFetcher
 import pandas as pd
 import requests # HttpClient 可能會拋出 requests.exceptions.RequestException
 import time # HttpClient 內部有延遲機制
-import os
+# import os # <--- 移除 os，如果不再需要
 from io import StringIO # 用於將文字內容視為檔案進行讀取
 from .http_client import HttpClient # 引入新的 HttpClient
+from core.config import PROJECT_ROOT # <--- 導入 PROJECT_ROOT
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -25,22 +27,27 @@ class TaifexClient:
     URL_FUT_CONTRACTS_CSV = "https://www.taifex.com.tw/cht/3/futContractsDateCsv"
     URL_PC_RATIO_CSV = "https://www.taifex.com.tw/cht/3/pcRatioCsv"
 
-    DATA_LAKE_ROOT = "data_lake/raw/taifex"
+    # DATA_LAKE_ROOT = "data_lake/raw/taifex" # <--- 改為動態設定
 
     def __init__(self, log_manager: Any, http_client: HttpClient):
         self.log_manager = log_manager
         self.http_client = http_client
-        logger.info("TaifexClient 初始化完畢，使用 HttpClient。")
+        # 設定基於 PROJECT_ROOT 的 data_lake_root
+        self.data_lake_root = PROJECT_ROOT / "data_lake" / "raw" / "taifex"
+        logger.info(f"TaifexClient 初始化完畢，使用 HttpClient。Data Lake Root: {self.data_lake_root}")
 
     # _make_request 方法不再需要，將直接使用 http_client
     # def _make_request(...)
 
-    def _save_to_data_lake(self, df: pd.DataFrame, data_type: str, date_str: str, source: str = "taifex") -> Optional[str]:
-        dir_path = os.path.join(self.DATA_LAKE_ROOT, data_type)
-        file_name = f"{date_str}.parquet"
-        file_path = os.path.join(dir_path, file_name)
+    def _save_to_data_lake(self, df: pd.DataFrame, data_type: str, date_str: str, source: str = "taifex") -> Optional[Path]:
+        # dir_path = os.path.join(self.DATA_LAKE_ROOT, data_type) # <--- 修改
+        # file_name = f"{date_str}.parquet"
+        # file_path = os.path.join(dir_path, file_name) # <--- 修改
+        dir_path: Path = self.data_lake_root / data_type
+        file_path: Path = dir_path / f"{date_str}.parquet"
         try:
-            os.makedirs(dir_path, exist_ok=True)
+            # os.makedirs(dir_path, exist_ok=True) # <--- 修改
+            dir_path.mkdir(parents=True, exist_ok=True)
             df.to_parquet(file_path, index=False)
             logger.info(f"數據已儲存到: {file_path}")
             return file_path
@@ -49,8 +56,8 @@ class TaifexClient:
             if self.log_manager:
                 self.log_manager.log_event(
                     event_type="data_save_failed",
-                    message=f"儲存 {data_type} 數據到 {file_path} 失敗。",
-                    details={"error": str(e), "path": file_path, "data_type": data_type, "date": date_str},
+                    message=f"儲存 {data_type} 數據到 {str(file_path)} 失敗。", # file_path 是 Path 物件
+                    details={"error": str(e), "path": str(file_path), "data_type": data_type, "date": date_str},
                     level="ERROR", source_module="TaifexClient"
                 )
             return None
@@ -405,7 +412,11 @@ if __name__ == '__main__':
     # Use a temporary TaifexClient to generate parquet files for mock_data
     # This client also needs a logger, can use a sub-logger or a different mock
     setup_mock_logger = MockLoggerMain("SetupTaifexClient")
-    temp_taifex_client_for_setup = TaifexClient(log_manager=setup_mock_logger)
+    # DataFetcher 內部 TaifexClient 的 __init__ 簽名是 (log_manager, http_client)
+    # 我們需要一個 mock http_client 給它
+    mock_http_client_for_setup = HttpClient() # 可以是一個真實的 HttpClient，因為 fetch_* 會用 mock_csv_content
+    temp_taifex_client_for_setup = TaifexClient(log_manager=setup_mock_logger, http_client=mock_http_client_for_setup)
+
 
     golden_investors_csv = (
         "日期,身份別,多方交易口數,多方交易契約金額(百萬元),空方交易口數,空方交易契約金額(百萬元),多空交易口數淨額,多空交易契約金額淨額(百萬元),多方未平倉口數,多方未平倉契約金額(百萬元),空方未平倉口數,空方未平倉契約金額(百萬元),多空未平倉口數淨額,多空未平倉契約金額淨額(百萬元)\n"
@@ -418,17 +429,25 @@ if __name__ == '__main__':
         "2025/07/08,341931,385728,88.65,161864,150408,107.62,\n"
     )
 
-    df_inv_setup = temp_taifex_client_for_setup.fetch_institutional_investors(GOLDEN_DATE, mock_csv_content=golden_investors_csv)
+    # MOCK_DATA_ROOT_DF 是字串 "mock_data/taifex"
+    # 我們應該將其定義為 Path 物件，基於 PROJECT_ROOT
+    mock_data_root_path = PROJECT_ROOT / MOCK_DATA_ROOT_DF # MOCK_DATA_ROOT_DF 仍是 "mock_data/taifex"
+
+    df_inv_setup = temp_taifex_client_for_setup.fetch_institutional_investors(GOLDEN_DATE, use_mock_data=True, mock_csv_content=golden_investors_csv)
     if df_inv_setup is not None:
-        path_inv_setup = os.path.join(MOCK_DATA_ROOT_DF, "institutional_investors", f"{GOLDEN_DATE}.parquet")
-        os.makedirs(os.path.dirname(path_inv_setup), exist_ok=True)
+        # path_inv_setup = os.path.join(MOCK_DATA_ROOT_DF, "institutional_investors", f"{GOLDEN_DATE}.parquet") # 修改
+        path_inv_setup = mock_data_root_path / "institutional_investors" / f"{GOLDEN_DATE}.parquet"
+        # os.makedirs(os.path.dirname(path_inv_setup), exist_ok=True) # 修改
+        path_inv_setup.parent.mkdir(parents=True, exist_ok=True)
         df_inv_setup.to_parquet(path_inv_setup, index=False)
         print(f"模擬三大法人 Parquet 已生成到: {path_inv_setup}")
 
-    df_pc_setup = temp_taifex_client_for_setup.fetch_pc_ratio(GOLDEN_DATE, mock_csv_content=golden_pc_ratio_csv)
+    df_pc_setup = temp_taifex_client_for_setup.fetch_pc_ratio(GOLDEN_DATE, use_mock_data=True, mock_csv_content=golden_pc_ratio_csv)
     if df_pc_setup is not None:
-        path_pc_setup = os.path.join(MOCK_DATA_ROOT_DF, "pc_ratio", f"{GOLDEN_DATE}.parquet")
-        os.makedirs(os.path.dirname(path_pc_setup), exist_ok=True)
+        # path_pc_setup = os.path.join(MOCK_DATA_ROOT_DF, "pc_ratio", f"{GOLDEN_DATE}.parquet") # 修改
+        path_pc_setup = mock_data_root_path / "pc_ratio" / f"{GOLDEN_DATE}.parquet"
+        # os.makedirs(os.path.dirname(path_pc_setup), exist_ok=True) # 修改
+        path_pc_setup.parent.mkdir(parents=True, exist_ok=True)
         df_pc_setup.to_parquet(path_pc_setup, index=False)
         print(f"模擬 P/C Ratio Parquet 已生成到: {path_pc_setup}")
 

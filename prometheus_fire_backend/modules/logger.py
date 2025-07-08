@@ -4,7 +4,10 @@ import logging
 import sqlite3
 import json
 from datetime import datetime
-from typing import Any, Dict, Optional, List # Added List here
+from typing import Any, Dict, Optional, List, Union # Added List here, Union for Path|str
+from pathlib import Path # <--- 導入 Path
+from core.config import PROJECT_ROOT # <--- 導入 PROJECT_ROOT
+# import os # <--- 移除 os
 
 # 與其他模組分開配置 logger，避免basicConfig衝突
 module_logger = logging.getLogger(__name__) # Renamed to avoid conflict with global 'logger'
@@ -18,20 +21,23 @@ if not module_logger.hasHandlers():
     module_logger.setLevel(logging.INFO) # 設定預設級別，可由應用調整
     # module_logger.propagate = False # 如果不希望日誌向 root logger 傳播
 
+# 定義預設日誌路徑
+DEFAULT_LOG_MANAGER_DB_PATH = PROJECT_ROOT / "logs" / "system_logs.sqlite"
 
 class LogManager:
     """
     中心化日誌管理器 (LogManager)。
     負責將應用程式的關鍵事件、API 呼叫、錯誤等記錄到結構化的日誌存儲中（例如 SQLite 資料庫）。
     """
-    def __init__(self, db_path: str = "logs/logs.sqlite"):
+    def __init__(self, db_path: Union[str, Path] = DEFAULT_LOG_MANAGER_DB_PATH):
         """
         初始化日誌管理器。
 
         Args:
-            db_path (str): SQLite 資料庫檔案的路徑。
+            db_path (Union[str, Path]): SQLite 資料庫檔案的路徑。
+                                       預設為 PROJECT_ROOT / "logs" / "system_logs.sqlite"。
         """
-        self.db_path = db_path
+        self.db_path: Path = Path(db_path) # 確保 self.db_path 是 Path 物件
         self._conn: Optional[sqlite3.Connection] = None
         module_logger.info(f"LogManager __init__ called for db_path: {self.db_path}")
         try:
@@ -47,22 +53,27 @@ class LogManager:
             module_logger.info(f"嘗試建立到 {self.db_path} 的 SQLite 連接。")
             try:
                 # 確保 logs 目錄存在
-                import os
-                db_dir = os.path.dirname(self.db_path)
-                if db_dir and not os.path.exists(db_dir): # 檢查 db_dir 是否為空 (例如 db_path="logs.sqlite")
+                # import os # <--- 移除 os
+                # db_dir = os.path.dirname(self.db_path) # <--- 修改
+                db_dir: Path = self.db_path.parent
+                # if db_dir and not os.path.exists(db_dir): # 檢查 db_dir 是否為空 (例如 db_path="logs.sqlite") # <--- 修改
+                if not db_dir.exists():
                     module_logger.info(f"日誌目錄 {db_dir} 不存在，正在創建...")
-                    os.makedirs(db_dir, exist_ok=True)
+                    # os.makedirs(db_dir, exist_ok=True) # <--- 修改
+                    db_dir.mkdir(parents=True, exist_ok=True)
                     module_logger.info(f"日誌目錄 {db_dir} 已創建 (或已存在)。")
 
-                self._conn = sqlite3.connect(self.db_path, check_same_thread=False) # check_same_thread=False for FastAPI
+                self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False) # sqlite3.connect 需要字串路徑
                 self._conn.row_factory = sqlite3.Row # 方便按列名訪問
                 module_logger.info(f"已成功連接到 SQLite 資料庫: {self.db_path}")
 
                 # <<<< 新增檔案存在性檢查 >>>>
-                abs_db_path = os.path.abspath(self.db_path)
-                cwd = os.getcwd()
-                module_logger.info(f"Python CWD: {cwd}. Absolute DB path: {abs_db_path}.")
-                if os.path.exists(self.db_path): # 或使用 abs_db_path 進行檢查
+                # abs_db_path = os.path.abspath(self.db_path) # <--- 修改
+                abs_db_path: Path = self.db_path.resolve()
+                # cwd = os.getcwd() # <--- 移除，除非真的需要
+                # module_logger.info(f"Python CWD: {cwd}. Absolute DB path: {abs_db_path}.")
+                module_logger.info(f"Absolute DB path: {abs_db_path}.")
+                if self.db_path.exists(): # 或使用 abs_db_path 進行檢查
                     module_logger.info(f"確認：資料庫檔案 {self.db_path} (絕對路徑: {abs_db_path}) 在 connect 後存在。")
                 else:
                     module_logger.warning(f"警告：資料庫檔案 {self.db_path} (絕對路徑: {abs_db_path}) 在 connect 後不存在！")
@@ -258,12 +269,13 @@ if __name__ == '__main__':
 
     module_logger.info("--- 測試 LogManager (樁) ---")
     # 重要：測試時使用不同的資料庫路徑，避免污染主日誌檔
-    test_db_path = "logs/test_logs.sqlite"
-    import os
-    if os.path.exists(test_db_path):
-        os.remove(test_db_path) # 清理舊的測試資料庫
+    # test_db_path = "logs/test_logs.sqlite" # <--- 改為使用 PROJECT_ROOT
+    test_db_path: Path = PROJECT_ROOT / "logs" / "test_logs.sqlite"
+    # import os # <--- 已在頂部移除
+    if test_db_path.exists():
+        test_db_path.unlink() # 清理舊的測試資料庫 (Path.unlink for files)
 
-    log_manager = LogManager(db_path=test_db_path)
+    log_manager = LogManager(db_path=test_db_path) # LogManager 現在接受 Path 物件
 
     log_manager.log_event(
         event_type="test_event_1",

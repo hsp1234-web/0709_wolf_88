@@ -3,17 +3,21 @@
 from fastapi import FastAPI, HTTPException, Request # <--- 加入 Request
 from contextlib import asynccontextmanager
 import logging
-import os # 用於推斷 project_base_path
+from pathlib import Path # <--- 導入 Path
+# import os # 用於推斷 project_base_path # <--- 移除 os
 
 from prometheus_fire_backend.modules.logger import LogManager
 from prometheus_fire_backend.modules.orchestrator import MainOrchestrator # 匯入 MainOrchestrator
 from typing import Optional, Dict, Any, List # <--- 加入 List
+from core.config import PROJECT_ROOT # <--- 導入 PROJECT_ROOT
 
 # --- 全局變數與設定 ---
-LOG_DB_PATH = "logs/api_logs.sqlite"
+# LOG_DB_PATH = "logs/api_logs.sqlite" # <--- 改為基於 PROJECT_ROOT
+DEFAULT_LOG_DB_PATH = PROJECT_ROOT / "logs" / "api_logs.sqlite"
+
 # log_manager_instance: Optional[LogManager] = None # 改用 app.state
 # orchestrator_instance: Optional[MainOrchestrator] = None # 全局 Orchestrator 實例 # 改用 app.state
-PROJECT_BASE_PATH: Optional[str] = None # 專案根目錄
+# PROJECT_BASE_PATH: Optional[str] = None # 專案根目錄 # <--- 不再需要，使用 PROJECT_ROOT
 
 # 配置日誌
 # logging.basicConfig(level=logging.INFO)
@@ -22,21 +26,27 @@ PROJECT_BASE_PATH: Optional[str] = None # 專案根目錄
 # --- FastAPI Lifespan 事件 ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global PROJECT_BASE_PATH # PROJECT_BASE_PATH 仍然可以是全局的，或者也放入 app.state
+    # global PROJECT_BASE_PATH # PROJECT_BASE_PATH 仍然可以是全局的，或者也放入 app.state # <--- 移除
 
     print("Lifespan: Startup sequence started.")
     # 推斷專案根目錄 (假設 main.py 在 prometheus_fire_backend/console_api/ 下)
-    PROJECT_BASE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    print(f"Lifespan: 推斷的專案根目錄: {PROJECT_BASE_PATH}")
-    app.state.project_base_path = PROJECT_BASE_PATH # 存儲到 app.state
+    # PROJECT_BASE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")) # <--- 移除
+    # print(f"Lifespan: 推斷的專案根目錄: {PROJECT_BASE_PATH}")
+    # app.state.project_base_path = PROJECT_BASE_PATH # 存儲到 app.state # <--- 移除
+    app.state.project_root = PROJECT_ROOT # FastAPI 的 state 中可以保存 Path 物件
+    print(f"Lifespan: 專案根目錄 (from core.config): {app.state.project_root}")
 
     print("Lifespan: FastAPI 應用程式啟動中...")
 
-    app.state.log_manager = LogManager(db_path=LOG_DB_PATH)
-    print(f"Lifespan: LogManager 已初始化，日誌將寫入: {LOG_DB_PATH}")
+    # LogManager 初始化時，如果其 db_path 參數是 Path 物件，它需要能處理
+    # 或者我們在這裡傳入字串路徑
+    log_db_path_to_use = DEFAULT_LOG_DB_PATH
+    app.state.log_manager = LogManager(db_path=str(log_db_path_to_use)) # 確保 LogManager 接收 str
+    print(f"Lifespan: LogManager 已初始化，日誌將寫入: {log_db_path_to_use}")
     app.state.log_manager.log_event(event_type="application_startup", message="FastAPI 應用程式已啟動。")
 
-    app.state.orchestrator = MainOrchestrator(log_manager=app.state.log_manager, base_path=app.state.project_base_path)
+    # MainOrchestrator 的 base_path 參數已被移除，它會自行使用 PROJECT_ROOT
+    app.state.orchestrator = MainOrchestrator(log_manager=app.state.log_manager)
     print(f"Lifespan: MainOrchestrator 已初始化: {app.state.orchestrator}")
 
     yield
@@ -221,11 +231,13 @@ if __name__ == "__main__":
     # 所以 ".." 指向 project_root/prometheus_fire_backend/
     # 再 ".." 指向 project_root/
     # 因此 app_dir 指向的是包含 prometheus_fire_backend 這個頂層套件的目錄。
+    # 現在我們直接使用 PROJECT_ROOT
     uvicorn.run(
         "prometheus_fire_backend.console_api.main:app",
         host="127.0.0.1",
         port=8000,
         reload=True,
         # app_dir 設定為此檔案所在目錄的再上兩層目錄
-        app_dir=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        # app_dir=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")) # <--- 修改
+        app_dir=str(PROJECT_ROOT) # <--- 使用 PROJECT_ROOT
     )

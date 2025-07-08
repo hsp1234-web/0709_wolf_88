@@ -1,12 +1,19 @@
 import csv
 import io
 import json
-import os
+# import os # <--- 移除 os
+from pathlib import Path # <--- 導入 Path
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union # <--- 導入 Union
 
 import pandas as pd
 import requests
+from core.config import PROJECT_ROOT # <--- 導入 PROJECT_ROOT
+
+# 定義預設路徑 (相對於 PROJECT_ROOT)
+DEFAULT_DATA_LAKE_PATH_SRC = PROJECT_ROOT / "data_lake_src_client" # 給予不同名稱以區分
+DEFAULT_MOCK_DATA_PATH_SRC = PROJECT_ROOT / "mock_data_src_client"
+
 
 class TaifexClient:
     """
@@ -17,9 +24,9 @@ class TaifexClient:
 
     使用範例:
         # 使用即時數據
-        client = TaifexClient(data_lake_path="data_lake")
+        client = TaifexClient() # 使用預設路徑
         # 使用模擬數據
-        # client = TaifexClient(data_lake_path="data_lake", use_mock_data=True, mock_data_path="mock_data")
+        # client = TaifexClient(use_mock_data=True)
 
         # 獲取三大法人籌碼數據
         # institutional_data = client.fetch_institutional_investors(datetime(2025, 7, 8))
@@ -36,21 +43,29 @@ class TaifexClient:
     INSTITUTIONAL_INVESTORS_URL = f"{BASE_URL}/IFutureOptallDataDown"
     PC_RATIO_URL = f"{BASE_URL}/ratioOptionsDailyDown"
 
-    def __init__(self, data_lake_path: str = "data_lake", use_mock_data: bool = False, mock_data_path: str = "mock_data"):
+    def __init__(self,
+                 data_lake_path: Union[str, Path] = DEFAULT_DATA_LAKE_PATH_SRC,
+                 use_mock_data: bool = False,
+                 mock_data_path: Union[str, Path] = DEFAULT_MOCK_DATA_PATH_SRC):
         """
         初始化 TaifexClient。
 
         Args:
-            data_lake_path (str): 儲存數據的 data_lake 目錄路徑。
+            data_lake_path (Union[str, Path]): 儲存數據的 data_lake 目錄路徑。
             use_mock_data (bool): 是否使用模擬數據。預設為 False。
-            mock_data_path (str): 模擬數據檔案所在的目錄路徑。預設為 "mock_data"。
+            mock_data_path (Union[str, Path]): 模擬數據檔案所在的目錄路徑。
         """
-        self.data_lake_path = data_lake_path
+        self.data_lake_path: Path = Path(data_lake_path)
         self.use_mock_data = use_mock_data
-        self.mock_data_path = mock_data_path
-        os.makedirs(self.data_lake_path, exist_ok=True)
-        if self.use_mock_data and not os.path.isdir(self.mock_data_path):
-            raise ValueError(f"模擬數據路徑 {self.mock_data_path} 不存在或不是一個目錄。")
+        self.mock_data_path: Path = Path(mock_data_path)
+
+        self.data_lake_path.mkdir(parents=True, exist_ok=True)
+        if self.use_mock_data:
+            self.mock_data_path.mkdir(parents=True, exist_ok=True) # 確保 mock 目錄也存在
+            if not self.mock_data_path.is_dir(): # is_dir() 已經檢查存在性
+                # 這個檢查理論上在 mkdir 之後不會失敗，除非權限問題或 mock_data_path 是個檔案
+                raise ValueError(f"模擬數據路徑 {self.mock_data_path} 不是一個有效的目錄。")
+
 
     def _fetch_from_url(self, url: str, params: Dict[str, str]) -> Optional[str]:
         """
@@ -81,9 +96,11 @@ class TaifexClient:
         Returns:
             Optional[str]: 檔案內容文本，如果檔案不存在或讀取失敗則返回 None。
         """
-        mock_file_path = os.path.join(self.mock_data_path, filename)
+        # mock_file_path = os.path.join(self.mock_data_path, filename) # <--- 修改
+        mock_file_path: Path = self.mock_data_path / filename
         try:
-            with open(mock_file_path, "r", encoding="utf-8") as f:
+            # with open(mock_file_path, "r", encoding="utf-8") as f: # <--- 修改 open() 的參數
+            with mock_file_path.open("r", encoding="utf-8") as f:
                 return f.read()
         except FileNotFoundError:
             print(f"模擬數據檔案 {mock_file_path} 未找到。")
@@ -303,13 +320,17 @@ class TaifexClient:
             return
 
         date_str = date.strftime("%Y-%m-%d")
-        output_dir = os.path.join(self.data_lake_path, date_str)
-        os.makedirs(output_dir, exist_ok=True)
+        # output_dir = os.path.join(self.data_lake_path, date_str) # <--- 修改
+        output_dir: Path = self.data_lake_path / date_str
+        # os.makedirs(output_dir, exist_ok=True) # <--- 修改
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-        file_path = os.path.join(output_dir, f"{data_type}.json")
+        # file_path = os.path.join(output_dir, f"{data_type}.json") # <--- 修改
+        file_path: Path = output_dir / f"{data_type}.json"
 
         try:
-            with open(file_path, "w", encoding="utf-8") as f:
+            # with open(file_path, "w", encoding="utf-8") as f: # <--- 修改 open() 的參數
+            with file_path.open("w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
             print(f"數據已成功儲存到 {file_path}")
         except IOError as e:
@@ -320,11 +341,29 @@ class TaifexClient:
 if __name__ == '__main__':
     # 建立一個範例 TaifexClient 並使用模擬數據
     print("初始化 TaifexClient (使用模擬數據)...")
-    # 假設 mock_data 目錄與 client.py 在同一層級的父目錄下
-    # 即執行時，工作目錄是 taifex-data-platform，則 mock_data 路徑應為 "mock_data"
-    # 如果 client.py 是從 src/taifex_data_fetcher/ 直接執行，mock_data 路徑應為 "../../mock_data"
-    # 為了讓 main 中的測試更可靠，我們假定執行時的工作目錄是專案根目錄
-    client = TaifexClient(use_mock_data=True, mock_data_path="mock_data", data_lake_path="data_lake")
+    # 預設路徑現在是基於 PROJECT_ROOT 的
+    # DEFAULT_MOCK_DATA_PATH_SRC = PROJECT_ROOT / "mock_data_src_client"
+    # DEFAULT_DATA_LAKE_PATH_SRC = PROJECT_ROOT / "data_lake_src_client"
+    # 確保這些目錄在測試前存在
+    DEFAULT_MOCK_DATA_PATH_SRC.mkdir(parents=True, exist_ok=True)
+    DEFAULT_DATA_LAKE_PATH_SRC.mkdir(parents=True, exist_ok=True)
+
+    # 為了讓舊的模擬檔案能被讀到，如果它們放在相對於專案根的 "mock_data" 而不是 "mock_data_src_client"
+    # 我們可以臨時指定 mock_data_path
+    # 或者，更好的做法是將範例模擬檔案放到 DEFAULT_MOCK_DATA_PATH_SRC 下
+    # 暫時假設測試用的 mock 檔案會被放到 DEFAULT_MOCK_DATA_PATH_SRC
+    # 例如，手動創建 PROJECT_ROOT / "mock_data_src_client" / "institutional_investors.csv"
+    # 和 PROJECT_ROOT / "mock_data_src_client" / "pc_ratio.csv"
+
+    # 創建一些範例模擬檔案到 DEFAULT_MOCK_DATA_PATH_SRC
+    mock_investors_content = "日期,身份別,多方交易口數,多方交易契約金額(百萬元),空方交易口數,空方交易契約金額(百萬元),多空交易口數淨額,多空交易契約金額淨額(百萬元),多方未平倉口數,多方未平倉契約金額(百萬元),空方未平倉口數,空方未平倉契約金額(百萬元),多空未平倉口數淨額,多空未平倉契約金額淨額(百萬元)\n2025/07/08,自營商,1,1,1,1,0,0,1,1,1,1,0,0\n"
+    mock_pc_ratio_content = "日期,賣權成交量,買權成交量,買賣權成交量比率%,賣權未平倉量,買權未平倉量,買賣權未平倉量比率%\n2025/07/08,100,100,100.00,100,100,100.00\n" # 移除尾部逗號
+
+    (DEFAULT_MOCK_DATA_PATH_SRC / "institutional_investors.csv").write_text(mock_investors_content, encoding="utf-8")
+    (DEFAULT_MOCK_DATA_PATH_SRC / "pc_ratio.csv").write_text(mock_pc_ratio_content, encoding="utf-8")
+
+
+    client = TaifexClient(use_mock_data=True) # 使用預設路徑
 
     target_date = datetime(2025, 7, 8)
 
@@ -349,10 +388,11 @@ if __name__ == '__main__':
         print("獲取買賣權比率數據失敗。")
 
     print("\n--- 測試 data_lake 內容 ---")
-    expected_institutional_file = os.path.join("data_lake", target_date.strftime("%Y-%m-%d"), "institutional_investors.json")
-    if os.path.exists(expected_institutional_file):
+    # expected_institutional_file = os.path.join("data_lake", target_date.strftime("%Y-%m-%d"), "institutional_investors.json") # 修改
+    expected_institutional_file = client.data_lake_path / target_date.strftime("%Y-%m-%d") / "institutional_investors.json"
+    if expected_institutional_file.exists(): # 修改
         print(f"檔案 {expected_institutional_file} 已建立。")
-        with open(expected_institutional_file, "r", encoding="utf-8") as f:
+        with expected_institutional_file.open("r", encoding="utf-8") as f: # 修改
             saved_institutional_data = json.load(f)
             # 簡單比較長度
             if institutional_data and len(saved_institutional_data) == len(institutional_data):
@@ -360,10 +400,11 @@ if __name__ == '__main__':
             else:
                  print("儲存的三大法人數據長度與原始解析數據不一致。")
 
-    expected_pc_ratio_file = os.path.join("data_lake", target_date.strftime("%Y-%m-%d"), "pc_ratio.json")
-    if os.path.exists(expected_pc_ratio_file):
+    # expected_pc_ratio_file = os.path.join("data_lake", target_date.strftime("%Y-%m-%d"), "pc_ratio.json") # 修改
+    expected_pc_ratio_file = client.data_lake_path / target_date.strftime("%Y-%m-%d") / "pc_ratio.json"
+    if expected_pc_ratio_file.exists(): # 修改
         print(f"檔案 {expected_pc_ratio_file} 已建立。")
-        with open(expected_pc_ratio_file, "r", encoding="utf-8") as f:
+        with expected_pc_ratio_file.open("r", encoding="utf-8") as f: # 修改
             saved_pc_data = json.load(f)
             if pc_ratio_data and len(saved_pc_data) == len(pc_ratio_data):
                  print("儲存的買賣權比率數據長度與原始解析數據一致。")
@@ -371,29 +412,46 @@ if __name__ == '__main__':
                  print("儲存的買賣權比率數據長度與原始解析數據不一致。")
 
     print("\n--- 測試使用不存在的模擬數據檔案 ---")
-    # 暫時修改 mock_data_path 來觸發錯誤，或直接嘗試讀取不存在的檔案
-    # 這裡我們直接嘗試讀取一個不存在的 mock file
-    class TempClientNoMock(TaifexClient):
+    # TempClientNoMock 應該繼承新的 TaifexClient
+    class TempClientNoMock(TaifexClient): # TaifexClient 已是新版
         def _read_mock_data(self, filename: str) -> Optional[str]:
+            # 這個測試仍然有效，因為父類的 _read_mock_data 會處理 Path 物件
             if filename == "non_existent_file.csv":
                  return super()._read_mock_data("non_existent_file.csv") # 觸發 FileNotFoundError
             return super()._read_mock_data(filename)
 
-    temp_client = TempClientNoMock(use_mock_data=True, mock_data_path="mock_data")
+    # temp_client = TempClientNoMock(use_mock_data=True, mock_data_path="mock_data") # mock_data 字串會被轉為 Path
+    # 使用預設的 mock_data_path (DEFAULT_MOCK_DATA_PATH_SRC)
+    temp_client = TempClientNoMock(use_mock_data=True)
     print("嘗試獲取不存在的模擬數據...")
-    non_existent_data = temp_client._read_mock_data("non_existent_file.csv") # 內部方法調用，僅為測試
+    non_existent_data = temp_client._read_mock_data("non_existent_file.csv")
     if non_existent_data is None:
         print("成功處理不存在的模擬數據檔案 (返回 None)。")
     else:
         print("處理不存在的模擬數據檔案失敗。")
 
 
-    print("\n--- 測試初始化時模擬數據路徑不存在 ---")
+    print("\n--- 測試初始化時模擬數據路徑不存在 (但現在會自動創建) ---")
+    # TaifexClient 的 __init__ 現在會嘗試創建 mock_data_path，所以這個測試的原始意圖 (捕捉 ValueError) 可能改變
+    # 如果 mock_data_path="non_existent_mock_data_path" 是一個無法創建的路徑 (例如權限問題)，才會拋出異常
+    # 這裡我們測試的是，如果給了一個字串，它是否能正常工作。
+    # 如果 mock_data_path 指向一個已存在的檔案而不是目錄，mkdir 會失敗。
+    test_file_as_mock_path = PROJECT_ROOT / "iam_a_file.txt"
+    test_file_as_mock_path.write_text("hello")
+
     try:
-        client_invalid_mock_path = TaifexClient(use_mock_data=True, mock_data_path="non_existent_mock_data_path")
-        print("初始化 TaifexClient 時未檢測到無效的 mock_data_path。")
-    except ValueError as e:
-        print(f"成功捕捉到無效的 mock_data_path: {e}")
+        # client_invalid_mock_path = TaifexClient(use_mock_data=True, mock_data_path="non_existent_mock_data_path")
+        client_invalid_mock_path = TaifexClient(use_mock_data=True, mock_data_path=test_file_as_mock_path)
+        # 如果 mock_data_path.mkdir 成功 (例如它是一個已存在的目錄)，就不會拋錯。
+        # 如果它是一個檔案，.mkdir() 會拋出 FileExistsError (或 NotADirectoryError on some OS for .is_dir() if checked before mkdir)
+        # 我們的 is_dir() 檢查是在 mkdir 之後，所以主要是 mkdir 的行為
+        print(f"TaifexClient 初始化時 mock_data_path 指向檔案 {test_file_as_mock_path}，預期拋出錯誤但未拋出。檢查 mkdir 行為。")
+    except (ValueError, FileExistsError, NotADirectoryError) as e: # FileExistsError if path is a file and mkdir is called.
+        print(f"成功捕捉到 mock_data_path 指向檔案的錯誤: {e}")
+    finally:
+        if test_file_as_mock_path.exists():
+             test_file_as_mock_path.unlink()
+
 
     print("\n--- 測試網路請求（目前應受限並提示） ---")
     live_client = TaifexClient(use_mock_data=False)
