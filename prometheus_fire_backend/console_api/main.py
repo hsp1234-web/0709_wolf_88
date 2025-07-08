@@ -4,10 +4,10 @@ from fastapi import FastAPI, Request, Response
 from contextlib import asynccontextmanager
 import logging
 
-# 載入 LogManager
+# 載入 LogManager (現已更名為 logger.py)
 # 假設 uvicorn 從專案根目錄啟動 (e.g., /app)
 # 則 'prometheus_fire_backend' 應該在 PYTHONPATH 中或可被解析
-from prometheus_fire_backend.modules.log_manager import LogManager
+from prometheus_fire_backend.modules.logger import LogManager # 檔案名改為 logger, 類名仍為 LogManager
 from typing import Optional # <--- 導入 Optional
 
 # --- 全局變數與設定 ---
