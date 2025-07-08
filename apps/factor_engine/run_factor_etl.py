@@ -1,0 +1,125 @@
+# -*- coding: utf-8 -*-
+"""
+普羅米修斯之火 - 因子提取、轉換、加載 (ETL) 主執行腳本
+"""
+import pandas as pd
+from apps.daily_market_analyzer.db_manager import DBManager
+from apps.factor_engine.engine import FactorEngine
+import os # 用於數據庫路徑
+
+def run_etl():
+    """
+    執行完整的因子提取、計算和儲存流程。
+    """
+    print("INFO: 開始執行因子 ETL 流程...")
+
+    # 假設資料庫檔案位於 data_workspace/market_data.duckdb
+    # TODO: 應該從統一的配置文件中讀取數據庫路徑
+    db_file_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data_workspace', 'market_data.duckdb')
+    db_manager = DBManager(db_path=db_file_path)
+    factor_engine = FactorEngine(db_manager=db_manager)
+
+    # 1. 從 MarketPrices_Daily 表中獲取所有不重複的 ticker
+    print("INFO: 正在從 MarketPrices_Daily 獲取所有 tickers...")
+    try:
+        tickers_df = db_manager.execute_query("SELECT DISTINCT ticker FROM MarketPrices_Daily")
+        if tickers_df.empty:
+            print("警告: MarketPrices_Daily 中沒有找到任何 ticker。因子 ETL 流程終止。")
+            return
+        tickers_list = tickers_df['ticker'].tolist()
+        print(f"INFO: 共找到 {len(tickers_list)} 個 tickers。")
+    except Exception as e:
+        print(f"錯誤: 無法從 MarketPrices_Daily 獲取 tickers: {e}")
+        return
+
+    all_factors_to_store = []
+
+    for ticker_index, ticker in enumerate(tickers_list):
+        print(f"INFO: 正在處理 ticker {ticker_index + 1}/{len(tickers_list)}: {ticker}")
+
+        # 2a. 使用 FactorEngine 讀取其價格歷史
+        price_data_df = factor_engine.get_prices_for_ticker(ticker)
+
+        if price_data_df.empty:
+            print(f"警告: 未能獲取 {ticker} 的價格數據，跳過此 ticker。")
+            continue
+
+        # 確保索引名為 'datetime'，方便後續轉換
+        if price_data_df.index.name != 'datetime':
+             price_data_df.index.name = 'datetime'
+
+
+        # 2b. 計算因子
+        # 價格波動率 (hv_20d)
+        hv_20d = factor_engine.calculate_price_volatility(price_data_df.copy(), n_days=20) # 使用 .copy() 避免 SettingWithCopyWarning
+        # 成交量波動率 (volume_hv_20d)
+        volume_hv_20d = factor_engine.calculate_volume_volatility(price_data_df.copy(), n_days=20)
+        # RSI (rsi_14)
+        rsi_14 = factor_engine.calculate_rsi(price_data_df.copy(), n_days=14)
+
+        # 2c. 將結果整理成符合 FactorStore_Daily 結構的 DataFrame
+        factors_for_current_ticker = []
+
+        # 處理 hv_20d
+        if hv_20d is not None and not hv_20d.empty:
+            hv_df = hv_20d.reset_index() # datetime 索引變為欄位
+            hv_df.columns = ['date', 'factor_value']
+            hv_df['ticker'] = ticker
+            hv_df['factor_name'] = 'hv_20d'
+            # 轉換 date 為 YYYY-MM-DD 格式的字串，如果它是 datetime 物件
+            hv_df['date'] = pd.to_datetime(hv_df['date']).dt.date
+            factors_for_current_ticker.append(hv_df[['ticker', 'date', 'factor_name', 'factor_value']].dropna())
+
+        # 處理 volume_hv_20d
+        if volume_hv_20d is not None and not volume_hv_20d.empty:
+            vol_hv_df = volume_hv_20d.reset_index()
+            vol_hv_df.columns = ['date', 'factor_value']
+            vol_hv_df['ticker'] = ticker
+            vol_hv_df['factor_name'] = 'volume_hv_20d'
+            vol_hv_df['date'] = pd.to_datetime(vol_hv_df['date']).dt.date
+            factors_for_current_ticker.append(vol_hv_df[['ticker', 'date', 'factor_name', 'factor_value']].dropna())
+
+        # 處理 rsi_14
+        if rsi_14 is not None and not rsi_14.empty:
+            rsi_df = rsi_14.reset_index()
+            rsi_df.columns = ['date', 'factor_value']
+            rsi_df['ticker'] = ticker
+            rsi_df['factor_name'] = 'rsi_14d' # 保持與 pandas-ta 輸出一致性，或統一為 rsi_14
+            rsi_df['date'] = pd.to_datetime(rsi_df['date']).dt.date
+            factors_for_current_ticker.append(rsi_df[['ticker', 'date', 'factor_name', 'factor_value']].dropna())
+
+        if factors_for_current_ticker:
+            current_ticker_factors_df = pd.concat(factors_for_current_ticker, ignore_index=True)
+            all_factors_to_store.append(current_ticker_factors_df)
+            print(f"INFO: 為 {ticker} 計算並準備了 {len(current_ticker_factors_df)} 筆因子數據。")
+        else:
+            print(f"INFO: 未能為 {ticker} 計算出任何因子數據。")
+
+    # 2d. 將所有結果合併並存入數據庫
+    if all_factors_to_store:
+        final_factors_df = pd.concat(all_factors_to_store, ignore_index=True)
+        print(f"INFO: ETL 流程總共計算出 {len(final_factors_df)} 筆因子數據，準備寫入資料庫...")
+        db_manager.insert_factors(final_factors_df)
+        print("INFO: 所有因子數據已成功寫入 FactorStore_Daily。")
+    else:
+        print("INFO: ETL 流程未產生任何可儲存的因子數據。")
+
+    print("INFO: 因子 ETL 流程執行完畢。")
+
+if __name__ == '__main__':
+    # 為了能夠直接執行此腳本，需要確保 apps 目錄在 Python 的搜索路徑中
+    # 這通常通過設置 PYTHONPATH 或在專案根目錄執行來實現
+    # 例如: PYTHONPATH=. python apps/factor_engine/run_factor_etl.py
+    # 或者，如果你的 IDE 或執行環境正確設置了根目錄，則可能不需要額外操作。
+
+    # 臨時添加專案根目錄到 sys.path，以便於直接執行
+    import sys
+    import os
+    # 假設此腳本位於 apps/factor_engine/run_factor_etl.py
+    # 則專案根目錄是向上兩級
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+        print(f"DEBUG: 已將專案根目錄 {project_root} 添加到 sys.path")
+
+    run_etl()

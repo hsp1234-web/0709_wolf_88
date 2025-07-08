@@ -76,6 +76,19 @@ class DBManager:
                 con.execute(create_no_data_records_sql)
                 print(f"INFO: 資料表 'no_data_records' 已在資料庫 '{self.db_path}' 中準備就緒。")
 
+                # 建立 FactorStore_Daily 資料表
+                create_factor_store_sql = f"""
+                CREATE TABLE IF NOT EXISTS FactorStore_Daily (
+                    ticker TEXT NOT NULL,
+                    date DATE NOT NULL,
+                    factor_name TEXT NOT NULL,
+                    factor_value REAL,
+                    PRIMARY KEY (ticker, date, factor_name)
+                );
+                """
+                con.execute(create_factor_store_sql)
+                print(f"INFO: 資料表 'FactorStore_Daily' 已在資料庫 '{self.db_path}' 中準備就緒。")
+
         except Exception as e:
             print(f"錯誤: 資料庫設定失敗 (_setup_database): {e}")
             raise
@@ -392,6 +405,106 @@ class DBManager:
         except Exception as e:
             print(f"錯誤: 檢查無數據記錄失敗: Ticker={ticker}, Interval={interval}, Range=[{start_date} - {end_date}]: {e}")
             return False # 出錯時，不跳過 API 呼叫
+
+    def execute_query(self, query: str, params: list | None = None) -> pd.DataFrame:
+        """
+        執行任意 SQL 查詢並以 DataFrame 形式返回結果。
+
+        Args:
+            query (str): 要執行的 SQL 查詢語句。
+            params (list | None, optional): 查詢的參數列表。預設為 None。
+
+        Returns:
+            pd.DataFrame: 查詢結果的 DataFrame。如果查詢失敗或無結果，則返回空的 DataFrame。
+        """
+        try:
+            with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
+                if params:
+                    result_df = con.execute(query, params).fetchdf()
+                else:
+                    result_df = con.execute(query).fetchdf()
+                return result_df
+        except Exception as e:
+            print(f"錯誤 (DBManager - execute_query): 執行查詢失敗: {e}")
+            print(f"查詢語句: {query}")
+            if params:
+                print(f"查詢參數: {params}")
+            return pd.DataFrame()
+
+    def insert_factors(self, df: pd.DataFrame):
+        """
+        將符合 FactorStore_Daily 結構的因子 DataFrame 寫入資料庫。
+        使用 INSERT OR REPLACE INTO (UPSERT) 語義。
+
+        Args:
+            df (pd.DataFrame): 包含因子數據的 DataFrame。
+                               必須包含欄位: 'ticker', 'date', 'factor_name', 'factor_value'。
+                               'date' 欄位應為 datetime.date 或可轉換為 YYYY-MM-DD 字串的類型。
+        """
+        if df.empty:
+            print("INFO (DBManager - insert_factors): 傳入的因子 DataFrame 為空，無需寫入。")
+            return
+
+        df_to_insert = df.copy()
+
+        # 驗證必要欄位
+        required_cols = ['ticker', 'date', 'factor_name', 'factor_value']
+        missing_cols = [col for col in required_cols if col not in df_to_insert.columns]
+        if missing_cols:
+            print(f"錯誤 (DBManager - insert_factors): DataFrame 缺少必要欄位: {', '.join(missing_cols)}。無法寫入 FactorStore_Daily。")
+            df_to_insert.info()
+            return
+
+        # 數據類型轉換與準備
+        try:
+            # 將 'date' 欄位轉換為 DuckDB 的 DATE 類型 (YYYY-MM-DD 字串格式)
+            if pd.api.types.is_datetime64_any_dtype(df_to_insert['date']):
+                df_to_insert['date'] = df_to_insert['date'].dt.strftime('%Y-%m-%d')
+            elif not all(isinstance(d, str) for d in df_to_insert['date']):
+                 # 如果不是 datetime64 也不是字串，嘗試轉換
+                df_to_insert['date'] = pd.to_datetime(df_to_insert['date']).dt.strftime('%Y-%m-%d')
+
+            df_to_insert['ticker'] = df_to_insert['ticker'].astype(str)
+            df_to_insert['factor_name'] = df_to_insert['factor_name'].astype(str)
+            df_to_insert['factor_value'] = pd.to_numeric(df_to_insert['factor_value'], errors='raise') # 確保是數值型態
+
+            # 處理 NaN/inf 在 factor_value 中，DuckDB 可能不接受 Python 的 NaN/inf 直接插入 REAL 欄位
+            # DuckDB SQL 接受 'NaN', 'Infinity', '-Infinity' 字串常量，或 NULL
+            # Pandas to_numeric 轉換後，NaN 應為 np.nan。 REAL 類型通常可以接受 NULL。
+            # 如果 factor_value 是 np.nan，則在 SQL 中應作為 NULL 插入。DuckDB 的 fetchdf 在讀取時會轉回 np.nan。
+            # 如果是 inf，則需要特別處理，但因子值通常不應是 inf。這裡我們假設因子值是有限的浮點數或 NaN。
+            # df_to_insert['factor_value'] = df_to_insert['factor_value'].replace([np.inf, -np.inf], np.nan)
+
+        except Exception as e:
+            print(f"錯誤 (DBManager - insert_factors): DataFrame 數據類型轉換失敗: {e}")
+            df_to_insert.info()
+            return
+
+        # 使用 INSERT OR REPLACE INTO 語義
+        table_name = "FactorStore_Daily"
+        try:
+            with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
+                # 註冊 DataFrame 為臨時視圖
+                con.register('df_factors_to_insert', df_to_insert[required_cols])
+
+                columns_str = ", ".join(required_cols)
+                # UPSERT 語句
+                upsert_sql = f"INSERT OR REPLACE INTO {table_name} ({columns_str}) SELECT {columns_str} FROM df_factors_to_insert"
+
+                con.execute(upsert_sql)
+                con.unregister('df_factors_to_insert') # 及時釋放
+
+            num_rows = len(df_to_insert)
+            # 為了日誌簡潔，不顯示所有 ticker 和 factor_name
+            unique_tickers = df_to_insert['ticker'].nunique()
+            unique_factor_names = df_to_insert['factor_name'].nunique()
+            print(f"INFO (DBManager - insert_factors): 成功將 {num_rows} 筆因子數據 ({unique_tickers} 個 tickers, {unique_factor_names} 個因子名) 寫入/更新至 '{table_name}'。")
+
+        except Exception as e:
+            print(f"錯誤 (DBManager - insert_factors): 寫入因子數據到資料表 '{table_name}' 失敗: {e}")
+            print(f"DEBUG: 嘗試寫入的因子 DataFrame (前5行):")
+            print(df_to_insert.head())
+            df_to_insert.info()
 
 if __name__ == '__main__':
     print("--- DBManager (Daily Market Analyzer) 測試 ---")
