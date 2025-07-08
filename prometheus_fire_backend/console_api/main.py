@@ -1,46 +1,61 @@
 # prometheus_fire_backend/console_api/main.py
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request # <--- 加入 Request
 from contextlib import asynccontextmanager
 import logging
+import os # 用於推斷 project_base_path
 
-# 載入 LogManager (現已更名為 logger.py)
-# 假設 uvicorn 從專案根目錄啟動 (e.g., /app)
-# 則 'prometheus_fire_backend' 應該在 PYTHONPATH 中或可被解析
-from prometheus_fire_backend.modules.logger import LogManager # 檔案名改為 logger, 類名仍為 LogManager
-from typing import Optional # <--- 導入 Optional
+from prometheus_fire_backend.modules.logger import LogManager
+from prometheus_fire_backend.modules.orchestrator import MainOrchestrator # 匯入 MainOrchestrator
+from typing import Optional, Dict, Any
 
 # --- 全局變數與設定 ---
-# 在真實應用中，這些應來自設定檔
-LOG_DB_PATH = "logs/api_logs.sqlite" # 和 LogManager 預設的 logs/logs.sqlite 分開或統一
-log_manager_instance: Optional[LogManager] = None
+LOG_DB_PATH = "logs/api_logs.sqlite"
+# log_manager_instance: Optional[LogManager] = None # 改用 app.state
+# orchestrator_instance: Optional[MainOrchestrator] = None # 全局 Orchestrator 實例 # 改用 app.state
+PROJECT_BASE_PATH: Optional[str] = None # 專案根目錄
 
-# 配置 FastAPI 的日誌，使其與我們的 LogManager 協同工作或分開
-# logging.basicConfig(level=logging.INFO) # 應用程式級別的基礎日誌配置
-# fastapi_logger = logging.getLogger("fastapi") # 可以獲取fastapi的logger進行配置
+# 配置日誌
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__) # FastAPI 自己的 logger
 
 # --- FastAPI Lifespan 事件 ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 應用程式啟動時
-    global log_manager_instance
-    print("FastAPI 應用程式啟動中...")
-    log_manager_instance = LogManager(db_path=LOG_DB_PATH)
-    print(f"LogManager 已初始化，日誌將寫入: {LOG_DB_PATH}")
-    log_manager_instance.log_event(event_type="application_startup", message="FastAPI 應用程式已啟動。")
+    global PROJECT_BASE_PATH # PROJECT_BASE_PATH 仍然可以是全局的，或者也放入 app.state
+
+    print("Lifespan: Startup sequence started.")
+    # 推斷專案根目錄 (假設 main.py 在 prometheus_fire_backend/console_api/ 下)
+    PROJECT_BASE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    print(f"Lifespan: 推斷的專案根目錄: {PROJECT_BASE_PATH}")
+    app.state.project_base_path = PROJECT_BASE_PATH # 存儲到 app.state
+
+    print("Lifespan: FastAPI 應用程式啟動中...")
+
+    app.state.log_manager = LogManager(db_path=LOG_DB_PATH)
+    print(f"Lifespan: LogManager 已初始化，日誌將寫入: {LOG_DB_PATH}")
+    app.state.log_manager.log_event(event_type="application_startup", message="FastAPI 應用程式已啟動。")
+
+    app.state.orchestrator = MainOrchestrator(log_manager=app.state.log_manager, base_path=app.state.project_base_path)
+    print(f"Lifespan: MainOrchestrator 已初始化: {app.state.orchestrator}")
+
     yield
-    # 應用程式關閉時
-    print("FastAPI 應用程式關閉中...")
-    if log_manager_instance:
-        log_manager_instance.log_event(event_type="application_shutdown", message="FastAPI 應用程式已關閉。")
-        log_manager_instance.close()
-        print("LogManager 已關閉。")
+
+    print("Lifespan: Shutdown sequence started.")
+    if hasattr(app.state, 'orchestrator') and app.state.orchestrator:
+        print("Lifespan: MainOrchestrator 正在關閉 (如果需要)...")
+
+    if hasattr(app.state, 'log_manager') and app.state.log_manager:
+        app.state.log_manager.log_event(event_type="application_shutdown", message="FastAPI 應用程式已關閉。")
+        app.state.log_manager.close()
+        print("Lifespan: LogManager 已關閉。")
+    print("Lifespan: Shutdown sequence completed.")
 
 app = FastAPI(
     title="普羅米修斯之火 API",
     description="後端情報處理核心 API，代號「鋼鐵心臟」。",
     version="v1.0",
-    lifespan=lifespan # 使用 lifespan 管理啟動與關閉事件
+    lifespan=lifespan
 )
 
 @app.get("/")
@@ -48,120 +63,161 @@ async def read_root():
     """
     根路徑，用於檢查服務是否正在運行。
     """
-    if log_manager_instance:
-        log_manager_instance.log_api_call(endpoint="/", method="GET", status_code=200)
+    # 訪問 app.state 中的 log_manager
+    current_log_manager = getattr(app.state, 'log_manager', None)
+    if current_log_manager:
+        current_log_manager.log_api_call(endpoint="/", method="GET", status_code=200)
     return {"message": "歡迎來到普羅米修斯之火 🔥 - 「鋼鐵心臟」API"}
 
-# 為了能夠透過 uvicorn 運行，我們可以在這裡加入一個簡易的啟動方式
-# 但在實際部署時，通常會直接使用 uvicorn 命令列工具
-if __name__ == "__main__":
-    import uvicorn
-    # 注意：在生產環境中，應從設定檔讀取 host 和 port
-    # 這裡的 reload=True 僅適用於開發環境
-    # 需要確保 uvicorn 從專案根目錄運行，以便模組導入正常
-    # 例如在專案根目錄 /app 下執行:
-    # uvicorn prometheus_fire_backend.console_api.main:app --reload
-    # 或者 python -m uvicorn prometheus_fire_backend.console_api.main:app --reload
-
-    # 如果要直接執行 python prometheus_fire_backend/console_api/main.py，
-    # 則需要確保PYTHONPATH包含專案根目錄 /app。
-    # 或者在執行前 `export PYTHONPATH=/app:$PYTHONPATH` (或 Windows 的 set)
-    import os
-    # The app string should be relative to the project root if uvicorn is run from there.
-    # If running this script directly, uvicorn needs to know where `prometheus_fire_backend` is.
-    # Setting app_dir=".." tells uvicorn to look in the parent directory of this file's directory
-    # for the module 'prometheus_fire_backend.console_api.main'
-    # This is only relevant if running `python console_api/main.py`
-    # For `uvicorn prometheus_fire_backend.console_api.main:app` from root, this block isn't critical.
-    uvicorn.run("prometheus_fire_backend.console_api.main:app", host="127.0.0.1", port=8000, reload=True, app_dir=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-
-
-import uuid
+# --- Pydantic Models ---
 from pydantic import BaseModel, Field
-from typing import Optional
-
-# --- API Request Models ---
+from typing import Optional, Dict, Any # 確認 Any 和 Dict 已匯入
 
 class MissionParameters(BaseModel):
     """
-    任務參數模型。目前為空，可根據後續需求擴展。
-    例如：
-    target_keyword: str = Field(..., description="目標關鍵字")
-    data_sources: list[str] = Field([], description="指定資料來源")
+    啟動任務時傳遞的參數模型。
     """
-    pass
+    type: str = Field(..., description="任務類型，例如 'fetch_taifex'。")
+    # 針對 fetch_taifex 的特定參數 (可選，取決於任務類型)
+    data_type: Optional[str] = Field(None, description="數據類型，例如 'institutional_investors' 或 'pc_ratio'。")
+    date: Optional[str] = Field(None, description="目標日期，格式 YYYY-MM-DD。")
+    # 可以添加其他通用參數或特定任務的參數
+    # extra_params: Optional[Dict[str, Any]] = Field(None, description="其他任務特定參數")
 
-# --- API Response Models ---
+    model_config = {
+        "extra": "allow"  # 允許額外的欄位，以便傳遞給 Orchestrator
+    }
 
 class StartMissionResponse(BaseModel):
     """
     啟動任務的回應模型。
     """
     mission_id: str = Field(..., description="唯一任務 ID")
-    message: str = Field(default="任務已成功接收", description="回應訊息")
+    message: str = Field(default="任務已成功接收並開始處理", description="回應訊息")
+    initial_status: Optional[Dict[str, Any]] = Field(None, description="任務的初始狀態")
+
 
 class MissionStatusResponse(BaseModel):
     """
-    查詢任務狀態的回應模型。
+    查詢任務狀態的回應模型。與 Orchestrator 返回的結構保持一致。
     """
-    mission_id: str = Field(..., description="唯一任務 ID")
-    status: str = Field(default="pending", description="任務當前狀態 (e.g., pending, processing, completed, failed)")
-    progress: float = Field(default=0.0, description="任務進度百分比 (0.0 to 1.0)")
-    message: str = Field(default="任務已接收，等待處理", description="狀態相關訊息")
-    details: Optional[dict] = Field(None, description="其他詳細資訊")
+    mission_id: str
+    status: str
+    progress: float
+    message: str
+    details: Optional[Dict[str, Any]] = None
 
 
 # --- API Endpoints ---
 
 @app.post("/api/v1/start_mission", response_model=StartMissionResponse, tags=["Mission Control"])
-async def start_mission(params: Optional[MissionParameters] = None):
+async def start_mission_endpoint(params: MissionParameters, request: Request): # 注入 Request
     """
     啟動一個新的情報蒐集與處理任務。
-
-    接收任務參數，立即返回一個虛構的 `mission_id`。
-    實際的任務處理將在背景異步執行（未來實現）。
     """
-    mission_id = str(uuid.uuid4())
-    # 在此階段，我們僅返回 mission_id，不執行任何實際操作。
-    # 未來，這裡會觸發 MainOrchestrator
-    print(f"接收到任務啟動請求。參數: {params.model_dump_json() if params else '無'}. 分配 Mission ID: {mission_id}") # 使用 model_dump_json 獲取 Pydantic 參數
+    current_orchestrator = getattr(request.app.state, 'orchestrator', None)
+    current_log_manager = getattr(request.app.state, 'log_manager', None)
 
-    response_data = StartMissionResponse(mission_id=mission_id)
+    if not current_orchestrator:
+        # 打印調試信息
+        print(f"API Error: Orchestrator not found in app.state. app.state keys: {list(request.app.state.__dict__.keys() if hasattr(request.app.state, '__dict__') else [])}")
+        raise HTTPException(status_code=503, detail="總調度器尚未初始化，服務暫不可用。")
 
-    if log_manager_instance:
-        log_manager_instance.log_api_call(
-            endpoint="/api/v1/start_mission",
-            method="POST",
+    mission_params_dict = params.model_dump()
+    print(f"API 接收到任務啟動請求。參數: {mission_params_dict}")
+
+    try:
+        mission_id = current_orchestrator.start_mission(mission_params=mission_params_dict)
+        initial_status_dict = current_orchestrator.get_mission_status(mission_id)
+
+        response_data = StartMissionResponse(
             mission_id=mission_id,
-            request_body=params.model_dump() if params else None, # Pydantic model to dict
-            response_body=response_data.model_dump(),
-            status_code=200 # Assuming success
+            message=f"任務 {mission_id} 已成功啟動。",
+            initial_status=initial_status_dict
         )
-    return response_data
+
+        if current_log_manager:
+            current_log_manager.log_api_call(
+                endpoint="/api/v1/start_mission",
+                method="POST",
+                mission_id=mission_id,
+                request_body=mission_params_dict,
+                response_body=response_data.model_dump(),
+                status_code=200
+            )
+        return response_data
+    except Exception as e:
+        print(f"啟動任務時發生錯誤: {e}") # 記錄到伺服器日誌
+        if current_log_manager:
+             current_log_manager.log_api_call(
+                endpoint="/api/v1/start_mission",
+                method="POST",
+                request_body=mission_params_dict,
+                status_code=500,
+                error_message=str(e)
+            )
+        raise HTTPException(status_code=500, detail=f"啟動任務時發生內部錯誤: {str(e)}")
+
 
 @app.get("/api/v1/mission_status/{mission_id}", response_model=MissionStatusResponse, tags=["Mission Control"])
-async def get_mission_status(mission_id: str):
+async def get_mission_status_endpoint(mission_id: str, request: Request): # 注入 Request
     """
     查詢指定任務的當前狀態與進度。
-
-    接收 `mission_id`，返回一個靜態的模擬進度 JSON。
     """
-    print(f"接收到狀態查詢請求。Mission ID: {mission_id}")
-    # 在此階段，我們返回一個固定的模擬狀態。
-    # 未來，這裡會向 MainOrchestrator 或狀態管理器查詢真實狀態。
-    response_data = MissionStatusResponse(
-        mission_id=mission_id,
-        status="simulated_pending",
-        progress=0.25,
-        message="模擬狀態：任務正在排隊等待處理。",
-        details={"simulation_note": "此為固定回應，用於 API 樁測試。"}
-    )
-    if log_manager_instance:
-        log_manager_instance.log_api_call(
+    current_orchestrator = getattr(request.app.state, 'orchestrator', None)
+    current_log_manager = getattr(request.app.state, 'log_manager', None)
+
+    if not current_orchestrator:
+        raise HTTPException(status_code=503, detail="總調度器尚未初始化，服務暫不可用。")
+
+    print(f"API 接收到狀態查詢請求。Mission ID: {mission_id}")
+
+    status_dict = current_orchestrator.get_mission_status(mission_id)
+
+    if "不存在" in status_dict.get("message", "") and status_dict.get("status", "").lower() == "failed": # 根據 Orchestrator 的實際返回調整
+        if current_log_manager:
+            current_log_manager.log_api_call(
+                endpoint=f"/api/v1/mission_status/{mission_id}",
+                method="GET",
+                mission_id=mission_id,
+                status_code=404,
+                response_body=status_dict
+            )
+        raise HTTPException(status_code=404, detail=status_dict)
+
+    response_data = MissionStatusResponse(**status_dict)
+
+    if current_log_manager:
+        current_log_manager.log_api_call(
             endpoint=f"/api/v1/mission_status/{mission_id}",
             method="GET",
             mission_id=mission_id,
             response_body=response_data.model_dump(),
-            status_code=200 # Assuming success
+            status_code=200
         )
     return response_data
+
+
+# 為了能夠透過 uvicorn 運行，我們可以在這裡加入一個簡易的啟動方式
+if __name__ == "__main__":
+    import uvicorn
+    # 確保 uvicorn 從專案根目錄運行，以便模組導入正常
+    # 例如在專案根目錄 /app 下執行:
+    # uvicorn prometheus_fire_backend.console_api.main:app --reload
+    # 或者 python -m uvicorn prometheus_fire_backend.console_api.main:app --reload
+
+    # 如果要直接執行 python prometheus_fire_backend/console_api/main.py，
+    # 則需要確保PYTHONPATH包含專案根目錄 /app，或者 uvicorn 的 app_dir 設定正確。
+    # 這裡的 app_dir 試圖讓直接執行此檔案時 uvicorn 能找到 `prometheus_fire_backend` 模組。
+    # 它假設此檔案 (main.py) 在 project_root/prometheus_fire_backend/console_api/ 內。
+    # 所以 ".." 指向 project_root/prometheus_fire_backend/
+    # 再 ".." 指向 project_root/
+    # 因此 app_dir 指向的是包含 prometheus_fire_backend 這個頂層套件的目錄。
+    uvicorn.run(
+        "prometheus_fire_backend.console_api.main:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        # app_dir 設定為此檔案所在目錄的再上兩層目錄
+        app_dir=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    )
