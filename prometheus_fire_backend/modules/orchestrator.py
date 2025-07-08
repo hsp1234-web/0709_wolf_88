@@ -14,6 +14,8 @@ from .data_fetcher import DataFetcher
 from .http_client import HttpClient
 from .data_fuser import DataFuser # <--- 導入 DataFuser
 from .factor_engine import FactorEngine # <--- 導入 FactorEngine
+from .backtester import Backtester # <--- 導入 Backtester
+import importlib # <--- 導入 importlib
 
 # 配置基本的日誌記錄器
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -58,6 +60,7 @@ class MainOrchestrator:
         )
         self.data_fuser = DataFuser() # <--- 初始化 DataFuser
         self.factor_engine = FactorEngine() # <--- 初始化 FactorEngine
+        self.backtester = Backtester(log_manager=self.log_manager) # <--- 初始化 Backtester
 
         orchestrator_logger.info(f"總調度器 (MainOrchestrator) 初始化完畢。專案根目錄使用: {PROJECT_ROOT}")
         MainOrchestrator._mission_states.clear()
@@ -130,8 +133,10 @@ class MainOrchestrator:
             self._execute_fetch_yfinance_task_with_datafetcher(mission_id, internal_mission_params)
         elif mission_type == "fuse_data":
             self._execute_fusion_task(mission_id, internal_mission_params)
-        elif mission_type == "calculate_factors": # <--- 新增因子計算任務類型
+        elif mission_type == "calculate_factors":
             self._execute_factor_calculation_task(mission_id, internal_mission_params)
+        elif mission_type == "backtest": # <--- 新增回測任務類型
+            self._execute_backtest_task(mission_id, internal_mission_params)
         else:
             orchestrator_logger.warning(f"任務 {mission_id}: 未知的任務類型 '{mission_type}' 或未提供任務類型。")
             MainOrchestrator._mission_states[mission_id].update({
@@ -540,6 +545,161 @@ class MainOrchestrator:
             })
             if self.log_manager:
                 self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (FactorCalculation) 因執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
+
+    def _execute_backtest_task(self, mission_id: str, params: Dict[str, Any]):
+        """執行回測子任務。"""
+        MainOrchestrator._mission_states[mission_id].update({
+            "status": MISSION_STATUS_PROCESSING,
+            "message": "正在處理回測任務..."
+        })
+        orchestrator_logger.info(f"任務 {mission_id}: 正在執行回測任務。參數: {params}")
+
+        strategy_id = params.get("strategy_id")
+        price_source_path_str = params.get("price_source_path")
+        factor_source_path_str = params.get("factor_source_path")
+        initial_cash = params.get("initial_cash", 100000.0)
+        commission_rate = params.get("commission_rate", 0.001)
+        # start_date 和 end_date 可用於篩選已載入的數據，但首先要能載入包含該範圍的數據源
+        # start_date_str = params.get("start_date")
+        # end_date_str = params.get("end_date")
+
+        required_params = {
+            "strategy_id": strategy_id,
+            "price_source_path": price_source_path_str,
+            "factor_source_path": factor_source_path_str
+        }
+        missing_params = [k for k, v in required_params.items() if v is None]
+        if missing_params:
+            error_msg = f"任務 {mission_id} (Backtest): 缺少必要參數: {', '.join(missing_params)}。"
+            orchestrator_logger.error(error_msg)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED, "message": f"任務失敗：{error_msg}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=error_msg, details=params, level="ERROR", mission_id=mission_id)
+            return
+
+        price_source_path = Path(price_source_path_str)
+        factor_source_path = Path(factor_source_path_str)
+
+        try:
+            # 1. 載入數據
+            orchestrator_logger.info(f"任務 {mission_id}: 載入價格數據從 {price_source_path}")
+            if not price_source_path.exists():
+                raise FileNotFoundError(f"價格數據檔案不存在: {price_source_path}")
+            price_df = pd.read_parquet(price_source_path)
+            if 'Date' in price_df.columns and price_df.index.name != 'Date': # 兼容舊格式，將 Date 欄設為索引
+                price_df.set_index('Date', inplace=True)
+            if not isinstance(price_df.index, pd.DatetimeIndex):
+                 price_df.index = pd.to_datetime(price_df.index)
+
+
+            orchestrator_logger.info(f"任務 {mission_id}: 載入因子數據從 {factor_source_path}")
+            if not factor_source_path.exists():
+                raise FileNotFoundError(f"因子數據檔案不存在: {factor_source_path}")
+            factor_df = pd.read_parquet(factor_source_path)
+            if 'Date' in factor_df.columns and factor_df.index.name != 'Date':
+                factor_df.set_index('Date', inplace=True)
+            if not isinstance(factor_df.index, pd.DatetimeIndex):
+                factor_df.index = pd.to_datetime(factor_df.index)
+
+            # (可選) 根據 start_date, end_date 篩選數據
+            # if start_date_str: price_df = price_df[price_df.index >= pd.to_datetime(start_date_str)]
+            # if end_date_str: price_df = price_df[price_df.index <= pd.to_datetime(end_date_str)]
+            # factor_df = factor_df.reindex(price_df.index).ffill().bfill() # 對齊並填充因子數據
+
+            # 2. 載入策略邏輯
+            orchestrator_logger.info(f"任務 {mission_id}: 載入策略 '{strategy_id}'")
+            strategy_module_name = f"prometheus_fire_backend.strategies.{strategy_id}_strategy"
+            try:
+                strategy_module = importlib.import_module(strategy_module_name)
+                generate_signals_func = getattr(strategy_module, "generate_signals")
+            except (ImportError, AttributeError) as e:
+                raise ImportError(f"無法載入策略 '{strategy_id}' 從模組 '{strategy_module_name}': {e}")
+
+            # 3. 生成訊號
+            orchestrator_logger.info(f"任務 {mission_id}: 為策略 '{strategy_id}' 生成訊號")
+            # 策略函數可能需要特定的因子欄位名，這些可以作為 params 的一部分傳入
+            # 例如: params.get("strategy_params", {})
+            entry_signals, exit_signals = generate_signals_func(price_df, factor_df) # **params.get("strategy_params", {}))
+
+            # 4. 執行回測
+            orchestrator_logger.info(f"任務 {mission_id}: 執行回測，策略 '{strategy_id}'")
+            backtest_stats, error_msg = self.backtester.run_backtest(
+                price_df=price_df,
+                entry_signals=entry_signals,
+                exit_signals=exit_signals,
+                initial_cash=initial_cash,
+                commission_rate=commission_rate
+                # slippage_rate and ohlc_column_map can be added from params if needed
+            )
+
+            if error_msg:
+                raise Exception(f"回測執行失敗: {error_msg}")
+
+            if backtest_stats is None:
+                 raise Exception("回測執行未返回任何統計數據，但也沒有明確錯誤訊息。")
+
+
+            # 將 Pandas Series 轉換為字典以便 JSON 序列化
+            stats_dict = backtest_stats.to_dict() if backtest_stats is not None else {}
+            # 轉換 NaN 和 Infinity 以便 JSON 兼容
+            for k, v in stats_dict.items():
+                if pd.isna(v):
+                    stats_dict[k] = None
+                elif v == float('inf'):
+                    stats_dict[k] = "Infinity"
+                elif v == float('-inf'):
+                    stats_dict[k] = "-Infinity"
+
+
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_SUCCESS,
+                "message": f"任務成功：策略 '{strategy_id}' 回測完成。",
+                "details": {
+                    "strategy_id": strategy_id,
+                    "price_data_source": str(price_source_path),
+                    "factor_data_source": str(factor_source_path),
+                    "initial_cash": initial_cash,
+                    "commission_rate": commission_rate,
+                    "backtest_results": stats_dict
+                },
+                "end_time": datetime.now().isoformat()
+            })
+            orchestrator_logger.info(f"任務 {mission_id} (Backtest) 成功完成。策略: {strategy_id}")
+            if self.log_manager:
+                self.log_manager.log_event(
+                    event_type="mission_succeeded",
+                    message=f"任務 {mission_id} (Backtest) for strategy {strategy_id} 成功。",
+                    details={"strategy": strategy_id, "num_stats": len(stats_dict)},
+                    mission_id=mission_id
+                )
+
+        except FileNotFoundError as fnf_e:
+            orchestrator_logger.error(f"任務 {mission_id} (Backtest): 數據檔案未找到: {fnf_e}", exc_info=False)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED, "message": f"任務失敗：數據檔案未找到 - {str(fnf_e)}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Backtest) 因數據檔案未找到失敗。", details={"error": str(fnf_e)}, level="ERROR", mission_id=mission_id)
+        except ImportError as imp_e:
+            orchestrator_logger.error(f"任務 {mission_id} (Backtest): 策略載入失敗: {imp_e}", exc_info=False)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED, "message": f"任務失敗：策略載入失敗 - {str(imp_e)}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Backtest) 因策略載入失敗。", details={"error": str(imp_e)}, level="ERROR", mission_id=mission_id)
+        except Exception as e:
+            orchestrator_logger.error(f"任務 {mission_id} (Backtest): 執行回測任務時發生嚴重錯誤: {e}", exc_info=True)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED, "message": f"任務失敗：執行回測時發生內部錯誤 - {str(e)}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Backtest) 因執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
 
 
     def get_mission_status(self, mission_id: str) -> Dict[str, Any]:

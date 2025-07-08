@@ -222,6 +222,26 @@ class FactorMissionParameters(BaseModel):
         "extra": "allow"
     }
 
+class BacktestMissionParameters(BaseModel):
+    """
+    啟動回測任務時傳遞的參數模型。
+    """
+    ticker: str = Field(..., description="要進行回測的股票代號。")
+    strategy_id: str = Field(..., description="要使用的策略的唯一標識符 (例如 'sma_cross')。")
+    price_source_path: str = Field(..., description="包含歷史價格數據 (OHLCV) 的 Parquet 檔案路徑。")
+    factor_source_path: str = Field(..., description="包含預計算因子數據的 Parquet 檔案路徑。")
+    start_date: Optional[str] = Field(None, description="回測開始日期 (YYYY-MM-DD)。如果提供，將篩選數據源。")
+    end_date: Optional[str] = Field(None, description="回測結束日期 (YYYY-MM-DD)。如果提供，將篩選數據源。")
+    initial_cash: float = Field(100000.0, description="回測的初始資金。")
+    commission_rate: float = Field(0.001, description="交易手續費率 (例如 0.001 代表 0.1%)。")
+    # 可選：策略特定參數
+    strategy_params: Optional[Dict[str, Any]] = Field(None, description="傳遞給策略生成函數的特定參數。")
+
+
+    model_config = {
+        "extra": "allow" # 允許 Orchestrator 可能需要的其他參數
+    }
+
 # --- API Endpoints ---
 
 @app.post("/api/v1/start_mission", response_model=StartMissionResponse, tags=["Mission Control"])
@@ -419,6 +439,67 @@ async def start_factor_mission_endpoint(params: FactorMissionParameters, request
                 error_message=str(e)
             )
         raise HTTPException(status_code=500, detail=f"啟動因子計算任務時發生內部錯誤: {str(e)}")
+
+
+@app.post("/api/v1/start_backtest_mission", response_model=StartMissionResponse, tags=["Backtesting"])
+async def start_backtest_mission_endpoint(params: BacktestMissionParameters, request: Request):
+    """
+    啟動一個新的回測任務。
+    """
+    current_orchestrator = getattr(request.app.state, 'orchestrator', None)
+    current_log_manager = getattr(request.app.state, 'log_manager', None)
+
+    if not current_orchestrator:
+        api_logger.error("API Error: Orchestrator not found in app.state during backtest mission start.")
+        raise HTTPException(status_code=503, detail="總調度器尚未初始化，服務暫不可用。")
+
+    # 構造傳遞給 MainOrchestrator.start_mission 的參數
+    # Orchestrator 的 _execute_backtest_task 將處理這些參數
+    mission_params_dict = {
+        "type": "backtest",
+        "ticker": params.ticker,
+        "strategy_id": params.strategy_id,
+        "price_source_path": params.price_source_path,
+        "factor_source_path": params.factor_source_path,
+        "start_date": params.start_date,
+        "end_date": params.end_date,
+        "initial_cash": params.initial_cash,
+        "commission_rate": params.commission_rate,
+        "strategy_params": params.strategy_params
+    }
+    api_logger.info(f"API 接收到回測任務啟動請求。參數: {mission_params_dict}")
+
+    try:
+        mission_id = current_orchestrator.start_mission(mission_params=mission_params_dict)
+        initial_status_dict = current_orchestrator.get_mission_status(mission_id)
+
+        response_data = StartMissionResponse(
+            mission_id=mission_id,
+            message=f"回測任務 {mission_id} (策略: {params.strategy_id}, 股票: {params.ticker}) 已成功啟動。",
+            initial_status=initial_status_dict
+        )
+
+        if current_log_manager:
+            current_log_manager.log_api_call(
+                endpoint="/api/v1/start_backtest_mission",
+                method="POST",
+                mission_id=mission_id,
+                request_body=mission_params_dict,
+                response_body=response_data.model_dump(),
+                status_code=200
+            )
+        return response_data
+    except Exception as e:
+        api_logger.error(f"啟動回測任務時發生錯誤: {e}", exc_info=True)
+        if current_log_manager:
+             current_log_manager.log_api_call(
+                endpoint="/api/v1/start_backtest_mission",
+                method="POST",
+                request_body=mission_params_dict,
+                status_code=500,
+                error_message=str(e)
+            )
+        raise HTTPException(status_code=500, detail=f"啟動回測任務時發生內部錯誤: {str(e)}")
 
 
 # 為了能夠透過 uvicorn 運行，我們可以在這裡加入一個簡易的啟動方式
