@@ -301,15 +301,16 @@ async def main():
         logger.critical(f"發生未預期的嚴重錯誤: {e}", exc_info=True)
         exit_code = EXIT_CODE_GENERIC_ERROR
 
-    if exit_code == EXIT_CODE_SUCCESS:
-        logger.info(f"--- TAIFEX 智慧情報下載器任務成功 (日期: {target_date_obj.strftime('%Y-%m-%d')}) ---")
-    elif exit_code == EXIT_CODE_NO_DATA_AVAILABLE:
+    # 調整日誌判斷順序：優先判斷 EXIT_CODE_NO_DATA_AVAILABLE
+    if exit_code == EXIT_CODE_NO_DATA_AVAILABLE:
          logger.info(f"--- TAIFEX 智慧情報下載器任務完成，當日無可用資料 (日期: {target_date_obj.strftime('%Y-%m-%d')}) ---")
+    elif exit_code == EXIT_CODE_SUCCESS: # 因為 EXIT_CODE_NO_DATA_AVAILABLE 和 EXIT_CODE_SUCCESS 都是 0，所以這個要在後面
+        logger.info(f"--- TAIFEX 智慧情報下載器任務成功 (日期: {target_date_obj.strftime('%Y-%m-%d')}) ---")
     elif exit_code == EXIT_CODE_DOWNLOAD_ERROR:
         logger.error(f"--- TAIFEX 智慧情報下載器任務失敗 (下載錯誤) (日期: {target_date_obj.strftime('%Y-%m-%d')})，退出碼: {exit_code} ---")
     elif exit_code == EXIT_CODE_DB_ERROR:
         logger.error(f"--- TAIFEX 智慧情報下載器任務失敗 (資料庫錯誤) (日期: {target_date_obj.strftime('%Y-%m-%d')})，退出碼: {exit_code} ---")
-    else:
+    else: # 包含 EXIT_CODE_GENERIC_ERROR 或其他未明確處理的錯誤碼
         logger.error(f"--- TAIFEX 智慧情報下載器任務失敗 (通用或未知錯誤) (日期: {target_date_obj.strftime('%Y-%m-%d')})，退出碼: {exit_code} ---")
 
     sys.exit(exit_code)
