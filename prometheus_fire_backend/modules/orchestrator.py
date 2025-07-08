@@ -11,6 +11,7 @@ from core.config import PROJECT_ROOT # <--- 導入 PROJECT_ROOT
 # 引入 DataFetcher 和 HttpClient
 from .data_fetcher import DataFetcher
 from .http_client import HttpClient
+from .data_fuser import DataFuser # <--- 導入 DataFuser
 # from src.taifex_data_fetcher.client import TaifexClient # TaifexClient 現在由 DataFetcher 間接使用
 
 # 配置基本的日誌記錄器
@@ -62,7 +63,7 @@ class MainOrchestrator:
             execution_mode="ADAPTIVE"
             # project_root=self.project_root # 或者直接將 PROJECT_ROOT 傳給它
         )
-        self.data_fuser = None # 暫時未使用
+        self.data_fuser = DataFuser() # <--- 初始化 DataFuser
 
         orchestrator_logger.info(f"總調度器 (MainOrchestrator) 初始化完畢。專案根目錄使用: {PROJECT_ROOT}")
         MainOrchestrator._mission_states.clear()
@@ -130,8 +131,11 @@ class MainOrchestrator:
         mission_type = internal_mission_params.get("type")
 
         if mission_type == "fetch_taifex":
-            # 現在 _execute_fetch_taifex_task 將使用 data_fetcher
             self._execute_fetch_taifex_task_with_datafetcher(mission_id, internal_mission_params)
+        elif mission_type == "fetch_yfinance":
+            self._execute_fetch_yfinance_task_with_datafetcher(mission_id, internal_mission_params)
+        elif mission_type == "fuse_data":
+            self._execute_fusion_task(mission_id, internal_mission_params)
         else:
             orchestrator_logger.warning(f"任務 {mission_id}: 未知的任務類型 '{mission_type}' 或未提供任務類型。")
             MainOrchestrator._mission_states[mission_id].update({
@@ -153,9 +157,8 @@ class MainOrchestrator:
         orchestrator_logger.info(f"任務 {mission_id}: 正在執行 fetch_taifex 任務 (DataFetcher)。參數: {params}")
 
         date_str = params.get("date")
-        # data_types 已經在 start_mission 中處理好了，直接從 params 取用
         data_types_to_fetch = params.get("data_types", [])
-        use_mock = params.get("use_mock", True) # 從 params 中獲取 use_mock
+        use_mock = params.get("use_mock", True)
 
         if not date_str:
             orchestrator_logger.error(f"任務 {mission_id}: fetch_taifex 任務缺少 'date' 參數。")
@@ -168,7 +171,7 @@ class MainOrchestrator:
                 self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} 因缺少日期參數失敗。", level="ERROR", mission_id=mission_id)
             return
 
-        if not data_types_to_fetch:
+        if not data_types_to_fetch: # Specific to Taifex as it fetches multiple data types
             orchestrator_logger.error(f"任務 {mission_id}: fetch_taifex 任務缺少 'data_types' 參數。")
             MainOrchestrator._mission_states[mission_id].update({
                 "status": MISSION_STATUS_FAILED,
@@ -180,41 +183,30 @@ class MainOrchestrator:
             return
 
         try:
-            # DataFetcher 會處理模擬數據和真實數據的邏輯
-            # 我們需要將 API 傳來的 mission_params 轉換為 DataFetcher 的 mission_params
-            # DataFetcher 的 fetch_data_for_mission 預期 task_type, date, data_types, use_mock 等
             fetcher_params = {
-                "task_type": "FETCH_TAIFEX", # DataFetcher 內部識別用
+                "task_type": "FETCH_TAIFEX",
                 "date": date_str,
                 "data_types": data_types_to_fetch,
                 "use_mock": use_mock
             }
-
-            # 如果 use_mock 為 True，且 API 請求中包含 mock_data (例如直接的 CSV 內容)
-            # 則需要將其傳遞給 DataFetcher
             if use_mock and params.get("mock_data"):
                  fetcher_params["mock_data"] = params["mock_data"]
 
-
             fetch_results = self.data_fetcher.fetch_data_for_mission(mission_id, fetcher_params)
 
-            # DataFetcher 返回的 results 是一個字典，鍵可能是 "taifex_institutional_investors" 或 "taifex_pc_ratio_error" 等
-            # 我們需要檢查這些結果
             all_successful = True
             errors_found = []
             successful_fetches = {}
 
             for dt in data_types_to_fetch:
-                if f"taifex_{dt}" in fetch_results and fetch_results[f"taifex_{dt}"] is not None:
-                    # 假設 DataFetcher 已經將數據保存到 data_lake (TaifexClient 做的)
-                    # 我們可以從 TaifexClient 的 _save_to_data_lake 返回的路徑來填充 details
-                    # 但 DataFetcher 目前不直接返回檔案路徑，而是返回 DataFrame
-                    # 為了簡單起見，我們先假設成功，並記錄數據類型
-                    successful_fetches[dt] = f"Data for {dt} processed." # 或者可以記錄 DataFrame 的 shape
+                result_key = f"taifex_{dt}"
+                error_key = f"taifex_{dt}_error"
+                if result_key in fetch_results and fetch_results[result_key] is not None:
+                    successful_fetches[dt] = f"Data for {dt} processed."
                     orchestrator_logger.info(f"任務 {mission_id}: {dt} 數據已由 DataFetcher 處理。")
                 else:
                     all_successful = False
-                    error_message = fetch_results.get(f"taifex_{dt}_error", f"獲取 {dt} 數據時發生未知問題。")
+                    error_message = fetch_results.get(error_key, f"獲取 {dt} 數據時發生未知問題。")
                     errors_found.append(f"{dt}: {error_message}")
                     orchestrator_logger.warning(f"任務 {mission_id}: DataFetcher 未能成功獲取 {dt} 數據。錯誤: {error_message}")
 
@@ -225,30 +217,172 @@ class MainOrchestrator:
                     "details": {"processed_data_types": data_types_to_fetch, "fetch_results_summary": successful_fetches},
                     "end_time": datetime.now().isoformat()
                 })
-                orchestrator_logger.info(f"任務 {mission_id} 成功完成。")
+                orchestrator_logger.info(f"任務 {mission_id} (Taifex) 成功完成。")
                 if self.log_manager:
-                    self.log_manager.log_event(event_type="mission_succeeded", message=f"任務 {mission_id} 成功。", details=successful_fetches, mission_id=mission_id)
+                    self.log_manager.log_event(event_type="mission_succeeded", message=f"任務 {mission_id} (Taifex) 成功。", details=successful_fetches, mission_id=mission_id)
             else:
                 error_summary = "; ".join(errors_found)
                 MainOrchestrator._mission_states[mission_id].update({
                     "status": MISSION_STATUS_FAILED,
-                    "message": f"任務部分或完全失敗：{error_summary}",
+                    "message": f"任務 (Taifex) 部分或完全失敗：{error_summary}",
                     "details": {"errors": errors_found, "successful_fetches": successful_fetches if successful_fetches else None},
                     "end_time": datetime.now().isoformat()
                 })
-                orchestrator_logger.error(f"任務 {mission_id} 失敗或部分失敗。錯誤: {error_summary}")
+                orchestrator_logger.error(f"任務 {mission_id} (Taifex) 失敗或部分失敗。錯誤: {error_summary}")
                 if self.log_manager:
-                     self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} 失敗或部分失敗。", details={"errors": errors_found}, level="ERROR", mission_id=mission_id)
+                     self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Taifex) 失敗或部分失敗。", details={"errors": errors_found}, level="ERROR", mission_id=mission_id)
 
         except Exception as e:
-            orchestrator_logger.error(f"任務 {mission_id}: 執行 DataFetcher 任務時發生嚴重錯誤: {e}", exc_info=True)
+            orchestrator_logger.error(f"任務 {mission_id} (Taifex): 執行 DataFetcher 任務時發生嚴重錯誤: {e}", exc_info=True)
             MainOrchestrator._mission_states[mission_id].update({
                 "status": MISSION_STATUS_FAILED,
-                "message": f"任務失敗：執行 DataFetcher 時發生內部錯誤 - {str(e)}",
+                "message": f"任務 (Taifex) 失敗：執行 DataFetcher 時發生內部錯誤 - {str(e)}",
                 "end_time": datetime.now().isoformat()
             })
             if self.log_manager:
-                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} 因 DataFetcher 執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Taifex) 因 DataFetcher 執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
+
+    def _execute_fetch_yfinance_task_with_datafetcher(self, mission_id: str, params: Dict[str, Any]):
+        """使用 DataFetcher 執行獲取 Yahoo Finance OHLCV 數據的子任務。"""
+        MainOrchestrator._mission_states[mission_id].update({
+            "status": MISSION_STATUS_PROCESSING,
+            "message": "正在透過 DataFetcher 處理 fetch_yfinance 任務..."
+        })
+        orchestrator_logger.info(f"任務 {mission_id}: 正在執行 fetch_yfinance 任務 (DataFetcher)。參數: {params}")
+
+        date_str = params.get("date")
+        ticker_symbol = params.get("ticker_symbol")
+        use_mock = params.get("use_mock", True)
+
+        if not date_str or not ticker_symbol:
+            error_msg = f"任務 {mission_id}: fetch_yfinance 任務缺少 'date' 或 'ticker_symbol' 參數。"
+            orchestrator_logger.error(error_msg)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED,
+                "message": f"任務失敗：{error_msg}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (YFinance) 因缺少參數失敗。", details={"missing_date": not date_str, "missing_ticker": not ticker_symbol}, level="ERROR", mission_id=mission_id)
+            return
+
+        try:
+            fetcher_params = {
+                "task_type": "FETCH_YFINANCE",
+                "date": date_str,
+                "ticker_symbol": ticker_symbol,
+                "use_mock": use_mock
+            }
+            if use_mock and params.get("mock_data"):
+                 fetcher_params["mock_data"] = params["mock_data"]
+
+            fetch_results = self.data_fetcher.fetch_data_for_mission(mission_id, fetcher_params)
+
+            ticker_symbol_safe = ticker_symbol.replace('.', '_')
+            result_key = f"yfinance_ohlcv_{ticker_symbol_safe}"
+            error_key = f"yfinance_ohlcv_{ticker_symbol_safe}_error"
+
+            if result_key in fetch_results and fetch_results[result_key] is not None:
+                MainOrchestrator._mission_states[mission_id].update({
+                    "status": MISSION_STATUS_SUCCESS,
+                    "message": f"任務成功：股票 {ticker_symbol} 在 {date_str} 的 OHLCV 數據已處理。",
+                    "details": {"ticker_symbol": ticker_symbol, "date": date_str, "result_info": f"DataFrame with {len(fetch_results[result_key])} rows retrieved."},
+                    "end_time": datetime.now().isoformat()
+                })
+                orchestrator_logger.info(f"任務 {mission_id} (YFinance) 成功完成 for {ticker_symbol} on {date_str}.")
+                if self.log_manager:
+                    self.log_manager.log_event(event_type="mission_succeeded", message=f"任務 {mission_id} (YFinance) for {ticker_symbol} 成功。", details={"ticker": ticker_symbol, "date": date_str}, mission_id=mission_id)
+            else:
+                error_message = fetch_results.get(error_key, f"獲取 {ticker_symbol} OHLCV 數據時發生未知問題。")
+                MainOrchestrator._mission_states[mission_id].update({
+                    "status": MISSION_STATUS_FAILED,
+                    "message": f"任務 (YFinance) 失敗：{error_message}",
+                    "details": {"ticker_symbol": ticker_symbol, "date": date_str, "error": error_message},
+                    "end_time": datetime.now().isoformat()
+                })
+                orchestrator_logger.error(f"任務 {mission_id} (YFinance) 失敗 for {ticker_symbol} on {date_str}. Error: {error_message}")
+                if self.log_manager:
+                     self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (YFinance) for {ticker_symbol} 失敗。", details={"ticker": ticker_symbol, "date": date_str, "error": error_message}, level="ERROR", mission_id=mission_id)
+
+        except Exception as e:
+            orchestrator_logger.error(f"任務 {mission_id} (YFinance): 執行 DataFetcher 任務時發生嚴重錯誤: {e}", exc_info=True)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED,
+                "message": f"任務 (YFinance) 失敗：執行 DataFetcher 時發生內部錯誤 - {str(e)}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (YFinance) 因 DataFetcher 執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
+
+    def _execute_fusion_task(self, mission_id: str, params: Dict[str, Any]):
+        """執行數據融合子任務。"""
+        MainOrchestrator._mission_states[mission_id].update({
+            "status": MISSION_STATUS_PROCESSING,
+            "message": "正在處理數據融合任務..."
+        })
+        orchestrator_logger.info(f"任務 {mission_id}: 正在執行數據融合任務。參數: {params}")
+
+        ticker_symbol = params.get("ticker_symbol")
+        date_str = params.get("date")
+        # API 可能不直接傳遞 data_type_to_fuse，DataFuser.fuse_data 有預設值 "daily_ohlcv"
+        data_type_to_fuse = params.get("data_type_to_fuse", "daily_ohlcv")
+
+
+        if not ticker_symbol or not date_str:
+            error_msg = f"任務 {mission_id} (Fusion): 缺少 'ticker_symbol' 或 'date' 參數。"
+            orchestrator_logger.error(error_msg)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED,
+                "message": f"任務失敗：{error_msg}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Fusion) 因缺少參數失敗。", details=params, level="ERROR", mission_id=mission_id)
+            return
+
+        try:
+            golden_record_path = self.data_fuser.fuse_data(
+                ticker_symbol=ticker_symbol,
+                date_str=date_str,
+                data_type_to_fuse=data_type_to_fuse
+            )
+
+            if golden_record_path:
+                MainOrchestrator._mission_states[mission_id].update({
+                    "status": MISSION_STATUS_SUCCESS,
+                    "message": f"任務成功：股票 {ticker_symbol} 在 {date_str} 的數據已成功融合。",
+                    "details": {
+                        "ticker_symbol": ticker_symbol,
+                        "date": date_str,
+                        "data_type_fused": data_type_to_fuse,
+                        "golden_record_path": str(golden_record_path)
+                    },
+                    "end_time": datetime.now().isoformat()
+                })
+                orchestrator_logger.info(f"任務 {mission_id} (Fusion) 成功完成 for {ticker_symbol} on {date_str}. 黃金記錄: {golden_record_path}")
+                if self.log_manager:
+                    self.log_manager.log_event(event_type="mission_succeeded", message=f"任務 {mission_id} (Fusion) for {ticker_symbol} on {date_str} 成功。", details={"path": str(golden_record_path)}, mission_id=mission_id)
+            else:
+                error_message = f"數據融合失敗 for {ticker_symbol} on {date_str}。DataFuser 未返回有效的黃金記錄路徑。"
+                MainOrchestrator._mission_states[mission_id].update({
+                    "status": MISSION_STATUS_FAILED,
+                    "message": f"任務 (Fusion) 失敗：{error_message}",
+                    "details": {"ticker_symbol": ticker_symbol, "date": date_str, "data_type_fused": data_type_to_fuse, "error": "Fusion process did not yield a golden record."},
+                    "end_time": datetime.now().isoformat()
+                })
+                orchestrator_logger.error(f"任務 {mission_id} (Fusion) 失敗 for {ticker_symbol} on {date_str}. {error_message}")
+                if self.log_manager:
+                     self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Fusion) for {ticker_symbol} on {date_str} 失敗。", details={"error": error_message}, level="ERROR", mission_id=mission_id)
+
+        except Exception as e:
+            orchestrator_logger.error(f"任務 {mission_id} (Fusion): 執行融合任務時發生嚴重錯誤: {e}", exc_info=True)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED,
+                "message": f"任務 (Fusion) 失敗：執行融合時發生內部錯誤 - {str(e)}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Fusion) 因執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
 
 
     def get_mission_status(self, mission_id: str) -> Dict[str, Any]:
