@@ -95,16 +95,70 @@ def run_etl():
         else:
             print(f"INFO: 未能為 {ticker} 計算出任何因子數據。")
 
-    # 2d. 將所有結果合併並存入數據庫
-    if all_factors_to_store:
-        final_factors_df = pd.concat(all_factors_to_store, ignore_index=True)
-        print(f"INFO: ETL 流程總共計算出 {len(final_factors_df)} 筆因子數據，準備寫入資料庫...")
-        db_manager.insert_factors(final_factors_df)
-        print("INFO: 所有因子數據已成功寫入 FactorStore_Daily。")
-    else:
-        print("INFO: ETL 流程未產生任何可儲存的因子數據。")
+    # Ticker 相關因子已收集在 all_factors_to_store (list of DataFrames)
 
-    print("INFO: 因子 ETL 流程執行完畢。")
+    # 3. 計算殖利率曲線因子
+    print("\nINFO: 開始計算殖利率曲線相關因子...")
+    treasury_yields_data = factor_engine.get_treasury_yields()
+    if not treasury_yields_data.empty:
+        yield_spread_factors = factor_engine.calculate_yield_spreads(treasury_yields_data)
+        if not yield_spread_factors.empty:
+            # 將寬表格式 (date 為索引, 各利差為欄位) 的殖利率因子轉換為長表格式，
+            # 以符合 FactorStore_Daily 的 (ticker, date, factor_name, factor_value) 結構。
+            yield_spread_factors_long = yield_spread_factors.reset_index().melt(
+                id_vars='date', # 將 'date' 索引轉換為欄位，並作為融合時的ID變數
+                var_name='factor_name', # 其餘欄位名 (如 'spread_10y_2y') 變為 'factor_name' 欄的值
+                value_name='factor_value'
+            )
+            yield_spread_factors_long['ticker'] = 'US_TREASURY' # 特殊 ticker 名稱
+            yield_spread_factors_long['date'] = pd.to_datetime(yield_spread_factors_long['date']).dt.date
+            yield_spread_factors_long = yield_spread_factors_long[['ticker', 'date', 'factor_name', 'factor_value']].dropna()
+            all_factors_to_store.append(yield_spread_factors_long)
+            print(f"INFO: 計算並準備了 {len(yield_spread_factors_long)} 筆殖利率曲線因子數據。")
+        else:
+            print("INFO: 未能計算出殖利率曲線因子數據。")
+    else:
+        print("INFO: 未能獲取公債殖利率數據，跳過殖利率曲線因子計算。")
+
+    # 4. 計算信用利差代理因子
+    print("\nINFO: 開始計算信用利差代理因子...")
+    credit_spread_proxy_factor = factor_engine.calculate_credit_spread_proxy()
+    if not credit_spread_proxy_factor.empty:
+        # credit_spread_proxy_factor DataFrame 結構: date (索引), HYG_LQD_price_ratio (欄位)
+        # 將其轉換為 FactorStore_Daily 的長表格式。
+        credit_spread_proxy_long = credit_spread_proxy_factor.reset_index() # date 索引變為 'date' 欄
+        # 此時欄位為 ['date', 'HYG_LQD_price_ratio']
+        credit_spread_proxy_long.rename(columns={'HYG_LQD_price_ratio': 'factor_value'}, inplace=True)
+        credit_spread_proxy_long['factor_name'] = 'HYG_LQD_price_ratio' # 設定固定的因子名稱
+        credit_spread_proxy_long['ticker'] = 'CREDIT_SPREAD' # 特殊 ticker 名稱
+        credit_spread_proxy_long['date'] = pd.to_datetime(credit_spread_proxy_long['date']).dt.date
+        # 確保欄位順序符合 FactorStore_Daily 並移除空值
+        credit_spread_proxy_long = credit_spread_proxy_long[['ticker', 'date', 'factor_name', 'factor_value']].dropna()
+        all_factors_to_store.append(credit_spread_proxy_long)
+        print(f"INFO: 計算並準備了 {len(credit_spread_proxy_long)} 筆信用利差代理因子數據。")
+    else:
+        print("INFO: 未能計算出信用利差代理因子數據。")
+
+    # 5. 合併所有因子數據並存入資料庫
+    if all_factors_to_store: # 此時 all_factors_to_store 包含之前 ticker 因子 (如果有的話) 和新計算的宏觀因子
+        # 重新合併，因為之前 ticker_factors_df 可能未加入 all_factors_to_store
+        # 或者，應該在 ticker 循環後就將 ticker_factors_df 加入 all_factors_to_store
+        # 修正：all_factors_to_store 在 ticker 循環中已經收集了數據
+        # 所以這裡直接用 all_factors_to_store 即可
+
+        final_factors_df = pd.concat(all_factors_to_store, ignore_index=True)
+        if not final_factors_df.empty:
+            print(f"\nINFO: ETL 流程總共計算出 {len(final_factors_df)} 筆因子數據，準備寫入資料庫...")
+            db_manager.insert_factors(final_factors_df)
+            print("INFO: 所有因子數據已成功寫入 FactorStore_Daily。")
+        else:
+            print("\nINFO: ETL 流程最終未產生任何可儲存的因子數據。")
+    else:
+        # 這個情況應該是 ticker 因子和宏觀因子都沒有產生
+        print("\nINFO: ETL 流程未產生任何可儲存的因子數據。")
+
+
+    print("\nINFO: 因子 ETL 流程執行完畢。")
 
 if __name__ == '__main__':
     # 為了能夠直接執行此腳本，需要確保 apps 目錄在 Python 的搜索路徑中
