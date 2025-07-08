@@ -1,3 +1,5 @@
+LOG_LEVEL = 'INFO'
+SUBPROCESS_TIMEOUT = 300
 # -*- coding: utf-8 -*-
 """
 核心設定模組
