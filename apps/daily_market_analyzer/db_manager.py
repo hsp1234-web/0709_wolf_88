@@ -6,6 +6,7 @@ DuckDB 資料庫管理模組 for Daily Market Analyzer。
 import duckdb
 import pandas as pd
 import os
+import hashlib # 新增 hashlib 用於生成 request_hash
 from datetime import datetime, timedelta, timezone
 
 class DBManager:
@@ -102,6 +103,21 @@ class DBManager:
                 """
                 con.execute(create_strategic_dashboard_sql)
                 print(f"INFO: 資料表 'StrategicDashboard_Daily' 已在資料庫 '{self.db_path}' 中準備就緒。")
+
+                # 新增：建立 CacheIndex 表格
+                create_cache_index_sql = """
+                CREATE TABLE IF NOT EXISTS CacheIndex (
+                    request_hash TEXT NOT NULL,
+                    date DATE NOT NULL,
+                    status TEXT NOT NULL,
+                    final_interval TEXT,
+                    last_attempt TIMESTAMPTZ NOT NULL,
+                    message TEXT,
+                    PRIMARY KEY (request_hash, date)
+                );
+                """
+                con.execute(create_cache_index_sql)
+                print(f"INFO: 資料表 'CacheIndex' 已在資料庫 '{self.db_path}' 中準備就緒。")
 
         except Exception as e:
             print(f"錯誤: 資料庫設定失敗 (_setup_database): {e}")
@@ -592,6 +608,75 @@ class DBManager:
             print(df_to_insert.head())
             df_to_insert.info()
 
+    def check_request_status(self, request_hash: str, date_str: str) -> dict | None:
+        """
+        查詢 CacheIndex 表格，檢查特定 request_hash 和 date 的請求狀態。
+
+        Args:
+            request_hash (str): 請求的唯一標識 (例如 md5(ticker))。
+            date_str (str): 數據的日期 (YYYY-MM-DD)。
+
+        Returns:
+            dict | None: 如果找到記錄，則返回包含該記錄所有欄位的字典。
+                         欄位包括: request_hash, date, status, final_interval, last_attempt, message。
+                         如果未找到記錄，則返回 None。
+        """
+        try:
+            target_date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+            query = """
+            SELECT request_hash, date, status, final_interval, last_attempt, message
+            FROM CacheIndex
+            WHERE request_hash = ? AND date = ?;
+            """
+            with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
+                result = con.execute(query, [request_hash, target_date_obj]).fetchone()
+
+            if result:
+                # 將結果打包成字典
+                columns = ["request_hash", "date", "status", "final_interval", "last_attempt", "message"]
+                return dict(zip(columns, result))
+            else:
+                return None
+        except Exception as e:
+            print(f"錯誤 (DBManager - check_request_status): 查詢 CacheIndex 失敗 for hash {request_hash}, date {date_str}: {e}")
+            return None
+
+    def update_cache_index(self, request_hash: str, date_str: str, status: str,
+                           final_interval: str | None = None, message: str | None = None) -> None:
+        """
+        在 CacheIndex 表格中寫入或更新一條記錄。
+        使用 INSERT OR REPLACE 語義 (透過 ON CONFLICT DO UPDATE)。
+
+        Args:
+            request_hash (str): 請求的唯一標識。
+            date_str (str): 數據的日期 (YYYY-MM-DD)。
+            status (str): 請求的狀態 (e.g., 'SUCCESS', 'NO_DATA', 'API_FAILURE').
+            final_interval (str | None, optional): 如果 status 為 'SUCCESS'，成功獲取數據的精度。預設為 None。
+            message (str | None, optional): 相關訊息，例如錯誤細節。預設為 None。
+        """
+        try:
+            target_date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
+            last_attempt_ts = datetime.now(timezone.utc)
+
+            # 對於 final_interval 和 message，如果傳入 None，則在 SQL 中應為 NULL
+            # DuckDB 的 Python API 會自動處理 Python None 到 SQL NULL 的轉換
+
+            sql = """
+            INSERT INTO CacheIndex (request_hash, date, status, final_interval, last_attempt, message)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (request_hash, date) DO UPDATE SET
+                status = excluded.status,
+                final_interval = excluded.final_interval,
+                last_attempt = excluded.last_attempt,
+                message = excluded.message;
+            """
+            with duckdb.connect(database=self.db_path, config=self.duckdb_config) as con:
+                con.execute(sql, [request_hash, target_date_obj, status, final_interval, last_attempt_ts, message])
+            # print(f"INFO (DBManager - update_cache_index): CacheIndex 記錄已更新/插入 for hash {request_hash}, date {date_str}, status {status}.")
+        except Exception as e:
+            print(f"錯誤 (DBManager - update_cache_index): 更新/插入 CacheIndex 記錄失敗 for hash {request_hash}, date {date_str}: {e}")
+
+
 if __name__ == '__main__':
     print("--- DBManager (Daily Market Analyzer) 測試 ---")
     test_db_path = "data_workspace/temp/test_analyzer_market_data.duckdb"
@@ -741,6 +826,78 @@ if __name__ == '__main__':
 
     print("\n--- check_cache 測試完畢 ---")
 
-    if os.path.exists(test_db_path):
+    # 不要在此處刪除 test_db_path，將刪除移至所有測試的末尾
+
+    # --- CacheIndex 相關方法測試 ---
+    # db_manager 實例已在頂部創建，並已初始化 CacheIndex 表
+    print("\n--- 測試 CacheIndex 相關方法 ---")
+    # 假設 request_hash 是 md5(ticker)
+    test_ticker_for_cache = "CACHE_TEST"
+    test_request_hash = hashlib.md5(test_ticker_for_cache.encode()).hexdigest()
+    test_date_str = "2024-07-28"
+    test_date_obj = datetime.strptime(test_date_str, "%Y-%m-%d").date()
+
+    # 1. 測試 update_cache_index (首次插入)
+    print("\n--- 測試 update_cache_index (插入新記錄) ---")
+    db_manager.update_cache_index(
+        request_hash=test_request_hash,
+        date_str=test_date_str,
+        status="SUCCESS",
+        final_interval="1d",
+        message="Initial success"
+    )
+    # 驗證插入
+    with duckdb.connect(test_db_path) as con:
+        res_df = con.execute("SELECT * FROM CacheIndex WHERE request_hash = ? AND date = ?", [test_request_hash, test_date_obj]).fetchdf()
+        assert len(res_df) == 1
+        assert res_df['status'].iloc[0] == "SUCCESS"
+        assert res_df['final_interval'].iloc[0] == "1d"
+        print("CacheIndex 插入新記錄成功。")
+
+    # 2. 測試 check_request_status (查詢存在記錄)
+    print("\n--- 測試 check_request_status (查詢存在記錄) ---")
+    status_info = db_manager.check_request_status(request_hash=test_request_hash, date_str=test_date_str)
+    assert status_info is not None
+    assert status_info['status'] == "SUCCESS"
+    assert status_info['final_interval'] == "1d"
+    print(f"CacheIndex 查詢到記錄: {status_info}")
+
+    # 3. 測試 update_cache_index (更新現有記錄)
+    print("\n--- 測試 update_cache_index (更新記錄) ---")
+    db_manager.update_cache_index(
+        request_hash=test_request_hash,
+        date_str=test_date_str,
+        status="API_FAILURE",
+        message="Updated to failure"
+    )
+    # 驗證更新
+    with duckdb.connect(test_db_path) as con:
+        res_df_updated = con.execute("SELECT * FROM CacheIndex WHERE request_hash = ? AND date = ?", [test_request_hash, test_date_obj]).fetchdf()
+        assert len(res_df_updated) == 1
+        assert res_df_updated['status'].iloc[0] == "API_FAILURE"
+        assert res_df_updated['final_interval'].iloc[0] is None # API_FAILURE 時 final_interval 應為 NULL
+        assert "Updated to failure" in res_df_updated['message'].iloc[0]
+        print("CacheIndex 更新記錄成功。")
+    status_info_updated = db_manager.check_request_status(request_hash=test_request_hash, date_str=test_date_str)
+    assert status_info_updated['status'] == "API_FAILURE"
+    print(f"CacheIndex 更新後查詢到記錄: {status_info_updated}")
+
+
+    # 4. 測試 check_request_status (查詢不存在記錄 - 不同日期)
+    print("\n--- 測試 check_request_status (查詢不存在記錄 - 不同日期) ---")
+    status_info_missing_date = db_manager.check_request_status(request_hash=test_request_hash, date_str="2024-07-29")
+    assert status_info_missing_date is None
+    print("CacheIndex 查詢不存在記錄 (不同日期) 成功，返回 None。")
+
+    # 5. 測試 check_request_status (查詢不存在記錄 - 不同hash)
+    print("\n--- 測試 check_request_status (查詢不存在記錄 - 不同hash) ---")
+    missing_hash = hashlib.md5("OTHER_TICKER".encode()).hexdigest()
+    status_info_missing_hash = db_manager.check_request_status(request_hash=missing_hash, date_str=test_date_str)
+    assert status_info_missing_hash is None
+    print("CacheIndex 查詢不存在記錄 (不同hash) 成功，返回 None。")
+
+    print("\n--- CacheIndex 相關方法測試完畢 ---")
+
+    if os.path.exists(test_db_path): # 再次清理
         os.remove(test_db_path)
-        print(f"INFO: 已刪除測試資料庫 {test_db_path}")
+        print(f"INFO: 已刪除測試資料庫 {test_db_path} (最終清理)")
