@@ -25,6 +25,8 @@ except Exception as e:
     print(f"專案路徑校正時發生錯誤 (apps/feature_analyzer/run.py): {e}", file=sys.stderr)
 # --- 標準化「路徑自我校正」樣板碼 END ---
 
+import logging # <--- 新增此行
+from core.utils import setup_logger # <--- 新增此行
 
 # project_root 現在由標準樣板碼定義
 # 假設 analytics_mart.duckdb 位於專案根目錄下的 "data" 資料夾中 (舊的象限分析用)

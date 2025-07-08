@@ -132,7 +132,7 @@ def aggregate_ticks_to_ohlcv(
                 # 時間戳欄位應為 datetime64[ns] 或可轉換的類型
                 # 使用參數化查詢以避免 SQL 注入風險
                 query = f"""
-                SELECT timestamp, price, qty AS volume
+                SELECT timestamp, price, volume
                 FROM ticks
                 WHERE product_id = ?
                 AND timestamp >= ?
