@@ -8,58 +8,128 @@ from pathlib import Path # <--- 導入 Path
 
 from prometheus_fire_backend.modules.logger import LogManager
 from prometheus_fire_backend.modules.orchestrator import MainOrchestrator # 匯入 MainOrchestrator
+from prometheus_fire_backend.modules.metadata_manager import FactorMetadataManager # <--- 導入 FactorMetadataManager
 from typing import Optional, Dict, Any, List # <--- 加入 List
 from core.config import PROJECT_ROOT # <--- 導入 PROJECT_ROOT
 
 # --- 全局變數與設定 ---
 # LOG_DB_PATH = "logs/api_logs.sqlite" # <--- 改為基於 PROJECT_ROOT
 DEFAULT_LOG_DB_PATH = PROJECT_ROOT / "logs" / "api_logs.sqlite"
+DEFAULT_FACTOR_METADATA_DB_PATH = PROJECT_ROOT / "data_warehouse" / "factor_details.db" # <--- 元數據庫路徑
 
 # log_manager_instance: Optional[LogManager] = None # 改用 app.state
 # orchestrator_instance: Optional[MainOrchestrator] = None # 全局 Orchestrator 實例 # 改用 app.state
 # PROJECT_BASE_PATH: Optional[str] = None # 專案根目錄 # <--- 不再需要，使用 PROJECT_ROOT
 
 # 配置日誌
-# logging.basicConfig(level=logging.INFO)
-# logger = logging.getLogger(__name__) # FastAPI 自己的 logger
+# logging.basicConfig(level=logging.INFO) # 應避免在模組中使用全局 basicConfig
+api_logger = logging.getLogger("prometheus_fire_backend.console_api") # 使用明確的 logger 名稱
+if not api_logger.hasHandlers(): # 避免重複添加 handler
+    handler = logging.StreamHandler()
+    # 更詳細的日誌格式
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s')
+    handler.setFormatter(formatter)
+    api_logger.addHandler(handler)
+    api_logger.setLevel(logging.INFO) # 可由環境變數等配置
+
 
 # --- FastAPI Lifespan 事件 ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # global PROJECT_BASE_PATH # PROJECT_BASE_PATH 仍然可以是全局的，或者也放入 app.state # <--- 移除
+    api_logger.info("Lifespan: Startup sequence initiated.")
+    app.state.project_root = PROJECT_ROOT
+    api_logger.info(f"Lifespan: Project root set to: {app.state.project_root}")
 
-    print("Lifespan: Startup sequence started.")
-    # 推斷專案根目錄 (假設 main.py 在 prometheus_fire_backend/console_api/ 下)
-    # PROJECT_BASE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")) # <--- 移除
-    # print(f"Lifespan: 推斷的專案根目錄: {PROJECT_BASE_PATH}")
-    # app.state.project_base_path = PROJECT_BASE_PATH # 存儲到 app.state # <--- 移除
-    app.state.project_root = PROJECT_ROOT # FastAPI 的 state 中可以保存 Path 物件
-    print(f"Lifespan: 專案根目錄 (from core.config): {app.state.project_root}")
+    # 初始化 LogManager
+    api_logger.info("Lifespan: Initializing LogManager...")
+    try:
+        log_db_path_to_use = DEFAULT_LOG_DB_PATH
+        log_db_path_to_use.parent.mkdir(parents=True, exist_ok=True) # 確保日誌目錄存在
+        app.state.log_manager = LogManager(db_path=str(log_db_path_to_use))
+        api_logger.info(f"Lifespan: LogManager initialized. Log database: {log_db_path_to_use}")
+        app.state.log_manager.log_event(
+            event_type="application_startup_phase1",
+            message="LogManager initialized successfully.",
+            source_module="console_api.main"
+        )
+    except Exception as e:
+        api_logger.critical(f"Lifespan: CRITICAL error initializing LogManager: {e}", exc_info=True)
+        app.state.log_manager = None # 標記為初始化失敗
+        # 根據策略，可以決定是否終止應用程式啟動
+        # raise RuntimeError("Failed to initialize LogManager, application cannot start.") from e
 
-    print("Lifespan: FastAPI 應用程式啟動中...")
+    # 初始化 MainOrchestrator
+    api_logger.info("Lifespan: Initializing MainOrchestrator...")
+    if app.state.log_manager:
+        try:
+            app.state.orchestrator = MainOrchestrator(log_manager=app.state.log_manager)
+            api_logger.info("Lifespan: MainOrchestrator initialized.")
+            app.state.log_manager.log_event(
+                event_type="application_startup_phase2",
+                message="MainOrchestrator initialized successfully.",
+                source_module="console_api.main"
+            )
+        except Exception as e:
+            api_logger.critical(f"Lifespan: CRITICAL error initializing MainOrchestrator: {e}", exc_info=True)
+            app.state.orchestrator = None
+            # raise RuntimeError("Failed to initialize MainOrchestrator, application cannot start.") from e
+    else:
+        api_logger.error("Lifespan: MainOrchestrator cannot be initialized because LogManager failed.")
+        app.state.orchestrator = None
+        # raise RuntimeError("LogManager not available, MainOrchestrator initialization skipped.")
 
-    # LogManager 初始化時，如果其 db_path 參數是 Path 物件，它需要能處理
-    # 或者我們在這裡傳入字串路徑
-    log_db_path_to_use = DEFAULT_LOG_DB_PATH
-    app.state.log_manager = LogManager(db_path=str(log_db_path_to_use)) # 確保 LogManager 接收 str
-    print(f"Lifespan: LogManager 已初始化，日誌將寫入: {log_db_path_to_use}")
-    app.state.log_manager.log_event(event_type="application_startup", message="FastAPI 應用程式已啟動。")
+    # 初始化 FactorMetadataManager 並同步因子元數據
+    api_logger.info("Lifespan: Initializing FactorMetadataManager and syncing factor recipes...")
+    app.state.factor_metadata_manager = None # 預設為 None
+    try:
+        # FactorMetadataManager 的 __init__ 會確保其 db 目錄存在
+        # 使用在檔案頂部定義的 DEFAULT_FACTOR_METADATA_DB_PATH
+        factor_metadata_manager = FactorMetadataManager(db_path=DEFAULT_FACTOR_METADATA_DB_PATH)
+        app.state.factor_metadata_manager = factor_metadata_manager # 儲存實例（可選）
 
-    # MainOrchestrator 的 base_path 參數已被移除，它會自行使用 PROJECT_ROOT
-    app.state.orchestrator = MainOrchestrator(log_manager=app.state.log_manager)
-    print(f"Lifespan: MainOrchestrator 已初始化: {app.state.orchestrator}")
+        sync_status = factor_metadata_manager.sync_recipes_to_db()
+        if sync_status:
+            api_logger.info("Lifespan: Factor recipes successfully synced to the metadata database.")
+        else:
+            api_logger.warning("Lifespan: Factor recipes sync to metadata database may have encountered issues or had no data to sync. Check FactorMetadataManager logs for details.")
 
+        if app.state.log_manager:
+            app.state.log_manager.log_event(
+                event_type="factor_metadata_sync_completed",
+                message=f"Factor metadata sync status: {'Success' if sync_status else 'Issues/NoData'}.",
+                details={"sync_successful": sync_status, "db_path": str(DEFAULT_FACTOR_METADATA_DB_PATH)},
+                source_module="console_api.main",
+                level="INFO" if sync_status else "WARNING"
+            )
+    except Exception as e:
+        api_logger.error(f"Lifespan: Error during FactorMetadataManager initialization or sync: {e}", exc_info=True)
+        if app.state.log_manager:
+            app.state.log_manager.log_event(
+                event_type="factor_metadata_sync_failed",
+                message=f"Factor metadata sync critically failed: {str(e)}",
+                details={"error": str(e), "db_path": str(DEFAULT_FACTOR_METADATA_DB_PATH)},
+                source_module="console_api.main",
+                level="ERROR"
+            )
+        # 根據策略，可以選擇是否讓應用程式繼續
+
+    if app.state.log_manager:
+        app.state.log_manager.log_event(event_type="application_startup_complete", message="FastAPI application startup sequence finished.", source_module="console_api.main")
+    api_logger.info("Lifespan: Startup sequence completed.")
     yield
 
-    print("Lifespan: Shutdown sequence started.")
-    if hasattr(app.state, 'orchestrator') and app.state.orchestrator:
-        print("Lifespan: MainOrchestrator 正在關閉 (如果需要)...")
+    api_logger.info("Lifespan: Shutdown sequence initiated.")
+    if hasattr(app.state, 'orchestrator') and app.state.orchestrator and hasattr(app.state.orchestrator, 'http_client') and app.state.orchestrator.http_client:
+        api_logger.info("Lifespan: Closing Orchestrator's HttpClient...")
+        await app.state.orchestrator.http_client.close_async() # 假設 http_client 有 close_async
+        api_logger.info("Lifespan: Orchestrator's HttpClient closed.")
 
     if hasattr(app.state, 'log_manager') and app.state.log_manager:
-        app.state.log_manager.log_event(event_type="application_shutdown", message="FastAPI 應用程式已關閉。")
-        app.state.log_manager.close()
-        print("Lifespan: LogManager 已關閉。")
-    print("Lifespan: Shutdown sequence completed.")
+        api_logger.info("Lifespan: Closing LogManager...")
+        app.state.log_manager.log_event(event_type="application_shutdown", message="FastAPI application shutting down.", source_module="console_api.main")
+        app.state.log_manager.close() # LogManager 的 close 通常是同步的
+        api_logger.info("Lifespan: LogManager closed.")
+    api_logger.info("Lifespan: Shutdown sequence completed.")
 
 app = FastAPI(
     title="普羅米修斯之火 API",
@@ -140,6 +210,17 @@ class FusionMissionParameters(BaseModel):
         "extra": "allow" # 允許額外欄位，儘管此處可能不需要
     }
 
+class FactorMissionParameters(BaseModel):
+    """
+    啟動因子計算任務時傳遞的參數模型。
+    """
+    ticker: str = Field(..., description="要計算因子的股票代號，例如 'AAPL' 或 '0050.TW'。")
+    date: str = Field(..., description="因子計算的目標日期（通常對應黃金紀錄的日期），格式 YYYY-MM-DD。")
+    # use_mock 和其他通用參數可以由 Orchestrator 處理，這裡專注於因子任務的核心參數
+
+    model_config = {
+        "extra": "allow"
+    }
 
 # --- API Endpoints ---
 
@@ -285,6 +366,59 @@ async def start_fusion_mission_endpoint(params: FusionMissionParameters, request
                 error_message=str(e)
             )
         raise HTTPException(status_code=500, detail=f"啟動融合任務時發生內部錯誤: {str(e)}")
+
+@app.post("/api/v1/start_factor_mission", response_model=StartMissionResponse, tags=["Factor Engine"])
+async def start_factor_mission_endpoint(params: FactorMissionParameters, request: Request):
+    """
+    啟動一個新的因子計算任務。
+    """
+    current_orchestrator = getattr(request.app.state, 'orchestrator', None)
+    current_log_manager = getattr(request.app.state, 'log_manager', None)
+
+    if not current_orchestrator:
+        print(f"API Error: Orchestrator not found in app.state during factor mission start.")
+        raise HTTPException(status_code=503, detail="總調度器尚未初始化，服務暫不可用。")
+
+    # 構造傳遞給 MainOrchestrator.start_mission 的參數
+    mission_params_dict = {
+        "type": "calculate_factors",  # 告訴 Orchestrator 這是個因子計算任務
+        "ticker": params.ticker,
+        "date": params.date
+        # Orchestrator 的 _execute_factor_calculation_task 會處理這些參數
+    }
+    print(f"API 接收到因子計算任務啟動請求。參數: {mission_params_dict}")
+
+    try:
+        mission_id = current_orchestrator.start_mission(mission_params=mission_params_dict)
+        initial_status_dict = current_orchestrator.get_mission_status(mission_id)
+
+        response_data = StartMissionResponse(
+            mission_id=mission_id,
+            message=f"因子計算任務 {mission_id} 已成功啟動。",
+            initial_status=initial_status_dict
+        )
+
+        if current_log_manager:
+            current_log_manager.log_api_call(
+                endpoint="/api/v1/start_factor_mission",
+                method="POST",
+                mission_id=mission_id,
+                request_body=mission_params_dict,
+                response_body=response_data.model_dump(),
+                status_code=200
+            )
+        return response_data
+    except Exception as e:
+        print(f"啟動因子計算任務時發生錯誤: {e}")
+        if current_log_manager:
+             current_log_manager.log_api_call(
+                endpoint="/api/v1/start_factor_mission",
+                method="POST",
+                request_body=mission_params_dict,
+                status_code=500,
+                error_message=str(e)
+            )
+        raise HTTPException(status_code=500, detail=f"啟動因子計算任務時發生內部錯誤: {str(e)}")
 
 
 # 為了能夠透過 uvicorn 運行，我們可以在這裡加入一個簡易的啟動方式

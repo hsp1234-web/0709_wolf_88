@@ -1,9 +1,10 @@
 # prometheus_fire_backend/modules/orchestrator.py
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from datetime import datetime
 from pathlib import Path # <--- 導入 Path
+import pandas as pd # <--- 導入 pandas
 
 # 引入核心設定
 from core.config import PROJECT_ROOT # <--- 導入 PROJECT_ROOT
@@ -12,7 +13,7 @@ from core.config import PROJECT_ROOT # <--- 導入 PROJECT_ROOT
 from .data_fetcher import DataFetcher
 from .http_client import HttpClient
 from .data_fuser import DataFuser # <--- 導入 DataFuser
-# from src.taifex_data_fetcher.client import TaifexClient # TaifexClient 現在由 DataFetcher 間接使用
+from .factor_engine import FactorEngine # <--- 導入 FactorEngine
 
 # 配置基本的日誌記錄器
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -36,7 +37,7 @@ MISSION_STATUS_FAILED = "failed"
 class MainOrchestrator:
     """
     總調度器 (Main Orchestrator)。
-    負責接收任務，編排 data_fetcher、data_fuser 等模組完成整個情報處理流程。
+    負責接收任務，編排 data_fetcher、data_fuser、factor_engine 等模組完成整個情報處理流程。
     """
     _mission_states: Dict[str, Dict[str, Any]] = {}
 
@@ -50,20 +51,13 @@ class MainOrchestrator:
         self.log_manager = log_manager
         self.http_client = HttpClient() # 創建 HttpClient 實例
 
-        # self.project_root = PROJECT_ROOT # <--- 使用導入的 PROJECT_ROOT
-        # self.data_lake_path = self.project_root / "data_lake" # <--- 定義 data_lake_path
-        # self.mock_data_path = self.project_root / "mock_data" # <--- 定義 mock_data_path
-
-        # 初始化 DataFetcher，傳入 log_manager 和 http_client
-        # DataFetcher 內部會處理其自身的路徑需求，基於 PROJECT_ROOT
-        # 我們將在 DataFetcher 的重構中處理這一點
         self.data_fetcher = DataFetcher(
             log_manager=self.log_manager,
             http_client=self.http_client,
             execution_mode="ADAPTIVE"
-            # project_root=self.project_root # 或者直接將 PROJECT_ROOT 傳給它
         )
         self.data_fuser = DataFuser() # <--- 初始化 DataFuser
+        self.factor_engine = FactorEngine() # <--- 初始化 FactorEngine
 
         orchestrator_logger.info(f"總調度器 (MainOrchestrator) 初始化完畢。專案根目錄使用: {PROJECT_ROOT}")
         MainOrchestrator._mission_states.clear()
@@ -136,6 +130,8 @@ class MainOrchestrator:
             self._execute_fetch_yfinance_task_with_datafetcher(mission_id, internal_mission_params)
         elif mission_type == "fuse_data":
             self._execute_fusion_task(mission_id, internal_mission_params)
+        elif mission_type == "calculate_factors": # <--- 新增因子計算任務類型
+            self._execute_factor_calculation_task(mission_id, internal_mission_params)
         else:
             orchestrator_logger.warning(f"任務 {mission_id}: 未知的任務類型 '{mission_type}' 或未提供任務類型。")
             MainOrchestrator._mission_states[mission_id].update({
@@ -383,6 +379,167 @@ class MainOrchestrator:
             })
             if self.log_manager:
                 self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (Fusion) 因執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
+
+    def _execute_factor_calculation_task(self, mission_id: str, params: Dict[str, Any]):
+        """執行因子計算子任務。"""
+        MainOrchestrator._mission_states[mission_id].update({
+            "status": MISSION_STATUS_PROCESSING,
+            "message": "正在處理因子計算任務..."
+        })
+        orchestrator_logger.info(f"任務 {mission_id}: 正在執行因子計算任務。參數: {params}")
+
+        ticker_symbol = params.get("ticker") # API 傳入的是 ticker
+        date_str = params.get("date")
+
+        if not ticker_symbol or not date_str:
+            error_msg = f"任務 {mission_id} (FactorCalculation): 缺少 'ticker' 或 'date' 參數。"
+            orchestrator_logger.error(error_msg)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED,
+                "message": f"任務失敗：{error_msg}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (FactorCalculation) 因缺少參數失敗。", details=params, level="ERROR", mission_id=mission_id)
+            return
+
+        try:
+            # DataFuser 的 golden record 路徑結構為:
+            # PROJECT_ROOT / "data_warehouse" / "golden_records" / "daily" / {ticker_symbol} / {date_str}.parquet
+            # FactorEngine 的 generate_and_store_daily_factors 預期一個包含多日數據的 DataFrame
+            # 因此，我們需要讀取對應股票代號的所有黃金記錄，或者特定日期範圍的。
+            # 指令要求 "讀取對應的黃金紀錄"，暗示單一檔案。
+            # 然而，因子計算通常需要歷史序列。
+            # 假設 FactorEngine 期望的 golden_ohlcv_df 是包含該日期之前足夠歷史數據的 DataFrame。
+            # 目前的 DataFuser.fuse_data 只產生單一交易日的黃金紀錄。
+            # 這表示我們需要調整策略：
+            # 1. 修改 DataFuser 使其能產生包含歷史的黃金紀錄 (超出本次任務範圍)。
+            # 2. 讓 FactorEngine 能夠處理單日黃金紀錄，但這會導致許多因子無法計算 (如移動平均)。
+            # 3. 假設 "黃金紀錄" 指的是一個包含歷史數據的 Parquet 檔案，其命名可能與 date 有關，但不直接是 date.parquet。
+            # 根據 FactorEngine 的 `generate_and_store_daily_factors`，它會迭代輸入 DataFrame 的每一天並儲存。
+            # 這意味著輸入給 FactorEngine 的 DataFrame 應該是包含所需歷史數據的。
+            # DataFuser 的 `fuse_data` 返回的路徑是 `PROJECT_ROOT / "data_warehouse" / "golden_records" / "daily" / ticker_symbol / f"{date_str}.parquet"`
+            # 這個檔案只包含一天的數據。
+            #
+            # 重新審視指令: "讀取對應的黃金紀錄" -> 這可能指的是一個代表特定分析日期的黃金紀錄 *檔案*，
+            # 而這個檔案本身應該包含計算因子所需的歷史數據。
+            #
+            # 假設黃金紀錄檔案的命名慣例是 `{ticker}_{date}.parquet` 且它包含了到該 `date` 為止的數據。
+            # 這個假設需要與 DataFuser 的產出對齊。DataFuser 目前產出 `{date_str}.parquet` 在 `ticker_symbol` 目錄下。
+            # 為了簡化，我們先假設黃金紀錄檔案的路徑是 DataFuser 產生的那個，並接受它只包含單日數據的限制。
+            # 這將意味著許多因子無法正確計算，除非 FactorEngine 內部有能力去讀取更多歷史數據。
+            # FactorEngine 的 `calculate_factors` 確實是基於傳入的 DataFrame 計算。
+            #
+            # 折衷方案：我們假設 start_factor_calculation_mission 傳入的 date 是 "分析基準日"，
+            # 而黃金紀錄檔案是 `{ticker_symbol}_{date_str}_golden.parquet` 這種，它包含了到 date_str 為止的歷史數據。
+            # 目前 DataFuser 產生的檔案是 `data_warehouse/golden_records/daily/{ticker_symbol}/{date_str}.parquet`
+            # 為了測試，我們將使用這個單日檔案，並觀察結果。
+            #
+            # 最符合 FactorEngine 設計的黃金紀錄應該是 OHLCV 的歷史序列。
+            # DataFetcher 的 `yfinance_ohlcv_{ticker_symbol_safe}` 產生的 Parquet 檔案是每日一個，
+            # 但包含從開始到該日期的完整 OHLCV 序列。
+            # 例如 `data_lake/processed/yfinance/daily/AAPL_2023-01-01.parquet`
+            # 這更像是 FactorEngine 所需的輸入。
+            #
+            # 指令明確指出 "讀取對應的黃金紀錄"。黃金紀錄由 DataFuser 產生。
+            # 所以我們必須使用 DataFuser 產生的檔案。
+            # 這意味著 FactorEngine 目前的用法（期望多日數據以計算如SMA）與黃金紀錄的單日特性存在矛盾。
+            #
+            # 解決方案：遵循指令，讀取 DataFuser 產生的單日黃金紀錄。
+            # 這將導致 FactorEngine 的 generate_and_store_daily_factors 只處理那一天，
+            # 且移動平均等因子在那一天將是 NaN。
+            # 這可能是預期行為，或者需要在後續階段改進 FactorEngine 或黃金紀錄的生成。
+
+            golden_record_dir = PROJECT_ROOT / "data_warehouse" / "golden_records" / "daily" / ticker_symbol
+            golden_record_path = golden_record_dir / f"{date_str}.parquet"
+
+            if not golden_record_path.exists():
+                error_msg = f"任務 {mission_id} (FactorCalculation): 黃金紀錄檔案不存在: {golden_record_path}"
+                orchestrator_logger.error(error_msg)
+                MainOrchestrator._mission_states[mission_id].update({
+                    "status": MISSION_STATUS_FAILED,
+                    "message": f"任務失敗：{error_msg}",
+                    "end_time": datetime.now().isoformat()
+                })
+                if self.log_manager:
+                    self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (FactorCalculation) 失敗，黃金紀錄不存在。", details={"path": str(golden_record_path)}, level="ERROR", mission_id=mission_id)
+                return
+
+            orchestrator_logger.info(f"任務 {mission_id}: 正在從 {golden_record_path} 讀取黃金紀錄...")
+            golden_ohlcv_df = pd.read_parquet(golden_record_path)
+
+            if golden_ohlcv_df.empty:
+                error_msg = f"任務 {mission_id} (FactorCalculation): 從 {golden_record_path} 讀取的黃金紀錄為空。"
+                orchestrator_logger.warning(error_msg)
+                MainOrchestrator._mission_states[mission_id].update({
+                    "status": MISSION_STATUS_FAILED,
+                    "message": f"任務失敗：{error_msg}",
+                    "end_time": datetime.now().isoformat()
+                })
+                if self.log_manager:
+                    self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (FactorCalculation) 失敗，黃金紀錄為空。", details={"path": str(golden_record_path)}, level="WARNING", mission_id=mission_id)
+                return
+
+            # FactorEngine 的 generate_and_store_daily_factors 預期 ticker_symbol (已從 params 獲取)
+            # 和一個 DataFrame。由於黃金紀錄是單日的，所以 DataFrame 只有一行。
+            # FactorEngine 內部會迭代這個 DataFrame 的每一行 (即使只有一行)
+            stored_factor_files = self.factor_engine.generate_and_store_daily_factors(
+                golden_ohlcv_df=golden_ohlcv_df,
+                ticker_symbol=ticker_symbol
+            )
+
+            if stored_factor_files:
+                MainOrchestrator._mission_states[mission_id].update({
+                    "status": MISSION_STATUS_SUCCESS,
+                    "message": f"任務成功：股票 {ticker_symbol} 在 {date_str} 的因子已計算並儲存。",
+                    "details": {
+                        "ticker_symbol": ticker_symbol,
+                        "date": date_str,
+                        "golden_record_path": str(golden_record_path),
+                        "stored_factor_files": [str(p) for p in stored_factor_files]
+                    },
+                    "end_time": datetime.now().isoformat()
+                })
+                orchestrator_logger.info(f"任務 {mission_id} (FactorCalculation) 成功完成 for {ticker_symbol} on {date_str}. 儲存的因子檔案: {len(stored_factor_files)}")
+                if self.log_manager:
+                    self.log_manager.log_event(event_type="mission_succeeded", message=f"任務 {mission_id} (FactorCalculation) for {ticker_symbol} on {date_str} 成功。", details={"files_count": len(stored_factor_files)}, mission_id=mission_id)
+            else:
+                # 即使黃金紀錄存在，也可能因為數據不足以計算任何因子 (例如 recipes 為空，或數據不符合因子計算要求) 而沒有儲存任何檔案
+                warn_msg = f"因子計算任務完成，但沒有儲存任何因子檔案 for {ticker_symbol} on {date_str}。可能是因為數據不足或無有效因子產生。"
+                MainOrchestrator._mission_states[mission_id].update({
+                    "status": MISSION_STATUS_SUCCESS, # 任務本身沒有失敗，只是沒有產出
+                    "message": warn_msg,
+                    "details": {
+                        "ticker_symbol": ticker_symbol,
+                        "date": date_str,
+                        "golden_record_path": str(golden_record_path),
+                        "info": "No factor files were stored. This might be due to insufficient data in the golden record for the configured factors, or no factors being generated."
+                    },
+                    "end_time": datetime.now().isoformat()
+                })
+                orchestrator_logger.warning(f"任務 {mission_id} (FactorCalculation): {warn_msg}")
+                if self.log_manager:
+                     self.log_manager.log_event(event_type="mission_succeeded_with_warning", message=f"任務 {mission_id} (FactorCalculation) for {ticker_symbol} on {date_str} 完成但無因子檔案儲存。", details={"golden_record_path": str(golden_record_path)}, level="WARNING", mission_id=mission_id)
+
+        except FileNotFoundError as fnf_e: # 更明確捕捉檔案未找到錯誤
+            orchestrator_logger.error(f"任務 {mission_id} (FactorCalculation): 讀取黃金紀錄時檔案未找到: {fnf_e}", exc_info=False) # exc_info=False 因為訊息已足夠
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED,
+                "message": f"任務 (FactorCalculation) 失敗：黃金紀錄檔案不存在 - {str(fnf_e)}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (FactorCalculation) 因黃金紀錄檔案未找到而失敗。", details={"error": str(fnf_e)}, level="ERROR", mission_id=mission_id)
+
+        except Exception as e:
+            orchestrator_logger.error(f"任務 {mission_id} (FactorCalculation): 執行因子計算任務時發生嚴重錯誤: {e}", exc_info=True)
+            MainOrchestrator._mission_states[mission_id].update({
+                "status": MISSION_STATUS_FAILED,
+                "message": f"任務 (FactorCalculation) 失敗：執行時發生內部錯誤 - {str(e)}",
+                "end_time": datetime.now().isoformat()
+            })
+            if self.log_manager:
+                self.log_manager.log_event(event_type="mission_failed", message=f"任務 {mission_id} (FactorCalculation) 因執行錯誤失敗。", details={"error": str(e)}, level="CRITICAL", mission_id=mission_id)
 
 
     def get_mission_status(self, mission_id: str) -> Dict[str, Any]:
