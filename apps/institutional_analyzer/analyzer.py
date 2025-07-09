@@ -2,7 +2,7 @@
 import os
 import duckdb
 import pandas as pd
-from apps.finmind_client.client import FinMindClient # 導入內部化的 FinMindClient
+from core.clients.finmind import FinMindAPIClient # 修改導入路徑和類名
 from datetime import datetime
 
 # --- 路徑自我校正樣板碼 START ---
@@ -21,7 +21,7 @@ class InstitutionalAnalyzer:
         self.stock_id = stock_id
         self.start_date = start_date
         self.end_date = end_date
-        self.fm_client = FinMindClient(api_token=api_token) # 初始化 FinMindClient
+        self.fm_client = FinMindAPIClient(api_token=api_token) # 修改實例化的類名
         self.db_path = DB_PATH
         self._ensure_table_exists()
 
@@ -54,7 +54,7 @@ class InstitutionalAnalyzer:
         print(f"正在從 FinMind API 獲取股票 {self.stock_id} 從 {self.start_date} 到 {self.end_date} 的三大法人買賣超數據...")
         try:
             df = self.fm_client.get_taiwan_stock_institutional_investors_buy_sell(
-                data_id=self.stock_id,
+                stock_id=self.stock_id, # 修改參數名稱 data_id -> stock_id
                 start_date=self.start_date,
                 end_date=self.end_date
             )
