@@ -15,17 +15,38 @@ import yaml # 用於創建模擬的 YAML 內容
 
 # 假設 core 模組在 tests 的同級目錄的 core 資料夾下
 # 調整 sys.path 以便測試腳本能找到 core.config
-try:
-    from core.config import load_app_config, CONFIG_YAML_NAME, SOURCE_PRIORITY_JSON_NAME, PROJECT_ROOT
-except ImportError:
-    current_dir = os.path.dirname(os.path.abspath(__file__)) # tests/
-    project_base_dir = os.path.dirname(current_dir) # <project_root>
-    core_dir_path = os.path.join(project_base_dir, "core")
-    if project_base_dir not in sys.path:
-        sys.path.insert(0, project_base_dir)
-    if core_dir_path not in sys.path: # 確保 core 目錄也在搜索路徑中 (如果 core 不是一個包，這可能不需要)
-        sys.path.insert(0, core_dir_path)
-    from core.config import load_app_config, CONFIG_YAML_NAME, SOURCE_PRIORITY_JSON_NAME, PROJECT_ROOT
+
+# --- 標準化「路徑自我校正」樣板碼 START ---
+# 取得目前腳本檔案的目錄
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+# 自動偵測專案根目錄 (假設 .git 在根目錄，或存在 README.md)
+project_root_var = current_script_dir # 使用不同的變數名以避免與後續的 project_root 衝突
+max_levels_up = 5 # 防止無限迴圈，可根據專案深度調整
+for _ in range(max_levels_up):
+    # 檢查是否存在 .git 目錄或 AGENTS.md (或 README.md) 作為根目錄標記
+    if os.path.isdir(os.path.join(project_root_var, '.git')) or \
+       os.path.isfile(os.path.join(project_root_var, 'AGENTS.md')) or \
+       os.path.isfile(os.path.join(project_root_var, 'README.md')):
+        break
+    parent_dir = os.path.dirname(project_root_var)
+    if parent_dir == project_root_var: # 已達檔案系統頂層
+        project_root_var = os.path.abspath(os.path.join(current_script_dir, '..')) # tests/ 腳本，根目錄是上一層
+        print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑 (tests 腳本): {project_root_var}")
+        break
+    project_root_var = parent_dir
+else: # 如果迴圈正常結束 (未 break)
+    project_root_var = os.path.abspath(os.path.join(current_script_dir, '..')) # 後備方案
+    print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑 (tests 腳本): {project_root_var}")
+
+if project_root_var not in sys.path:
+    sys.path.insert(0, project_root_var)
+# print(f"DEBUG: 專案根目錄 {project_root_var} 已添加到 sys.path")
+# --- 標準化「路徑自我校正」樣板碼 END ---
+
+from pathlib import Path # 確保 Path 在此處導入
+# project_root = Path(project_root_var) # core.config 內部會自行處理 PROJECT_ROOT，這裡不需要重新定義
+
+from core.config import load_app_config, CONFIG_YAML_NAME, SOURCE_PRIORITY_JSON_NAME, PROJECT_ROOT
 
 
 class TestConfigMissing(unittest.TestCase):

@@ -1,13 +1,37 @@
+import sys
 import os
+
+# --- 標準化「路徑自我校正」樣板碼 START ---
+# 取得目前腳本檔案的目錄
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+# 自動偵測專案根目錄 (假設 .git 在根目錄，或存在 README.md)
+project_root_path = current_script_dir # 使用 project_root_path 避免與後續的 project_root 變數衝突
+max_levels_up = 5 # 防止無限迴圈，可根據專案深度調整
+for _ in range(max_levels_up):
+    # 檢查是否存在 .git 目錄或 AGENTS.md (或 README.md) 作為根目錄標記
+    if os.path.isdir(os.path.join(project_root_path, '.git')) or \
+       os.path.isfile(os.path.join(project_root_path, 'AGENTS.md')) or \
+       os.path.isfile(os.path.join(project_root_path, 'README.md')):
+        break
+    parent_dir = os.path.dirname(project_root_path)
+    if parent_dir == project_root_path: # 已達檔案系統頂層
+        project_root_path = os.path.abspath(os.path.join(current_script_dir, '..', '..'))
+        print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑: {project_root_path}")
+        break
+    project_root_path = parent_dir
+else: # 如果迴圈正常結束 (未 break)
+    project_root_path = os.path.abspath(os.path.join(current_script_dir, '..', '..')) # 後備方案
+    print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑: {project_root_path}")
+
+if project_root_path not in sys.path:
+    sys.path.insert(0, project_root_path)
+# print(f"DEBUG: 專案根目錄 {project_root_path} 已添加到 sys.path")
+# --- 標準化「路徑自我校正」樣板碼 END ---
 
 # 主執行腳本
 # 作戰摘要產生器
 
-def get_project_root() -> str:
-    """取得專案根目錄的路徑。"""
-    # 假設此腳本位於 apps/dossier_generator/run.py
-    # 因此，根目錄是此腳本路徑往上三層
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+# get_project_root() 函數不再需要，project_root_path 由上面的樣板碼提供
 
 def generate_directory_tree(root_dir: str, exclude_dirs: list[str] = None) -> str:
     """
@@ -42,7 +66,9 @@ def generate_directory_tree(root_dir: str, exclude_dirs: list[str] = None) -> st
     return "\n".join(tree_output)
 
 if __name__ == "__main__":
-    project_root = get_project_root()
+    # project_root 由頂部的路徑校正樣板碼提供，變數名為 project_root_path
+    # 為保持後續代碼一致性，這裡可以賦值給 project_root，或者直接修改後續代碼使用 project_root_path
+    project_root = project_root_path
     print(f"專案根目錄：{project_root}")
 
     markdown_content = "# 專案作戰摘要\n\n"

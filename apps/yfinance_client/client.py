@@ -1,6 +1,35 @@
 # apps/yfinance_client/client.py
 # 這個模組包含從 Yahoo Finance 下載市場數據的客戶端邏輯。
 
+import sys
+import os
+
+# 取得目前腳本檔案的目錄
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+# 自動偵測專案根目錄 (假設 .git 在根目錄，或存在 README.md)
+project_root = current_script_dir
+max_levels_up = 5 # 防止無限迴圈，可根據專案深度調整
+for _ in range(max_levels_up):
+    # 檢查是否存在 .git 目錄或 AGENTS.md (或 README.md) 作為根目錄標記
+    if os.path.isdir(os.path.join(project_root, '.git')) or \
+       os.path.isfile(os.path.join(project_root, 'AGENTS.md')) or \
+       os.path.isfile(os.path.join(project_root, 'README.md')):
+        break
+    parent_dir = os.path.dirname(project_root)
+    if parent_dir == project_root: # 已達檔案系統頂層
+        project_root = os.path.abspath(os.path.join(current_script_dir, '..', '..'))
+        print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑: {project_root}")
+        break
+    project_root = parent_dir
+else: # 如果迴圈正常結束 (未 break)
+    project_root = os.path.abspath(os.path.join(current_script_dir, '..', '..')) # 後備方案
+    print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑: {project_root}")
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+# print(f"DEBUG: 專案根目錄 {project_root} 已添加到 sys.path")
+
+# --- 原有的其他 import 語句將在此之後 ---
 import yfinance as yf
 import duckdb
 import pandas as pd

@@ -2,10 +2,39 @@
 """
 普羅米修斯之火 - 因子提取、轉換、加載 (ETL) 主執行腳本
 """
+import sys
+import os
+
+# 取得目前腳本檔案的目錄
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+# 自動偵測專案根目錄 (假設 .git 在根目錄，或存在 README.md)
+project_root = current_script_dir
+max_levels_up = 5 # 防止無限迴圈，可根據專案深度調整
+for _ in range(max_levels_up):
+    # 檢查是否存在 .git 目錄或 AGENTS.md (或 README.md) 作為根目錄標記
+    if os.path.isdir(os.path.join(project_root, '.git')) or \
+       os.path.isfile(os.path.join(project_root, 'AGENTS.md')) or \
+       os.path.isfile(os.path.join(project_root, 'README.md')):
+        break
+    parent_dir = os.path.dirname(project_root)
+    if parent_dir == project_root: # 已達檔案系統頂層
+        project_root = os.path.abspath(os.path.join(current_script_dir, '..', '..'))
+        print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑: {project_root}")
+        break
+    project_root = parent_dir
+else: # 如果迴圈正常結束 (未 break)
+    project_root = os.path.abspath(os.path.join(current_script_dir, '..', '..')) # 後備方案
+    print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑: {project_root}")
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+# print(f"DEBUG: 專案根目錄 {project_root} 已添加到 sys.path")
+
+# --- 原有的其他 import 語句將在此之後 ---
 import pandas as pd
 from apps.daily_market_analyzer.db_manager import DBManager
 from apps.factor_engine.engine import FactorEngine
-import os # 用於數據庫路徑
+# import os # os 已在上面導入，用於數據庫路徑
 
 def run_etl():
     """
@@ -166,14 +195,14 @@ if __name__ == '__main__':
     # 例如: PYTHONPATH=. python apps/factor_engine/run_factor_etl.py
     # 或者，如果你的 IDE 或執行環境正確設置了根目錄，則可能不需要額外操作。
 
-    # 臨時添加專案根目錄到 sys.path，以便於直接執行
-    import sys
-    import os
-    # 假設此腳本位於 apps/factor_engine/run_factor_etl.py
-    # 則專案根目錄是向上兩級
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-        print(f"DEBUG: 已將專案根目錄 {project_root} 添加到 sys.path")
+    # 標準路徑校正已在檔案頂部完成。
+    # import sys # 已在頂部導入
+    # import os # 已在頂部導入
+    # # 假設此腳本位於 apps/factor_engine/run_factor_etl.py
+    # # 則專案根目錄是向上兩級
+    # project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    # if project_root not in sys.path:
+    #     sys.path.insert(0, project_root)
+    #     print(f"DEBUG: 已將專案根目錄 {project_root} 添加到 sys.path")
 
     run_etl()

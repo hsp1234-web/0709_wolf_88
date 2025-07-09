@@ -4,26 +4,37 @@ import duckdb
 import pandas as pd
 import argparse
 from pathlib import Path
-import sys # 導入 sys
-import os # 導入 os
+import sys
+import os
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
-try:
-    # 獲取目前腳本的絕對路徑
-    current_script_path = Path(__file__).resolve()
-    # 假設此腳本位於 apps/[app_name] 目錄下，專案根目錄是其再上兩層
-    project_root = current_script_path.parent.parent.parent
-    # 將專案根目錄加入 sys.path
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-except NameError: # __file__ is not defined, common in interactive shells or certain execution contexts
-    project_root = Path(os.getcwd())
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    print(f"警告：__file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。", file=sys.stderr)
-except Exception as e:
-    print(f"專案路徑校正時發生錯誤 (apps/feature_analyzer/run.py): {e}", file=sys.stderr)
+# 取得目前腳本檔案的目錄
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+# 自動偵測專案根目錄 (假設 .git 在根目錄，或存在 README.md)
+project_root_var = current_script_dir
+max_levels_up = 5
+for _ in range(max_levels_up):
+    if os.path.isdir(os.path.join(project_root_var, '.git')) or \
+       os.path.isfile(os.path.join(project_root_var, 'AGENTS.md')) or \
+       os.path.isfile(os.path.join(project_root_var, 'README.md')):
+        break
+    parent_dir = os.path.dirname(project_root_var)
+    if parent_dir == project_root_var:
+        project_root_var = os.path.abspath(os.path.join(current_script_dir, '..', '..'))
+        print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑: {project_root_var}")
+        break
+    project_root_var = parent_dir
+else:
+    project_root_var = os.path.abspath(os.path.join(current_script_dir, '..', '..'))
+    print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑: {project_root_var}")
+
+if project_root_var not in sys.path:
+    sys.path.insert(0, project_root_var)
+# print(f"DEBUG: 專案根目錄 {project_root_var} 已添加到 sys.path")
 # --- 標準化「路徑自我校正」樣板碼 END ---
+
+from pathlib import Path # 確保 Path 在此處導入
+project_root = Path(project_root_var) # 將校正後的路徑轉換為 Path 對象，供後續使用
 
 import logging # <--- 新增此行
 from core.utils import setup_logger # <--- 新增此行

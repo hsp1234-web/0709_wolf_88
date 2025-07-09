@@ -23,17 +23,34 @@ import logging
 from unittest.mock import patch, MagicMock
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
-try:
-    current_script_path = Path(__file__).resolve()
-    project_root = current_script_path.parent.parent
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-except NameError:
-    project_root = Path(os.getcwd())
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    print(f"警告：__file__ 未定義於 _test_harness_database_loader.py，專案路徑校正可能不準確。", file=sys.stderr)
+# 取得目前腳本檔案的目錄
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+# 自動偵測專案根目錄 (假設 .git 在根目錄，或存在 README.md)
+project_root_var = current_script_dir # 使用不同的變數名以避免與後續的 project_root 衝突
+max_levels_up = 5 # 防止無限迴圈，可根據專案深度調整
+for _ in range(max_levels_up):
+    # 檢查是否存在 .git 目錄或 AGENTS.md (或 README.md) 作為根目錄標記
+    if os.path.isdir(os.path.join(project_root_var, '.git')) or \
+       os.path.isfile(os.path.join(project_root_var, 'AGENTS.md')) or \
+       os.path.isfile(os.path.join(project_root_var, 'README.md')):
+        break
+    parent_dir = os.path.dirname(project_root_var)
+    if parent_dir == project_root_var: # 已達檔案系統頂層
+        project_root_var = os.path.abspath(os.path.join(current_script_dir, '..')) # tests/ 腳本，根目錄是上一層
+        print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑 (tests 腳本): {project_root_var}")
+        break
+    project_root_var = parent_dir
+else: # 如果迴圈正常結束 (未 break)
+    project_root_var = os.path.abspath(os.path.join(current_script_dir, '..')) # 後備方案
+    print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑 (tests 腳本): {project_root_var}")
+
+if project_root_var not in sys.path:
+    sys.path.insert(0, project_root_var)
+# print(f"DEBUG: 專案根目錄 {project_root_var} 已添加到 sys.path")
 # --- 標準化「路徑自我校正」樣板碼 END ---
+
+from pathlib import Path # 確保 Path 在此處導入
+project_root = Path(project_root_var) # 保持 project_root 變數（如果後續測試代碼中用到了）
 
 from apps.database_loader.loader import load_parquet_to_db, SchemaMismatchError
 

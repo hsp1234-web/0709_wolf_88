@@ -2,25 +2,36 @@
 import argparse
 import sys
 import os
-from pathlib import Path # 標準樣板碼需要 Path
+import sys
+import os
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
-try:
-    # 獲取目前腳本的絕對路徑
-    current_script_path = Path(__file__).resolve()
-    # 假設此腳本位於 apps/[app_name] 目錄下，專案根目錄是其再上兩層
-    project_root = current_script_path.parent.parent.parent
-    # 將專案根目錄加入 sys.path
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-except NameError: # __file__ is not defined, common in interactive shells or certain execution contexts
-    project_root = Path(os.getcwd())
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    print(f"警告：__file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。", file=sys.stderr)
-except Exception as e:
-    print(f"專案路徑校正時發生錯誤 (apps/finmind_client/run.py): {e}", file=sys.stderr)
+# 取得目前腳本檔案的目錄
+current_script_dir = os.path.dirname(os.path.abspath(__file__))
+# 自動偵測專案根目錄 (假設 .git 在根目錄，或存在 README.md)
+project_root = current_script_dir
+max_levels_up = 5 # 防止無限迴圈，可根據專案深度調整
+for _ in range(max_levels_up):
+    # 檢查是否存在 .git 目錄或 AGENTS.md (或 README.md) 作為根目錄標記
+    if os.path.isdir(os.path.join(project_root, '.git')) or \
+       os.path.isfile(os.path.join(project_root, 'AGENTS.md')) or \
+       os.path.isfile(os.path.join(project_root, 'README.md')):
+        break
+    parent_dir = os.path.dirname(project_root)
+    if parent_dir == project_root: # 已達檔案系統頂層
+        project_root = os.path.abspath(os.path.join(current_script_dir, '..', '..'))
+        print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑: {project_root}")
+        break
+    project_root = parent_dir
+else: # 如果迴圈正常結束 (未 break)
+    project_root = os.path.abspath(os.path.join(current_script_dir, '..', '..')) # 後備方案
+    print(f"警告: 未能自動偵測到專案根目錄 (基於 .git, AGENTS.md 或 README.md)。使用預設回退路徑: {project_root}")
+
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+# print(f"DEBUG: 專案根目錄 {project_root} 已添加到 sys.path")
 # --- 標準化「路徑自我校正」樣板碼 END ---
+# from pathlib import Path # Path 在標準樣板碼中未使用，如果後續代碼需要則取消註解
 
 from apps.finmind_client.client import FinMindClient
 
