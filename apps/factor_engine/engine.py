@@ -16,7 +16,7 @@ class FactorEngine:
     因子引擎核心類別。
     負責從資料庫讀取市場數據，計算分析因子，並回傳結果。
     """
-    def __init__(self, db_manager: DBManager): # 添加類型提示
+    def __init__(self, db_manager: 'DBManager'): # 添加類型提示
         """
         初始化因子引擎。
 
@@ -25,7 +25,7 @@ class FactorEngine:
         """
         self.db_manager = db_manager
 
-    def get_prices_for_ticker(self, ticker: str) -> pd.DataFrame: # 添加類型提示
+    def get_prices_for_ticker(self, ticker: str) -> 'pd.DataFrame': # 添加類型提示
         """
         從 MarketPrices_Daily 表格中讀取指定股票的完整 OHLCV 歷史數據。
         """
@@ -54,7 +54,7 @@ class FactorEngine:
             print(f"錯誤 (FactorEngine): 讀取股票 {ticker} 的價格數據失敗: {e}")
             return pd.DataFrame()
 
-    def calculate_price_volatility(self, dataframe: pd.DataFrame, n_days: int = 20) -> pd.Series | None:
+    def calculate_price_volatility(self, dataframe: 'pd.DataFrame', n_days: int = 20) -> 'pd.Series | None':
         """
         計算價格的 N 日歷史波動率。
         """
@@ -71,7 +71,7 @@ class FactorEngine:
 
         return price_volatility
 
-    def calculate_volume_volatility(self, dataframe: pd.DataFrame, n_days: int = 20) -> pd.Series | None:
+    def calculate_volume_volatility(self, dataframe: 'pd.DataFrame', n_days: int = 20) -> 'pd.Series | None':
         """
         計算成交量的 N 日歷史波動率。
         """
@@ -90,7 +90,7 @@ class FactorEngine:
 
         return volume_volatility
 
-    def calculate_rsi(self, dataframe: pd.DataFrame, n_days: int = 14) -> pd.Series | None:
+    def calculate_rsi(self, dataframe: 'pd.DataFrame', n_days: int = 14) -> 'pd.Series | None':
         """
         利用 pandas-ta 函式庫，計算 N 日相對強弱指數 (RSI)。
         """
@@ -110,7 +110,7 @@ class FactorEngine:
             print(f"錯誤 (FactorEngine): 計算 RSI 失敗: {e}")
             return None
 
-    def get_treasury_yields(self) -> pd.DataFrame: # 添加類型提示
+    def get_treasury_yields(self) -> 'pd.DataFrame': # 添加類型提示
         """
         從 TreasuryYields_Daily 表格中獲取所有期限的公債殖利率數據。
         將數據轉換為以 date 為索引，各期限殖利率為欄位的 DataFrame。
@@ -176,7 +176,7 @@ class FactorEngine:
             # 返回一個空的 DataFrame 以避免後續操作出錯
             return pd.DataFrame()
 
-    def calculate_yield_spreads(self, yields_dataframe: pd.DataFrame) -> pd.DataFrame:
+    def calculate_yield_spreads(self, yields_dataframe: 'pd.DataFrame') -> 'pd.DataFrame':
         """
         計算殖利率曲線的關鍵利差。
 
@@ -236,7 +236,7 @@ class FactorEngine:
 
         return spreads_df
 
-    def calculate_credit_spread_proxy(self) -> pd.DataFrame:
+    def calculate_credit_spread_proxy(self) -> 'pd.DataFrame':
         """
         計算信用利差的代理指標。
         目前實現為 HYG (高收益債ETF) 相對於 LQD (投資級公司債ETF) 的價格比率。
