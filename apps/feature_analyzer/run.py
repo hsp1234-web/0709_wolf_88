@@ -313,13 +313,14 @@ if __name__ == "__main__":
     # 若 run.py 和 analyzer.py 在同一 apps/feature_analyzer/ 目錄下，
     # 則 DEFAULT_DB_PATH (in analyzer.py) = Path(__file__).resolve().parent.parent.parent / "analytics_mart.duckdb"
     # 在 run.py 中，如果也想指向同一個檔案：
-    run_py_default_analytics_mart_path = Path(__file__).resolve().parent.parent.parent / "analytics_mart.duckdb"
+    # 修改預設路徑以匹配 ChimeraAnalyzer 中 DEFAULT_DB_PATH 的新設定 (market_data.duckdb)
+    run_py_default_analytics_mart_path = Path(__file__).resolve().parent.parent.parent / "market_data.duckdb"
 
     parser.add_argument(
         "--analytics_mart_db",
         type=str,
         default=str(run_py_default_analytics_mart_path),
-        help="目標分析結果資料庫路徑 (預設: 專案根目錄下的 analytics_mart.duckdb)"
+        help="目標分析結果資料庫路徑 (預設: 專案根目錄下的 market_data.duckdb)"
     )
     # 舊的 --analytics_db 參數，如果不再嚴格需要，可以考慮移除或使其也指向 analytics_mart_db
     parser.add_argument("--analytics_db", type=str, default=str(ANALYTICS_DB_PATH), help="分析結果資料庫路徑 (主要用於舊的象限分析，預設: data/analytics_mart.duckdb)")

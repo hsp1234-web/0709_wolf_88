@@ -6,15 +6,15 @@ from pathlib import Path
 from datetime import datetime # 確保導入 datetime
 import pytz # 確保導入 pytz
 
-# 假設 analytics_mart.duckdb 位於專案根目錄
-DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "analytics_mart.duckdb"
+# 讓預設資料庫指向 yfinance_client 使用的資料庫
+DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "market_data.duckdb"
 
 class ChimeraAnalyzer:
     def __init__(self, db_path: str | Path = DEFAULT_DB_PATH):
         self.db_path = str(db_path)
-        self.ohlcv_table_1d = "ohlcv_1d"
+        self.ohlcv_table_1d = "daily_ohlcv" # 已修改為 yfinance_client 使用的表名
         self.institutional_trades_table = "institutional_trades"
-        self.composite_signal_table = "chimera_daily_signals"
+        self.composite_signal_table = "chimera_daily_signals" # 分析結果仍可寫入此獨立表
         self.taifex_pc_ratio_table = "taifex_pc_ratios" # P/C ratio 表名
 
     def _connect_db(self):
@@ -27,26 +27,35 @@ class ChimeraAnalyzer:
             raise
 
     def _get_daily_ohlcv_data(self, con: duckdb.DuckDBPyConnection, start_date: str | None = None, end_date: str | None = None, stock_ids: list[str] | None = None) -> pd.DataFrame:
-        query = f"SELECT timestamp AS date, product_id AS stock_id, open, high, low, close, volume FROM {self.ohlcv_table_1d}"
+        # yfinance_client 寫入的日期欄位是 'Date'，商品代碼欄位是 'symbol'
+        # OHLCV 欄位在資料庫中是 Open, High, Low, Close, Volume (大寫)
+        # 我們 SELECT 時使用大寫，並 AS 成小寫供後續使用
+        query = f"SELECT Date AS date, symbol AS stock_id, \
+                  Open AS open, High AS high, Low AS low, Close AS close, Volume AS volume \
+                  FROM {self.ohlcv_table_1d}"
         conditions = []
         params = {}
         if start_date:
+            # SQL 查詢中的 date 欄位現在是從 SELECT Date AS date 來的
             conditions.append("date >= $start_date")
             params["start_date"] = start_date
         if end_date:
             conditions.append("date <= $end_date")
             params["end_date"] = end_date
         if stock_ids:
-            conditions.append("stock_id IN {}".format(tuple(stock_ids) if len(stock_ids) > 1 else f"('{stock_ids[0]}')"))
+            # 篩選條件也應該基於 'symbol' 欄位
+            conditions.append("symbol IN {}".format(tuple(stock_ids) if len(stock_ids) > 1 else f"('{stock_ids[0]}')"))
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
-        query += " ORDER BY stock_id, date"
-        print(f"正在讀取日 OHLCV 數據 ({self.ohlcv_table_1d})...")
+        query += " ORDER BY stock_id, date" # 'stock_id' 和 'date' 是 SELECT 子句中定義的別名
+        print(f"正在讀取日 OHLCV 數據 ({self.ohlcv_table_1d})... Query: {query} Params: {params}") # DEBUG
         try:
             df = con.execute(query, params).fetchdf()
             if 'date' in df.columns:
                 df['date'] = pd.to_datetime(df['date']).dt.date
             print(f"成功讀取 {len(df)} 筆日 OHLCV 數據。")
+            print(f"DEBUG: _get_daily_ohlcv_data - df columns: {df.columns.tolist()}") # DEBUG
+            print(f"DEBUG: _get_daily_ohlcv_data - df head:\n{df.head()}") # DEBUG
             return df
         except Exception as e:
             print(f"讀取 {self.ohlcv_table_1d} 表時發生錯誤: {e}")
@@ -96,7 +105,10 @@ class ChimeraAnalyzer:
         return 0
 
     def run_feature_engineering(self, df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty or 'close' not in df.columns or 'volume' not in df.columns: return df
+        if df.empty or 'close' not in df.columns or 'volume' not in df.columns:
+            print("DEBUG: run_feature_engineering - df is empty or missing required columns, returning early.")
+            return df
+        print(f"DEBUG: run_feature_engineering - Input df columns: {df.columns.tolist()}")
         print("計算價格與成交量變化百分比...")
         df['price_change_pct'] = df.groupby('stock_id')['close'].pct_change().fillna(0) * 100
         df['volume_prev'] = df.groupby('stock_id')['volume'].shift(1)
@@ -106,6 +118,7 @@ class ChimeraAnalyzer:
         df.drop(columns=['volume_prev'], inplace=True, errors='ignore')
         print("計算價量四象限...")
         df['price_volume_quadrant'] = df.apply(lambda row: self.calculate_quadrant(row['price_change_pct'], row['volume_change_pct']), axis=1)
+        print(f"DEBUG: run_feature_engineering - Output df columns: {df.columns.tolist()}")
         return df
 
     def _get_price_volume_quadrant_label(self, quadrant_code: int) -> str:
@@ -119,13 +132,19 @@ class ChimeraAnalyzer:
         else: return "法人中性"
 
     def _apply_composite_signal_logic(self, df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty: return df
-        if 'price_volume_quadrant' not in df.columns: return df
+        if df.empty:
+            print("DEBUG: _apply_composite_signal_logic - df is empty, returning early.")
+            return df
+        if 'price_volume_quadrant' not in df.columns:
+            print(f"DEBUG: _apply_composite_signal_logic - 'price_volume_quadrant' not in df columns, returning early. Columns are: {df.columns.tolist()}")
+            return df
+        print(f"DEBUG: _apply_composite_signal_logic - Input df columns: {df.columns.tolist()}")
         print("計算籌碼流向標籤與複合信號...")
         df['institutional_flow_label'] = df['total_net_shares'].apply(lambda x: self._calculate_institutional_flow_label(x))
         df['price_volume_label'] = df['price_volume_quadrant'].apply(self._get_price_volume_quadrant_label)
         df['composite_signal'] = df['price_volume_label'] + "_" + df['institutional_flow_label']
         print("複合信號計算完成。")
+        print(f"DEBUG: _apply_composite_signal_logic - Output df columns: {df.columns.tolist()}")
         return df
 
     def _ensure_composite_signal_table_exists(self, con: duckdb.DuckDBPyConnection):
@@ -143,14 +162,24 @@ class ChimeraAnalyzer:
             raise
 
     def _store_composite_signals(self, con: duckdb.DuckDBPyConnection, data_df: pd.DataFrame):
-        if data_df.empty: return
+        if data_df.empty:
+            print("警告: _store_composite_signals 接收到空的 DataFrame，不進行儲存。")
+            return
+
+        print(f"DEBUG: _store_composite_signals 接收到的 DataFrame 欄位: {data_df.columns.tolist()}")
+        print(f"DEBUG: _store_composite_signals 接收到的 DataFrame 前幾行:\n{data_df.head()}")
+
         columns_to_store = ['date', 'stock_id', 'price_change_pct', 'volume_change_pct', 'price_volume_quadrant', 'price_volume_label', 'total_net_shares', 'institutional_flow_label', 'composite_signal']
         missing_cols = [col for col in columns_to_store if col not in data_df.columns]
-        if missing_cols: print(f"錯誤: DataFrame 中缺少以下欄位，無法儲存: {missing_cols}"); return
+        if missing_cols:
+            print(f"錯誤: DataFrame 中缺少以下欄位，無法儲存: {missing_cols}")
+            print(f"提醒: 請檢查 run_feature_engineering 和 _apply_composite_signal_logic 是否正確生成所有必要欄位。")
+            return
+
         df_to_store = data_df[columns_to_store]
         print(f"準備將 {len(df_to_store)} 筆複合信號結果儲存到 {self.composite_signal_table}...")
         try:
-            if not df_to_store.empty:
+            if not df_to_store.empty: # 雖然前面檢查過 data_df.empty，但 df_to_store 可能因欄位選擇而出錯，不過 missing_cols 已處理
                 min_date = df_to_store['date'].min(); max_date = df_to_store['date'].max()
                 stock_ids_in_df = tuple(df_to_store['stock_id'].unique())
                 if not stock_ids_in_df: return

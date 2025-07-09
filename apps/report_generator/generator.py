@@ -40,30 +40,47 @@ class ReportGenerator:
 
         try:
             valid_timeframe = self._validate_timeframe(timeframe)
-            ohlcv_table_name = f"ohlcv_{valid_timeframe}"
-            print(f"正在從資料表 '{ohlcv_table_name}' 讀取 {timeframe} OHLCV 數據 (product_id: {internal_stock_id_for_ohlcv})...")
 
+            if valid_timeframe == "1d":
+                ohlcv_table_name = "daily_ohlcv" # yfinance_client 產生的表
+                date_column_name = "Date"
+                symbol_column_name = "symbol"
+            else:
+                ohlcv_table_name = f"ohlcv_{valid_timeframe}" # 假設其他聚合器產生的表
+                date_column_name = "timestamp"
+                symbol_column_name = "product_id"
+
+            print(f"正在從資料表 '{ohlcv_table_name}' 讀取 {timeframe} OHLCV 數據 ({symbol_column_name}: {stock_id})...")
+
+            # 從資料庫讀取時，欄位名是 Open, High, Low, Close, Volume (大寫)
+            # AS 成小寫給後續 plotly 使用
             query_ohlcv = f"""
-            SELECT timestamp, open, high, low, close, volume
+            SELECT
+                {date_column_name} AS timestamp,
+                Open AS open,
+                High AS high,
+                Low AS low,
+                Close AS close,
+                Volume AS volume
             FROM {ohlcv_table_name}
-            WHERE product_id = $internal_stock_id_for_ohlcv
-              AND timestamp >= CAST($start_date AS TIMESTAMP)
-              AND timestamp <= CAST($end_date AS TIMESTAMP) + INTERVAL '1 day' - INTERVAL '1 second'
+            WHERE {symbol_column_name} = $stock_id
+              AND {date_column_name} >= CAST($start_date AS DATE)
+              AND {date_column_name} <= CAST($end_date AS DATE)
             ORDER BY timestamp;
             """
-            params_ohlcv = {'internal_stock_id_for_ohlcv': internal_stock_id_for_ohlcv, 'start_date': start_date_str, 'end_date': end_date_str}
+            params_ohlcv = {'stock_id': stock_id, 'start_date': start_date_str, 'end_date': end_date_str}
             ohlcv_df = con.execute(query_ohlcv, params_ohlcv).fetchdf()
 
             if ohlcv_df.empty:
-                print(f"未找到 {internal_stock_id_for_ohlcv} (原始 {stock_id}) 在 {start_date_str} 至 {end_date_str} ({timeframe} 週期) 的 OHLCV 數據。")
+                print(f"未找到 {stock_id} 在 {start_date_str} 至 {end_date_str} ({timeframe} 週期) 的 OHLCV 數據。")
                 return None, None, None
-            print(f"成功讀取 {len(ohlcv_df)} 筆 {internal_stock_id_for_ohlcv} (原始 {stock_id}) 的 {timeframe} OHLCV 數據。")
+            print(f"成功讀取 {len(ohlcv_df)} 筆 {stock_id} 的 {timeframe} OHLCV 數據。")
             if 'timestamp' in ohlcv_df.columns: # 確保 timestamp 是 datetime 對象
                  ohlcv_df['timestamp'] = pd.to_datetime(ohlcv_df['timestamp'])
-        except duckdb.CatalogException:
-            print(f"錯誤：OHLCV 資料表 '{ohlcv_table_name}' (用於 timeframe '{timeframe}') 不存在於資料庫 {self.db_path} 中。")
+        except duckdb.CatalogException as e: # Catched here
+            print(f"錯誤：OHLCV 資料表 '{ohlcv_table_name}' (用於 timeframe '{timeframe}') 不存在於資料庫 {self.db_path} 中。詳細錯誤: {e}")
             return None, None, None
-        except ValueError as ve:
+        except ValueError as ve: # Catch timeframe validation error
             print(f"錯誤: {ve}")
             return None, None, None
         except Exception as e:

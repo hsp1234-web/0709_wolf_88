@@ -24,7 +24,7 @@ except Exception as e:
     print(f"專案路徑校正時發生錯誤 (apps/nyfed_client/run.py): {e}", file=sys.stderr)
 # --- 標準化「路徑自我校正」樣板碼 END ---
 
-from .client import fetch_all_primary_dealer_data, store_data_to_duckdb, MARKET_DATA_DB, TABLE_NAME
+from apps.nyfed_client.client import fetch_all_primary_dealer_data, store_data_to_duckdb, MARKET_DATA_DB, TABLE_NAME
 
 def main():
     parser = argparse.ArgumentParser(description="NY Fed 一級交易商數據抓取客戶端")

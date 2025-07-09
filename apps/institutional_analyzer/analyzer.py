@@ -10,10 +10,12 @@ from datetime import datetime
 try:
     current_script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root_dir = os.path.abspath(os.path.join(current_script_dir, '..', '..'))
-    DB_PATH = os.path.join(project_root_dir, "analytics_mart.duckdb")
+    # 修改 DB_PATH 指向 market_data.duckdb
+    DB_PATH = os.path.join(project_root_dir, "market_data.duckdb")
 except Exception as e:
     print(f"專案路徑校正時發生錯誤 (analyzer.py): {e}", file=sys.stderr)
-    DB_PATH = "analytics_mart.duckdb" # Fallback
+    # Fallback 也應指向 market_data.duckdb
+    DB_PATH = "market_data.duckdb" # Fallback
 # --- 路徑自我校正樣板碼 END ---
 
 class InstitutionalAnalyzer:

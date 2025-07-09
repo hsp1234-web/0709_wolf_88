@@ -26,15 +26,17 @@ from apps.report_generator.generator import ReportGenerator
 
 # 預設資料庫路徑 (在標準化路徑校正後，project_root 應該是正確的專案根目錄)
 # 這邊的 project_root 變數會依賴上面樣板碼的成功執行
-DEFAULT_DB_PATH = project_root / "analytics_mart.duckdb"
+# 修正 DEFAULT_DB_PATH 指向 market_data.duckdb 以與其他分析器保持一致
+DEFAULT_DB_PATH = project_root / "market_data.duckdb"
 # 預設報告輸出目錄
 DEFAULT_OUTPUT_DIR = project_root / "output" # 指揮官建議的 output 資料夾，之前是 output_reports
 
 def main():
+    print(f"DEBUG: sys.argv at start of main(): {sys.argv}") # <--- 新增的調試語句
     parser = argparse.ArgumentParser(description="視覺化報告生成器：為指定標的生成包含複合信號標記的K線圖報告。")
     parser.add_argument("--stock-id", required=True, type=str, help="要生成報告的股票代碼。")
     parser.add_argument("--start-date", required=True, type=str, help="報告開始日期 (YYYY-MM-DD)。")
-    parser.add_argument("--end-date", required=True, type=str, help="報告結束日期 (YYYY-MM-DD)。")
+    parser.add_argument("--enddate", required=True, type=str, help="報告結束日期 (YYYY-MM-DD)。") # 修改參數名
     parser.add_argument(
         "--timeframe",
         type=str,
@@ -48,7 +50,7 @@ def main():
 
     print(f"指令：開始為股票 {args.stock_id} 生成報告...")
     print(f"時間週期: {args.timeframe}") # 新增日誌
-    print(f"日期範圍: {args.start_date} 至 {args.end_date}")
+    print(f"日期範圍: {args.start_date} 至 {args.enddate}") # 修改為 args.enddate
     print(f"使用資料庫: {args.db_path}")
     print(f"報告輸出至: {args.output_dir}")
 
@@ -61,7 +63,7 @@ def main():
         report_path = generator.generate_report(
             stock_id=args.stock_id,
             start_date_str=args.start_date,
-            end_date_str=args.end_date,
+            end_date_str=args.enddate, # 修改為 args.enddate
             timeframe=args.timeframe,
             output_dir=output_path
         )

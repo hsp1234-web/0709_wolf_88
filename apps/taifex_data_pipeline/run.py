@@ -33,6 +33,10 @@ except Exception as e:
 
 from apps.pipeline_metadata_manager.manager import MetadataManager, calculate_file_fingerprint
 from core.utils import setup_logger
+# 由於此腳本預期從專案根目錄執行，或者其父目錄在 PYTHONPATH 中，
+# 因此不需要 apps.taifex_data_pipeline.pipeline 這種寫法，
+# pipeline.py 中的內容已經整合或不需要在此 run.py 中直接匯入。
+# 若有共用邏輯，應放在 core 或 utils。
 
 # --- 全域日誌與配置 ---
 RAW_TABLE_NAME = "raw_import_log"
