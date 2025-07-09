@@ -38,6 +38,14 @@ if project_root not in sys.path:
 
 import pandas as pd
 import numpy as np
+
+# Monkeypatch NumPy for pandas-ta compatibility if needed.
+# pandas-ta 0.3.14b0 uses np.NaN which was removed in NumPy 1.24.
+# Current NumPy is likely >= 1.24.
+# This patch should only affect this test file's context.
+if not hasattr(np, 'NaN'):
+    np.NaN = np.nan
+
 import pytest
 from unittest.mock import MagicMock
 
@@ -219,6 +227,8 @@ def test_calculate_credit_spread_proxy(factor_engine_instance: FactorEngine):
 
     expected_ratio_values = [10/20, 11/22, 12/20, 13/26]
     expected_index = pd.to_datetime(['2023-01-01', '2023-01-02', '2023-01-03', '2023-01-04'])
+    # Ensure the expected series also has the index name 'datetime' to match the output of FactorEngine
+    expected_index.name = 'datetime'
     expected_series = pd.Series(expected_ratio_values, index=expected_index, name='HYG_LQD_price_ratio')
 
     pd.testing.assert_series_equal(result_df['HYG_LQD_price_ratio'], expected_series, check_dtype=False)
