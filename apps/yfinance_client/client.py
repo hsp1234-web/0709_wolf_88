@@ -7,8 +7,8 @@ import pandas as pd
 from datetime import datetime
 import traceback
 
-# 資料庫檔案路徑
-MARKET_DATA_DB = "market_data.duckdb" # 根據作戰命令，儲存到 market_data.duckdb
+# 資料庫檔案路徑 (將由 run.py 傳入，此處保留註釋或刪除)
+# MARKET_DATA_DB = "market_data.duckdb"
 
 def fetch_daily_ohlcv(symbols: list[str], start_date: str, end_date: str) -> pd.DataFrame:
     """
@@ -98,7 +98,7 @@ def fetch_daily_ohlcv(symbols: list[str], start_date: str, end_date: str) -> pd.
         traceback.print_exc()
         return pd.DataFrame()
 
-def store_data_to_duckdb(df: pd.DataFrame, table_name: str = "daily_ohlcv", db_file: str = MARKET_DATA_DB):
+def store_data_to_duckdb(df: pd.DataFrame, db_file: str, table_name: str = "daily_ohlcv"): # db_file 移到 table_name 前面
     """
     將 DataFrame 數據儲存至 DuckDB 資料庫。
     使用 CREATE OR REPLACE TABLE 語句，每次都會覆寫資料表。
@@ -109,7 +109,9 @@ def store_data_to_duckdb(df: pd.DataFrame, table_name: str = "daily_ohlcv", db_f
         db_file (str): DuckDB 資料庫檔案路徑。
     """
     try:
-        with duckdb.connect(db_file) as con:
+        # 確保 db_file 是字串路徑
+        db_file_str = str(db_file) if not isinstance(db_file, str) else db_file
+        with duckdb.connect(database=db_file_str) as con:
             # 確保資料表結構存在，即使 df 是空的
             # 定義 daily_ohlcv 的預期欄位和類型
             # 欄位：Date (DATE), symbol (VARCHAR), Open (DOUBLE), High (DOUBLE), Low (DOUBLE), Close (DOUBLE), Adj_Close (DOUBLE), Volume (BIGINT)

@@ -5,17 +5,19 @@ import duckdb
 import pandas as pd
 import requests
 from datetime import datetime
+from pathlib import Path # 導入 Path
 
-# --- 路徑自我校正樣板碼 ---
+# --- 新版 pathlib 標準化路徑定義 ---
+# 路徑自我校正樣板碼
 try:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    apps_dir = os.path.dirname(current_dir)
-    project_root = os.path.dirname(apps_dir)
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
+    # 使用 Path 物件來獲取專案根目錄
+    project_root = Path(__file__).resolve().parents[2]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
 except Exception as e:
     print(f"專案路徑校正時發生錯誤: {e}", file=sys.stderr)
-# --- 路徑自我校正樣板碼結束 ---
+    sys.exit(1)
+# --- 標準化路徑定義結束 ---
 
 # 模擬 core.utils.setup_logger，因為我們沒有這個檔案
 # 在真實環境中，請確保 core.utils.setup_logger 可用
@@ -35,7 +37,7 @@ logger = setup_logger('fred_client')
 
 # --- 常數定義 ---
 FRED_API_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
-DEFAULT_DB_PATH = os.path.join(project_root, 'market_data.duckdb')
+DATABASE_PATH = project_root / 'market_data.duckdb' # 使用 pathlib
 TABLE_NAME = 'fred_data'
 
 def get_fred_api_key():
@@ -90,7 +92,9 @@ def save_to_duckdb(df: pd.DataFrame, db_path: str, table_name: str):
         return
 
     try:
-        with duckdb.connect(database=db_path, read_only=False) as con:
+        # 確保 db_path 是字串路徑
+        db_path_str = str(db_path) if not isinstance(db_path, str) else db_path
+        with duckdb.connect(database=db_path_str, read_only=False) as con:
             # 創建表如果不存在
             con.execute(f"""
                 CREATE TABLE IF NOT EXISTS {table_name} (
@@ -128,8 +132,8 @@ def main():
     parser.add_argument(
         '--db_path',
         type=str,
-        default=DEFAULT_DB_PATH,
-        help=f"DuckDB 資料庫檔案路徑 (預設: {DEFAULT_DB_PATH})"
+        default=str(DATABASE_PATH), # 使用 pathlib 定義的 DATABASE_PATH，並轉為字串
+        help=f"DuckDB 資料庫檔案路徑 (預設: {str(DATABASE_PATH)})"
     )
     args = parser.parse_args()
 

@@ -3,30 +3,46 @@
 
 import argparse
 from datetime import datetime
-import sys # 導入 sys
+import sys
+import os # 保留 os 導入，因為 Path(__file__) 可能需要它 (儘管通常不需要)
+# from pathlib import Path # Path is imported below in the new block
+
+# --- 新版 pathlib 標準化路徑定義 ---
 from pathlib import Path # 導入 Path
 
-import os # 標準樣板碼需要 os
-
-# --- 標準化「路徑自我校正」樣板碼 START ---
+# 路徑自我校正樣板碼
 try:
-    # 獲取目前腳本的絕對路徑
-    current_script_path = Path(__file__).resolve()
-    # 假設此腳本位於 apps/[app_name] 目錄下，專案根目錄是其再上兩層
-    project_root = current_script_path.parent.parent.parent
-    # 將專案根目錄加入 sys.path
+    # 使用 Path 物件來獲取專案根目錄
+    # /app/apps/some_client/run.py -> /app
+    project_root = Path(__file__).resolve().parents[2]
+    # 將 Path 物件轉換為字串加入 sys.path
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-except NameError: # __file__ is not defined, common in interactive shells or certain execution contexts
-    project_root = Path(os.getcwd())
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    print(f"警告：__file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。", file=sys.stderr)
-except Exception as e:
-    print(f"專案路徑校正時發生錯誤 (apps/yfinance_client/run.py): {e}", file=sys.stderr)
-# --- 標準化「路徑自我校正」樣板碼 END ---
+except Exception as e: # NameError is a subclass of Exception, so this catches it too
+    print(f"專案路徑校正時發生錯誤: {e}", file=sys.stderr)
+    # Try a fallback for interactive shells if __file__ is not defined
+    if 'project_root' not in locals() and isinstance(e, NameError):
+        print("嘗試備用路徑校正方法 (適用於互動式執行)...")
+        project_root = Path(os.getcwd()) # Fallback to current working directory
+        if not (project_root / 'apps').is_dir(): # Heuristic: check if 'apps' subdir exists
+             # If cwd is apps/yfinance_client, then project_root is parent.parent
+             if (project_root.name == 'yfinance_client' and (project_root.parent.name == 'apps')):
+                 project_root = project_root.parent.parent
+             # If cwd is apps, then project_root is parent
+             elif project_root.name == 'apps':
+                 project_root = project_root.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        print(f"備用路徑校正完成，project_root 設定為: {project_root}")
+    else: # If it's another exception or project_root was somehow defined but path add failed.
+        sys.exit(1)
 
-from apps.yfinance_client.client import fetch_daily_ohlcv, store_data_to_duckdb, MARKET_DATA_DB
+
+# 統一的資料庫路徑定義 (使用 Path 物件)
+DATABASE_PATH = project_root / 'market_data.duckdb'
+# --- 標準化路徑定義結束 ---
+
+from apps.yfinance_client.client import fetch_daily_ohlcv, store_data_to_duckdb
 
 def main():
     parser = argparse.ArgumentParser(description="Yahoo Finance 數據抓取客戶端")
@@ -48,8 +64,8 @@ def main():
     )
     parser.add_argument(
         "--db_file",
-        default=MARKET_DATA_DB,
-        help=f"DuckDB 資料庫檔案路徑 (預設: {MARKET_DATA_DB})"
+        default=DATABASE_PATH, # 使用標準化路徑
+        help=f"DuckDB 資料庫檔案路徑 (預設: {DATABASE_PATH})"
     )
     parser.add_argument(
         "--table_name",
@@ -77,7 +93,7 @@ def main():
     ohlcv_data = fetch_daily_ohlcv(args.symbols, args.start_date, args.end_date)
 
     if not ohlcv_data.empty:
-        store_data_to_duckdb(ohlcv_data, args.table_name, args.db_file)
+        store_data_to_duckdb(ohlcv_data, args.db_file, args.table_name) # 調整參數順序
         print("yfinance_client 執行完畢。")
     else:
         print("未抓取到任何數據，yfinance_client 執行完畢但未儲存任何內容。")

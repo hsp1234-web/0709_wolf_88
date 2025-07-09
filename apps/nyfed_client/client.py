@@ -9,9 +9,9 @@ from io import BytesIO
 from datetime import datetime
 import traceback
 
-# 資料庫檔案路徑 (與 yfinance_client 共用)
-MARKET_DATA_DB = "market_data.duckdb"
-TABLE_NAME = "primary_dealer_positions"
+# 資料庫檔案路徑 (將由 run.py 傳入，此處保留註釋或刪除)
+# MARKET_DATA_DB = "market_data.duckdb"
+TABLE_NAME = "primary_dealer_positions" # 表名可以保留，或也由 run.py 控制
 
 # --- NY Fed API URLs 和解析設定 (來自 "一級交易pro.py Cell 1") ---
 # 每個字典包含:
@@ -252,14 +252,15 @@ def fetch_all_primary_dealer_data() -> pd.DataFrame:
     print(f"成功合併所有一級交易商數據，共 {len(combined_df)} 筆。")
     return combined_df
 
-def store_data_to_duckdb(df: pd.DataFrame, table_name: str = TABLE_NAME, db_file: str = MARKET_DATA_DB):
+def store_data_to_duckdb(df: pd.DataFrame, db_file: str, table_name: str): # 移除預設值，調整順序以匹配run.py調用
     if df.empty:
         print(f"沒有數據可儲存至資料表 {table_name}。")
         return
     try:
-        with duckdb.connect(db_file) as con:
+        db_file_str = str(db_file) if not isinstance(db_file, str) else db_file
+        with duckdb.connect(database=db_file_str) as con:
             con.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM df")
-            print(f"數據已成功儲存至 DuckDB 資料庫 '{db_file}' 的資料表 '{table_name}'。")
+            print(f"數據已成功儲存至 DuckDB 資料庫 '{db_file_str}' 的資料表 '{table_name}'。")
             count_result = con.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
             if count_result:
                 print(f"資料表 '{table_name}' 目前包含 {count_result[0]} 筆數據。")

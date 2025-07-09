@@ -2,36 +2,48 @@
 # 命令列介面，用於執行 nyfed_client 的數據抓取和儲存任務。
 
 import argparse
-import sys # 標準樣板碼需要 sys
-import os # 標準樣板碼需要 os
-from pathlib import Path # 標準樣板碼需要 Path
+import sys
+import os
+# from pathlib import Path # Path is imported in the new block below
 
-# --- 標準化「路徑自我校正」樣板碼 START ---
+# --- 新版 pathlib 標準化路徑定義 ---
+from pathlib import Path # 導入 Path
+
+# 路徑自我校正樣板碼
 try:
-    # 獲取目前腳本的絕對路徑
-    current_script_path = Path(__file__).resolve()
-    # 假設此腳本位於 apps/[app_name] 目錄下，專案根目錄是其再上兩層
-    project_root = current_script_path.parent.parent.parent
-    # 將專案根目錄加入 sys.path
+    # 使用 Path 物件來獲取專案根目錄
+    project_root = Path(__file__).resolve().parents[2]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-except NameError: # __file__ is not defined, common in interactive shells or certain execution contexts
-    project_root = Path(os.getcwd())
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    print(f"警告：__file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。", file=sys.stderr)
-except Exception as e:
-    print(f"專案路徑校正時發生錯誤 (apps/nyfed_client/run.py): {e}", file=sys.stderr)
-# --- 標準化「路徑自我校正」樣板碼 END ---
+except Exception as e: # Catches NameError as well
+    print(f"專案路徑校正時發生錯誤: {e}", file=sys.stderr)
+    # Fallback for interactive/different execution contexts
+    if 'project_root' not in locals() and isinstance(e, NameError):
+        print("嘗試備用路徑校正方法...")
+        project_root = Path(os.getcwd())
+        # Adjust project_root if cwd is deeper, e.g., apps/nyfed_client or apps
+        if (project_root.name == 'nyfed_client' and project_root.parent.name == 'apps'):
+            project_root = project_root.parent.parent
+        elif project_root.name == 'apps':
+            project_root = project_root.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        print(f"備用路徑校正完成，project_root 設定為: {project_root}")
+    else:
+        sys.exit(1)
 
-from .client import fetch_all_primary_dealer_data, store_data_to_duckdb, MARKET_DATA_DB, TABLE_NAME
+# 統一的資料庫路徑定義 (使用 Path 物件)
+DATABASE_PATH = project_root / 'market_data.duckdb'
+# --- 標準化路徑定義結束 ---
+
+from apps.nyfed_client.client import fetch_all_primary_dealer_data, store_data_to_duckdb, TABLE_NAME
 
 def main():
     parser = argparse.ArgumentParser(description="NY Fed 一級交易商數據抓取客戶端")
     parser.add_argument(
         "--db_file",
-        default=MARKET_DATA_DB,
-        help=f"DuckDB 資料庫檔案路徑 (預設: {MARKET_DATA_DB})"
+        default=str(DATABASE_PATH), # 使用標準化路徑並轉為字串
+        help=f"DuckDB 資料庫檔案路徑 (預設: {str(DATABASE_PATH)})"
     )
     parser.add_argument(
         "--table_name",
@@ -48,7 +60,7 @@ def main():
     dealer_data = fetch_all_primary_dealer_data()
 
     if not dealer_data.empty:
-        store_data_to_duckdb(dealer_data, args.table_name, args.db_file)
+        store_data_to_duckdb(dealer_data, args.db_file, args.table_name) # 調整參數順序
         print("nyfed_client 執行完畢，數據已儲存。")
     else:
         print("未抓取到任何一級交易商數據，nyfed_client 執行完畢但未儲存任何內容。")
