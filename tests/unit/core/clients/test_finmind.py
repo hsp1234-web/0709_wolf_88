@@ -7,6 +7,7 @@ from pandas.testing import assert_frame_equal
 from unittest.mock import patch, MagicMock
 import os
 from io import StringIO
+import requests # 新增導入
 
 # 假設 core 模組在 PYTHONPATH 中，或 pytest 能夠找到它
 from core.clients.finmind import FinMindAPIClient, BASE_URL
