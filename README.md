@@ -102,7 +102,6 @@
 │   │   └── run.py
 │   ├── news_client
 │   │   ├── __init__.py
-│   │   ├── client.py
 │   │   ├── config.py
 │   │   └── run.py
 │   ├── nyfed_client
@@ -138,6 +137,12 @@
 │       └── downloader.py
 ├── core
 │   ├── __init__.py
+│   ├── clients
+│   │   ├── __init__.py
+│   │   ├── finmind.py
+│   │   ├── fmp.py
+│   │   ├── fred.py
+│   │   └── nyfed.py
 │   ├── config.py
 │   ├── constants.py
 │   └── utils.py
