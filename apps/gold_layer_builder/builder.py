@@ -6,90 +6,35 @@ import numpy as np # <--- 新增導入
 from typing import Optional, Type, List, Dict
 from pydantic import BaseModel
 
-# 從同一應用程式的 schemas 導入
-from .schemas import GoldMarketOHLCVDaily, GoldMarketFeaturesDaily
+# 從新的核心 schemas 導入
+from core.schemas.gold_schemas import GoldMarketOHLCVDaily, GoldMarketFeaturesDaily
+# GoldLayerBuilder 需要讀取銀層數據，因此也需要銀層的 schema
+from core.schemas.silver_schemas import MarketOHLCV1M # 用於 read_silver_ohlcv_1m 的返回類型或內部處理
+from core.db_manager import DatabaseManager # <--- 導入 DatabaseManager
 
-# 與之前微服務相似的 Pydantic 到 DuckDB 類型映射
-PYDANTIC_TO_DUCKDB_TYPE_MAP = {
-    datetime.date: "DATE", # 注意這裡是 date 而非 datetime
-    datetime.datetime: "TIMESTAMP",
-    float: "DOUBLE",
-    int: "INTEGER",
-    str: "VARCHAR",
-    bool: "BOOLEAN",
-}
+# PYDANTIC_TO_DUCKDB_TYPE_MAP 已被移除
 
 class GoldLayerBuilder:
     """
     負責讀取銀層分鐘數據，聚合成日線，計算特徵，並存儲至金層。
     """
     def __init__(self, db_path: str = "market_data.duckdb"):
-        self.db_path = db_path
-        self._connection: Optional[duckdb.DuckDBPyConnection] = None
-        # print(f"[GoldBuilder] 初始化，數據庫路徑: {self.db_path}")
-
-    def _connect(self) -> duckdb.DuckDBPyConnection:
-        if self._connection is None:
-            # print(f"[GoldBuilder] 正在連接到 DuckDB: {self.db_path}")
-            self._connection = duckdb.connect(database=self.db_path, read_only=False)
-        return self._connection
-
-    def close(self):
-        if self._connection is not None:
-            # print("[GoldBuilder] 正在關閉 DuckDB 連接。")
-            self._connection.close()
-            self._connection = None
+        self.db_manager = DatabaseManager(db_path=db_path)
+        # print(f"[GoldBuilder] 初始化，使用 DatabaseManager，數據庫路徑: {db_path}")
 
     def __enter__(self):
-        self._connect()
+        self.db_manager.__enter__()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
+        self.db_manager.__exit__(exc_type, exc_val, exc_tb)
 
-    def _pydantic_to_duckdb_schema(self, model: Type[BaseModel]) -> str:
-        columns = []
-        for field_name, field_obj in model.model_fields.items():
-            pydantic_type = field_obj.annotation
-            # 處理 Optional 類型，獲取其內部類型
-            if hasattr(pydantic_type, '__origin__') and pydantic_type.__origin__ is Optional:
-                 # 在 Pydantic v2, Optional[X] 其實是 Union[X, NoneType]
-                 # field_obj.annotation 可能是 X | None
-                 # 我們需要提取 X
-                 # typing.get_args(field_obj.annotation) 会返回 (X, type(None))
-                 # 或者如果字段是 Optional[X] = None, annotation 就是 X
-                 # 更穩健的方式是檢查 field_obj.outer_type_ is Optional or field_obj.allow_none
-                 # 但對於 schemas.py 中明確的 Optional[float]，直接取 args[0] 也可以
-                 # 或是檢查 pydantic_type.__args__
-                args = getattr(pydantic_type, '__args__', None)
-                if args and args[0] is not type(None): # type: ignore
-                    pydantic_type = args[0] # type: ignore
-                else: # 如果 Optional 只有一個參數或無法解析，就用原來的
-                    pass
+    def _get_db_connection(self) -> duckdb.DuckDBPyConnection:
+        """ 輔助方法：獲取 DatabaseManager 維護的連接。 """
+        return self.db_manager._connect()
 
-
-            duckdb_type = PYDANTIC_TO_DUCKDB_TYPE_MAP.get(pydantic_type)
-            if duckdb_type is None:
-                # 再次嘗試去除 Optional (如果 Pydantic 版本行為不同)
-                if hasattr(pydantic_type, '__args__') and len(pydantic_type.__args__) > 0: # type: ignore
-                    pydantic_type = pydantic_type.__args__[0] # type: ignore
-                    duckdb_type = PYDANTIC_TO_DUCKDB_TYPE_MAP.get(pydantic_type)
-
-            if duckdb_type is None:
-                 raise ValueError(f"不支援的 Pydantic 類型: {field_obj.annotation} (解析為 {pydantic_type}) 用於欄位 '{field_name}'")
-            columns.append(f"{field_name} {duckdb_type}")
-        return ", ".join(columns)
-
-    def _create_table_if_not_exists(self, table_name: str, model: Type[BaseModel]):
-        conn = self._connect()
-        try:
-            schema_str = self._pydantic_to_duckdb_schema(model)
-            query = f"CREATE TABLE IF NOT EXISTS {table_name} ({schema_str})"
-            # print(f"[GoldBuilder] 執行 SQL: {query}")
-            conn.execute(query)
-        except Exception as e:
-            # print(f"[GoldBuilder] 創建資料表 '{table_name}' 失敗: {e}")
-            raise
+    # _pydantic_to_duckdb_schema 和 _create_table_if_not_exists 已被移除
+    # 將使用 self.db_manager.create_table_if_not_exists
 
     def read_silver_ohlcv_1m(self, silver_table_name: str = "silver_market_ohlcv_1m",
                                instrument: Optional[str] = None,
@@ -99,7 +44,7 @@ class GoldLayerBuilder:
         讀取 silver_market_ohlcv_1m 表的數據。
         可以按 instrument 和日期範圍進行過濾。
         """
-        conn = self._connect()
+        conn = self._get_db_connection() # <--- 使用新的連接獲取方式
         # print(f"[GoldBuilder] 準備從 '{silver_table_name}' 讀取數據...")
 
         conditions = []
@@ -308,51 +253,58 @@ class GoldLayerBuilder:
             # print("[GoldBuilder] 最終 DataFrame 為空，無需寫入金層表。")
             return
 
-        conn = self._connect()
+        # conn = self._connect() # 不再需要直接使用 conn
 
         # 1. 準備並寫入 gold_market_ohlcv_daily 表
         ohlcv_cols = [field for field in GoldMarketOHLCVDaily.model_fields.keys() if field in final_df.columns]
         ohlcv_gold_df = final_df[ohlcv_cols].copy()
         # print(f"[GoldBuilder] 準備寫入 {len(ohlcv_gold_df)} 筆數據到 '{ohlcv_table_name}'...")
-        self._create_table_if_not_exists(ohlcv_table_name, GoldMarketOHLCVDaily)
-        try:
-            # 將 NaN 轉為 None 以便 Pydantic 驗證 (如果需要) 或直接寫入
-            # DuckDB 可以處理 Pandas 的 NaT for dates 和 np.nan for floats
-            # 但為了與 Pydantic 模型定義的 Optional[float] = None 一致，這裡進行轉換
-            for col in ohlcv_gold_df.select_dtypes(include=np.number).columns:
-                 ohlcv_gold_df[col] = ohlcv_gold_df[col].astype(object).where(ohlcv_gold_df[col].notna(), None)
+        self.db_manager.create_table_if_not_exists(ohlcv_table_name, GoldMarketOHLCVDaily) # <--- 使用 db_manager
 
-            conn.register('ohlcv_gold_df_view', ohlcv_gold_df)
-            conn.execute(f"INSERT INTO {ohlcv_table_name} SELECT * FROM ohlcv_gold_df_view")
-            conn.unregister('ohlcv_gold_df_view')
-            # print(f"[GoldBuilder] 成功寫入數據到 '{ohlcv_table_name}'。")
-        except Exception as e:
-            # print(f"[GoldBuilder] 寫入 '{ohlcv_table_name}' 失敗: {e}")
-            raise
+        # 將 DataFrame 轉換為 Pydantic 模型列表
+        # 處理 NaN/NaT: Pydantic 模型中 Optional 字段應為 None
+        ohlcv_gold_df_cleaned = ohlcv_gold_df.replace({np.nan: None}) # 全局替換 NaN
+        # 對於日期類型，確保 NaT 也被轉為 None
+        if 'date' in ohlcv_gold_df_cleaned.columns:
+             ohlcv_gold_df_cleaned['date'] = ohlcv_gold_df_cleaned['date'].apply(lambda x: None if pd.isna(x) else x)
+
+        ohlcv_records = [GoldMarketOHLCVDaily(**row) for row in ohlcv_gold_df_cleaned.to_dict(orient='records')]
+
+        if ohlcv_records:
+            try:
+                self.db_manager.insert_data(ohlcv_table_name, ohlcv_records) # <--- 使用 db_manager
+                # print(f"[GoldBuilder] 成功寫入數據到 '{ohlcv_table_name}'。")
+            except Exception as e:
+                # print(f"[GoldBuilder] 寫入 '{ohlcv_table_name}' 失敗: {e}")
+                raise
+        else:
+            # print(f"[GoldBuilder] 沒有 OHLCV 數據可寫入 '{ohlcv_table_name}'。")
+            pass
 
         # 2. 準備並寫入 gold_market_features_daily 表
         feature_cols = [field for field in GoldMarketFeaturesDaily.model_fields.keys() if field in final_df.columns]
         features_gold_df = final_df[feature_cols].copy()
-         # print(f"[GoldBuilder] 準備寫入 {len(features_gold_df)} 筆數據到 '{features_table_name}'...")
-        self._create_table_if_not_exists(features_table_name, GoldMarketFeaturesDaily)
-        try:
-            # 將 NaN 轉為 None
-            for col in features_gold_df.columns:
-                if features_gold_df[col].isnull().any(): # 只處理包含 NaN 的列
-                    # 檢查是否為數值類型，因為 .astype(object) 可能不適用於所有類型
-                    if pd.api.types.is_numeric_dtype(features_gold_df[col]):
-                        features_gold_df[col] = features_gold_df[col].astype(object).where(features_gold_df[col].notna(), None)
-                    elif pd.api.types.is_datetime64_any_dtype(features_gold_df[col]) or pd.api.types.is_timedelta64_dtype(features_gold_df[col]):
-                         features_gold_df[col] = features_gold_df[col].astype(object).where(features_gold_df[col].notna(), None)
+        # print(f"[GoldBuilder] 準備寫入 {len(features_gold_df)} 筆數據到 '{features_table_name}'...")
+        self.db_manager.create_table_if_not_exists(features_table_name, GoldMarketFeaturesDaily) # <--- 使用 db_manager
 
+        # 清理 NaN/NaT
+        features_gold_df_cleaned = features_gold_df.replace({np.nan: None})
+        if 'date' in features_gold_df_cleaned.columns:
+            features_gold_df_cleaned['date'] = features_gold_df_cleaned['date'].apply(lambda x: None if pd.isna(x) else x)
+        # 確保其他 Optional float 欄位中的 NaN 也被正確處理 (replace 應該已經處理了)
 
-            conn.register('features_gold_df_view', features_gold_df)
-            conn.execute(f"INSERT INTO {features_table_name} SELECT * FROM features_gold_df_view")
-            conn.unregister('features_gold_df_view')
-            # print(f"[GoldBuilder] 成功寫入數據到 '{features_table_name}'。")
-        except Exception as e:
-            # print(f"[GoldBuilder] 寫入 '{features_table_name}' 失敗: {e}")
-            raise
+        feature_records = [GoldMarketFeaturesDaily(**row) for row in features_gold_df_cleaned.to_dict(orient='records')]
+
+        if feature_records:
+            try:
+                self.db_manager.insert_data(features_table_name, feature_records) # <--- 使用 db_manager
+                # print(f"[GoldBuilder] 成功寫入數據到 '{features_table_name}'。")
+            except Exception as e:
+                # print(f"[GoldBuilder] 寫入 '{features_table_name}' 失敗: {e}")
+                raise
+        else:
+            # print(f"[GoldBuilder] 沒有特徵數據可寫入 '{features_table_name}'。")
+            pass
 
 # 簡單的測試/使用範例
 if __name__ == '__main__':
@@ -370,7 +322,7 @@ if __name__ == '__main__':
 
     try:
         with GoldLayerBuilder(db_path=test_db_path) as builder:
-            conn = builder._connect()
+            conn = builder._get_db_connection() # <--- 更新連接獲取方式
 
             # 1. 準備銀層假數據
             print(f"\n[Test Setup] 正在準備銀層假數據到 '{silver_table}'...")

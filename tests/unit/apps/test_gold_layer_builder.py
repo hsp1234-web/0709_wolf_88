@@ -4,10 +4,21 @@ import pandas as pd
 import pandas_ta as ta # 用於對比計算結果
 import datetime
 import numpy as np
+import sys # <--- 手動路徑校正
+import os # <--- 手動路徑校正
 
-from apps.gold_layer_builder.core.builder import GoldLayerBuilder
-from apps.gold_layer_builder.core.schemas import GoldMarketOHLCVDaily, GoldMarketFeaturesDaily
+# --- 手動路徑校正 ---
+current_script_path = os.path.abspath(__file__)
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_script_path))))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from apps.gold_layer_builder.builder import GoldLayerBuilder
+from core.schemas.gold_schemas import GoldMarketOHLCVDaily, GoldMarketFeaturesDaily
+# 如果 GoldLayerBuilder.read_silver_ohlcv_1m 需要返回或處理銀層 schema 對象，則可能需要導入銀層 schema
+# from core.schemas.silver_schemas import MarketOHLCV1M # 暫時註釋，根據需要取消
 from apps.gold_layer_builder import run as gold_layer_run
+
 
 # 用於比較 DataFrame 的輔助函數 (可考慮移至共享的測試工具模組)
 def assert_df_equals(df1, df2, check_dtype=True, rtol=1e-5, atol=1e-8, sort_by_cols=None, reset_index=True):
@@ -55,21 +66,24 @@ class TestGoldLayerBuilder(unittest.TestCase):
         self.sample_silver_df = pd.DataFrame(self.silver_data)
         self.sample_silver_df['timestamp'] = pd.to_datetime(self.sample_silver_df['timestamp'])
 
-    @patch('apps.gold_layer_builder.core.builder.duckdb.connect')
-    def test_read_silver_ohlcv_1m(self, mock_duckdb_connect):
-        mock_conn = MagicMock()
-        mock_duckdb_connect.return_value = mock_conn
+    @patch('apps.gold_layer_builder.builder.DatabaseManager') # <--- 已修改 Patch
+    def test_read_silver_ohlcv_1m(self, MockDatabaseManager):
+        mock_db_manager_instance = MockDatabaseManager.return_value
+        mock_db_conn = mock_db_manager_instance._connect.return_value
+
+        current_builder = GoldLayerBuilder(db_path=self.db_path) # 使用 mock 的 DB Manager
 
         expected_df_data = [{'timestamp': self.silver_start_time, 'instrument': 'FXA_USD', 'open': 100, 'high': 101, 'low': 99, 'close': 100.5, 'volume': 1000}]
         mock_returned_df = pd.DataFrame(expected_df_data)
         mock_returned_df['timestamp'] = pd.to_datetime(mock_returned_df['timestamp'])
-        mock_conn.execute.return_value.fetchdf.return_value = mock_returned_df
+        mock_db_conn.execute.return_value.fetchdf.return_value = mock_returned_df
 
-        result_df = self.builder.read_silver_ohlcv_1m("silver_test_table")
+        result_df = current_builder.read_silver_ohlcv_1m("silver_test_table")
 
-        mock_duckdb_connect.assert_called_once_with(database=self.db_path, read_only=False)
-        mock_conn.execute.assert_called_once()
-        args, _ = mock_conn.execute.call_args
+        MockDatabaseManager.assert_called_once_with(db_path=self.db_path)
+        current_builder.db_manager._connect.assert_called_once()
+        mock_db_conn.execute.assert_called_once()
+        args, _ = mock_db_conn.execute.call_args
         self.assertIn("SELECT timestamp, instrument, open, high, low, close, volume", args[0])
         self.assertIn("FROM silver_test_table", args[0])
         assert_df_equals(result_df, mock_returned_df)
@@ -148,10 +162,10 @@ class TestGoldLayerBuilder(unittest.TestCase):
             self.assertEqual(len(inst_features_df), len(inst_daily_df))
 
 
-    @patch('apps.gold_layer_builder.core.builder.duckdb.connect')
-    def test_write_gold_tables(self, mock_duckdb_connect):
-        mock_conn = MagicMock()
-        mock_duckdb_connect.return_value = mock_conn
+    @patch('apps.gold_layer_builder.builder.DatabaseManager') # <--- 已修改 Patch
+    def test_write_gold_tables(self, MockDatabaseManager):
+        mock_db_manager_instance = MockDatabaseManager.return_value
+        current_builder = GoldLayerBuilder(db_path=self.db_path) # 使用 mock 的 DB Manager
 
         # 準備一個包含 OHLCV 和特徵的 DataFrame 樣本
         final_df_data = [{
@@ -162,48 +176,34 @@ class TestGoldLayerBuilder(unittest.TestCase):
         final_df = pd.DataFrame(final_df_data)
         final_df['date'] = pd.to_datetime(final_df['date']).dt.date # 確保是 date object
 
-        self.builder.write_gold_tables(final_df, "gold_ohlcv_test", "gold_features_test")
+        current_builder.write_gold_tables(final_df, "gold_ohlcv_test", "gold_features_test")
 
-        # 應該有兩次 _create_table_if_not_exists (間接通過 execute)
-        # 和兩次數據插入 (register + execute + unregister)
-        self.assertGreaterEqual(mock_conn.execute.call_count, 4) # 2 CREATE + 2 INSERT
-        self.assertEqual(mock_conn.register.call_count, 2)
-        self.assertEqual(mock_conn.unregister.call_count, 2)
+        # 驗證 create_table_if_not_exists 的調用
+        expected_create_calls = [
+            call("gold_ohlcv_test", GoldMarketOHLCVDaily),
+            call("gold_features_test", GoldMarketFeaturesDaily)
+        ]
+        current_builder.db_manager.create_table_if_not_exists.assert_has_calls(expected_create_calls, any_order=True)
 
-        # 檢查 OHLCV 表的創建和插入
-        ohlcv_create_call = None
-        ohlcv_insert_call = None
-        features_create_call = None
-        features_insert_call = None
+        # 驗證 insert_data 的調用
+        # 準備預期的 Pydantic 模型列表
+        ohlcv_cols = [field for field in GoldMarketOHLCVDaily.model_fields.keys() if field in final_df.columns]
+        ohlcv_gold_df = final_df[ohlcv_cols].replace({np.nan: None})
+        if 'date' in ohlcv_gold_df.columns:
+             ohlcv_gold_df['date'] = ohlcv_gold_df['date'].apply(lambda x: None if pd.isna(x) else x)
+        expected_ohlcv_records = [GoldMarketOHLCVDaily(**row) for row in ohlcv_gold_df.to_dict(orient='records')]
 
-        for c_args, c_kwargs in mock_conn.execute.call_args_list:
-            if "CREATE TABLE IF NOT EXISTS gold_ohlcv_test" in c_args[0]:
-                ohlcv_create_call = c_args[0]
-            elif "INSERT INTO gold_ohlcv_test" in c_args[0]:
-                ohlcv_insert_call = c_args[0]
-            elif "CREATE TABLE IF NOT EXISTS gold_features_test" in c_args[0]:
-                features_create_call = c_args[0]
-            elif "INSERT INTO gold_features_test" in c_args[0]:
-                features_insert_call = c_args[0]
+        feature_cols = [field for field in GoldMarketFeaturesDaily.model_fields.keys() if field in final_df.columns]
+        features_gold_df = final_df[feature_cols].replace({np.nan: None})
+        if 'date' in features_gold_df.columns:
+            features_gold_df['date'] = features_gold_df['date'].apply(lambda x: None if pd.isna(x) else x)
+        expected_feature_records = [GoldMarketFeaturesDaily(**row) for row in features_gold_df.to_dict(orient='records')]
 
-        self.assertIsNotNone(ohlcv_create_call)
-        self.assertIn("date DATE", ohlcv_create_call) # 來自 GoldMarketOHLCVDaily
-        self.assertIn("volume INTEGER", ohlcv_create_call)
-        self.assertIsNotNone(ohlcv_insert_call)
-
-        # 檢查 Features 表的創建和插入
-        self.assertIsNotNone(features_create_call)
-        self.assertIn("date DATE", features_create_call) # 來自 GoldMarketFeaturesDaily
-        self.assertIn("rsi14 DOUBLE", features_create_call) # 注意 Pydantic Optional[float] 映射為 DOUBLE
-        self.assertIsNotNone(features_insert_call)
-
-        # 檢查 register 的調用參數 (DataFrame)
-        # 第一次是 ohlcv_gold_df, 第二次是 features_gold_df
-        registered_df_ohlcv = mock_conn.register.call_args_list[0].args[1]
-        registered_df_features = mock_conn.register.call_args_list[1].args[1]
-
-        self.assertEqual(list(registered_df_ohlcv.columns), ['date', 'instrument', 'open', 'high', 'low', 'close', 'volume'])
-        self.assertEqual(list(registered_df_features.columns), ['date', 'instrument', 'ma5', 'ma20', 'rsi14']) # 使用小寫斷言
+        expected_insert_calls = [
+            call("gold_ohlcv_test", expected_ohlcv_records),
+            call("gold_features_test", expected_feature_records)
+        ]
+        current_builder.db_manager.insert_data.assert_has_calls(expected_insert_calls, any_order=True)
 
 
 class TestGoldLayerRunScript(unittest.TestCase):

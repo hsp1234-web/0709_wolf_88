@@ -1,10 +1,18 @@
 import unittest
 from unittest.mock import patch, MagicMock, call
 import datetime
+import sys # <--- 手動路徑校正
+import os # <--- 手動路徑校正
 
-# 由於 run.py 中的路徑校正，我們可以直接導入
+# --- 手動路徑校正 ---
+current_script_path = os.path.abspath(__file__)
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_script_path))))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# 現在可以導入
 from apps.taifex_tick_loader import run
-from apps.taifex_tick_loader.core.schemas import TaifexTick
+from core.schemas.bronze_schemas import TaifexTick
 
 class TestTaifexTickLoaderRun(unittest.TestCase):
 
@@ -46,22 +54,22 @@ class TestTaifexTickLoaderRun(unittest.TestCase):
             TaifexTick
         )
 
-        # 3. 驗證 insert_ticks 是否被調用，並且其參數是一個 TaifexTick 對象的列表
-        # print(f"[Test] mock_db_manager_instance.insert_ticks.call_args: {mock_db_manager_instance.insert_ticks.call_args}") # 用於調試
-        self.assertTrue(mock_db_manager_instance.insert_ticks.called, "insert_ticks 未被調用")
+        # 3. 驗證 insert_data 是否被調用，並且其參數是一個 TaifexTick 對象的列表
+        # print(f"[Test] mock_db_manager_instance.insert_data.call_args: {mock_db_manager_instance.insert_data.call_args}") # 用於調試
+        self.assertTrue(mock_db_manager_instance.insert_data.called, "insert_data 未被調用") # <--- 已修改方法名
 
-        # 獲取 insert_ticks 被調用時的參數
-        args, kwargs = mock_db_manager_instance.insert_ticks.call_args
+        # 獲取 insert_data 被調用時的參數
+        args, kwargs = mock_db_manager_instance.insert_data.call_args # <--- 已修改方法名
 
         # 驗證第一個位置參數是正確的表名
-        self.assertEqual(args[0], "bronze_taifex_ticks", "insert_ticks 的表名參數不正確")
+        self.assertEqual(args[0], "bronze_taifex_ticks", "insert_data 的表名參數不正確") # <--- 已修改方法名
 
         # 驗證第二個位置參數 (ticks 列表)
         inserted_ticks_list = args[1]
-        self.assertIsInstance(inserted_ticks_list, list, "insert_ticks 的第二個參數應為列表")
-        self.assertTrue(len(inserted_ticks_list) > 0, "insert_ticks 列表不應為空")
+        self.assertIsInstance(inserted_ticks_list, list, "insert_data 的第二個參數應為列表") # <--- 已修改方法名
+        self.assertTrue(len(inserted_ticks_list) > 0, "insert_data 列表不應為空") # <--- 已修改方法名
         for item in inserted_ticks_list:
-            self.assertIsInstance(item, TaifexTick, "insert_ticks 列表中的元素應為 TaifexTick 實例")
+            self.assertIsInstance(item, TaifexTick, "insert_data 列表中的元素應為 TaifexTick 實例") # <--- 已修改方法名
 
         # 驗證模擬數據的內容 (抽樣檢查第一個 tick 的類型和部分內容)
         # 根據 run.py 中的模擬數據

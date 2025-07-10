@@ -11,7 +11,7 @@ if project_root not in sys.path:
 
 import pandas as pd
 import datetime
-from apps.time_aggregator.core.aggregator import TimeAggregator
+from apps.time_aggregator.aggregator import TimeAggregator # <--- 已修改
 
 # --- 核心邏輯 ---
 def main():

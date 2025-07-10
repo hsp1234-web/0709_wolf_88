@@ -18,8 +18,8 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 import datetime
-from apps.taifex_tick_loader.core.db_manager import DatabaseManager
-from apps.taifex_tick_loader.core.schemas import TaifexTick
+from core.db_manager import DatabaseManager # <--- 已修改
+from core.schemas.bronze_schemas import TaifexTick # <--- 已修改
 
 # --- 核心邏輯 ---
 def fetch_and_store_ticks():
@@ -47,7 +47,7 @@ def fetch_and_store_ticks():
 
             if simulated_ticks:
                 print(f"[INFO] 正在將 {len(simulated_ticks)} 筆數據寫入資料表 '{table_name}'...")
-                db_manager.insert_ticks(table_name, simulated_ticks)
+                db_manager.insert_data(table_name, simulated_ticks) # <--- 方法名稱已更新
                 print(f"[SUCCESS] 成功寫入 {len(simulated_ticks)} 筆 Tick 數據到 '{table_name}'。")
             else:
                 print("[INFO] 沒有模擬數據可供寫入。")

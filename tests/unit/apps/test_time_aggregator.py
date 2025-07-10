@@ -3,10 +3,18 @@ from unittest.mock import patch, MagicMock, call, ANY
 import pandas as pd
 import datetime
 import numpy as np # 用於 NaN 比較
+import sys # <--- 手動路徑校正
+import os # <--- 手動路徑校正
 
-# 假設 run.py 和 core/aggregator.py 中的路徑校正已確保可以正確導入
-from apps.time_aggregator.core.aggregator import TimeAggregator
-from apps.time_aggregator.core.schemas import MarketOHLCV1M
+# --- 手動路徑校正 ---
+current_script_path = os.path.abspath(__file__)
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_script_path))))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# 導入重構後的模組
+from apps.time_aggregator.aggregator import TimeAggregator
+from core.schemas.silver_schemas import MarketOHLCV1M
 from apps.time_aggregator import run as time_aggregator_run # 用於測試 run.py 的主流程
 
 # 用於比較 DataFrame 的輔助函數
@@ -53,29 +61,42 @@ class TestTimeAggregator(unittest.TestCase):
         self.sample_ticks_df = pd.DataFrame(self.sample_ticks_data)
         self.sample_ticks_df['timestamp'] = pd.to_datetime(self.sample_ticks_df['timestamp'])
 
-    @patch('apps.time_aggregator.core.aggregator.duckdb.connect')
-    def test_read_bronze_ticks(self, mock_duckdb_connect):
+    @patch('apps.time_aggregator.aggregator.DatabaseManager') # <--- Patch DatabaseManager
+    def test_read_bronze_ticks(self, MockDatabaseManager):
         """
         測試 read_bronze_ticks 方法是否能正確查詢並返回 DataFrame。
         """
-        mock_conn = MagicMock()
-        mock_duckdb_connect.return_value = mock_conn
+        # 配置 DatabaseManager 的 mock 實例
+        mock_db_manager_instance = MockDatabaseManager.return_value
+        mock_db_conn = mock_db_manager_instance._connect.return_value # _connect() 返回的連接 mock
 
         # 模擬 fetchdf() 返回的 DataFrame
         expected_df_data = [{'timestamp': self.sample_start_time, 'price': 100.0, 'volume': 10, 'instrument': 'INST_A'}]
         mock_returned_df = pd.DataFrame(expected_df_data)
         mock_returned_df['timestamp'] = pd.to_datetime(mock_returned_df['timestamp'])
 
-        mock_conn.execute.return_value.fetchdf.return_value = mock_returned_df
+        mock_db_conn.execute.return_value.fetchdf.return_value = mock_returned_df
+
+        # 重新初始化 self.aggregator 以使用 MockDatabaseManager
+        # 或者確保 setUp 中的 self.aggregator 在此 patch 生效時創建
+        # 由於 patch 是在方法級別，setUp 中創建的 aggregator 不會使用 mock
+        # 因此，我們應該在測試方法內部創建 aggregator 實例，或者 patch 在類級別
+        # 為了簡單，我們假設 self.aggregator.db_manager 被正確 mock
+        # 這需要 self.aggregator 在 patch 上下文內被創建，或其 db_manager 被手動替換
+
+        # 讓我們在測試方法內部創建一個新的 TimeAggregator 實例，它將使用 MockDatabaseManager
+        current_aggregator = TimeAggregator(db_path=self.db_path)
 
         start_query_time = self.sample_start_time - datetime.timedelta(hours=1)
         end_query_time = self.sample_start_time + datetime.timedelta(hours=1)
 
-        result_df = self.aggregator.read_bronze_ticks(start_query_time, end_query_time, "bronze_test_table")
+        result_df = current_aggregator.read_bronze_ticks(start_query_time, end_query_time, "bronze_test_table")
 
-        mock_duckdb_connect.assert_called_once_with(database=self.db_path, read_only=False)
-        mock_conn.execute.assert_called_once()
-        args, _ = mock_conn.execute.call_args
+        MockDatabaseManager.assert_called_once_with(db_path=self.db_path) # 驗證 DatabaseManager 初始化
+        current_aggregator.db_manager._connect.assert_called_once() # 驗證 _connect 被調用
+
+        mock_db_conn.execute.assert_called_once()
+        args, _ = mock_db_conn.execute.call_args
         self.assertIn("SELECT timestamp, price, volume, instrument", args[0])
         self.assertIn("FROM bronze_test_table", args[0])
         self.assertIn("WHERE timestamp >= ? AND timestamp < ?", args[0])
@@ -83,14 +104,16 @@ class TestTimeAggregator(unittest.TestCase):
 
         assert_df_equals(result_df, mock_returned_df)
 
-    @patch('apps.time_aggregator.core.aggregator.duckdb.connect')
-    def test_read_bronze_ticks_handles_db_error(self, mock_duckdb_connect):
+    @patch('apps.time_aggregator.aggregator.DatabaseManager') # <--- Patch DatabaseManager
+    def test_read_bronze_ticks_handles_db_error(self, MockDatabaseManager):
         """
         測試 read_bronze_ticks 在數據庫操作失敗時返回空 DataFrame。
         """
-        mock_conn = MagicMock()
-        mock_duckdb_connect.return_value = mock_conn
-        mock_conn.execute.return_value.fetchdf.side_effect = Exception("Simulated DB error")
+        mock_db_manager_instance = MockDatabaseManager.return_value
+        mock_db_conn = mock_db_manager_instance._connect.return_value
+        mock_db_conn.execute.return_value.fetchdf.side_effect = Exception("Simulated DB error")
+
+        current_aggregator = TimeAggregator(db_path=self.db_path)
 
         start_query_time = self.sample_start_time
         end_query_time = self.sample_start_time + datetime.timedelta(minutes=1)
@@ -174,13 +197,13 @@ class TestTimeAggregator(unittest.TestCase):
         self.assertNotIn(pd.Timestamp(self.sample_start_time + datetime.timedelta(minutes=1)), result_df['timestamp'].tolist())
 
 
-    @patch('apps.time_aggregator.core.aggregator.duckdb.connect')
-    def test_write_silver_ohlcv(self, mock_duckdb_connect):
+    @patch('apps.time_aggregator.aggregator.DatabaseManager') # <--- Patch DatabaseManager
+    def test_write_silver_ohlcv(self, MockDatabaseManager):
         """
         測試 write_silver_ohlcv 方法是否正確創建表並嘗試插入數據。
         """
-        mock_conn = MagicMock()
-        mock_duckdb_connect.return_value = mock_conn
+        mock_db_manager_instance = MockDatabaseManager.return_value
+        current_aggregator = TimeAggregator(db_path=self.db_path) # 使用 mock 的 DB Manager
 
         # 準備一個聚合後的 OHLCV DataFrame 樣本
         ohlcv_data = [{'timestamp': self.sample_start_time, 'instrument': 'INST_A', 'open': 100, 'high': 102, 'low': 99, 'close': 101, 'volume': 35}]
@@ -188,62 +211,37 @@ class TestTimeAggregator(unittest.TestCase):
         ohlcv_df['timestamp'] = pd.to_datetime(ohlcv_df['timestamp'])
 
         silver_table_name = "silver_ohlcv_test"
-        self.aggregator.write_silver_ohlcv(ohlcv_df, silver_table_name=silver_table_name)
+        current_aggregator.write_silver_ohlcv(ohlcv_df, silver_table_name=silver_table_name)
 
-        # 驗證 _create_table_if_not_exists 被調用 (間接驗證)
-        # 驗證 execute 被調用兩次: 一次 CREATE TABLE, 一次 INSERT
-        self.assertGreaterEqual(mock_conn.execute.call_count, 2)
+        # 驗證 db_manager.create_table_if_not_exists 被調用
+        current_aggregator.db_manager.create_table_if_not_exists.assert_called_once_with(
+            silver_table_name,
+            MarketOHLCV1M
+        )
 
-        # 檢查 CREATE TABLE 語句 (假設 _pydantic_to_duckdb_schema 正確)
-        create_table_call = None
-        insert_call = None
-        for c in mock_conn.execute.call_args_list:
-            if "CREATE TABLE IF NOT EXISTS silver_ohlcv_test" in c.args[0]:
-                create_table_call = c
-            if f"INSERT INTO {silver_table_name}" in c.args[0]: # 或是 duckdb 的 append 語法
-                insert_call = c
+        # 驗證 db_manager.insert_data 被調用
+        # insert_data 期望一個 Pydantic 模型列表
+        expected_records = [MarketOHLCV1M(**row) for row in ohlcv_df.to_dict(orient='records')]
+        current_aggregator.db_manager.insert_data.assert_called_once_with(
+            silver_table_name,
+            expected_records
+        )
 
-        self.assertIsNotNone(create_table_call, "CREATE TABLE 語句未被執行")
-        self.assertIn("timestamp TIMESTAMP", create_table_call.args[0]) # 抽查一個欄位
-        self.assertIn("volume INTEGER", create_table_call.args[0])
-
-        # 驗證數據插入 (通過 register 和 execute)
-        mock_conn.register.assert_called_once_with('ohlcv_df_temp_view', ohlcv_df)
-        self.assertIsNotNone(insert_call, "INSERT 語句未被執行")
-        self.assertIn(f"INSERT INTO {silver_table_name} SELECT * FROM ohlcv_df_temp_view", insert_call.args[0])
-        mock_conn.unregister.assert_called_once_with('ohlcv_df_temp_view')
-
-    @patch('apps.time_aggregator.core.aggregator.duckdb.connect')
-    def test_write_silver_ohlcv_empty_df(self, mock_duckdb_connect):
+    @patch('apps.time_aggregator.aggregator.DatabaseManager') # <--- Patch DatabaseManager
+    def test_write_silver_ohlcv_empty_df(self, MockDatabaseManager):
         """ 測試 write_silver_ohlcv 使用空 DataFrame 輸入時不執行任何數據庫操作。 """
-        mock_conn = MagicMock()
-        mock_duckdb_connect.return_value = mock_conn
+        mock_db_manager_instance = MockDatabaseManager.return_value
+        current_aggregator = TimeAggregator(db_path=self.db_path)
 
         empty_ohlcv_df = pd.DataFrame(columns=['timestamp', 'instrument', 'open', 'high', 'low', 'close', 'volume'])
 
-        self.aggregator.write_silver_ohlcv(empty_ohlcv_df, "silver_empty_test")
+        current_aggregator.write_silver_ohlcv(empty_ohlcv_df, "silver_empty_test")
 
-        # _create_table_if_not_exists 不會被調用，因為 ohlcv_df 為空，會提前返回
-        # execute, register, unregister 都不應被調用
-        mock_conn.execute.assert_not_called()
-        mock_conn.register.assert_not_called()
-        mock_conn.unregister.assert_not_called()
+        # create_table_if_not_exists 和 insert_data 不應被調用，因為 df 為空會提前返回
+        current_aggregator.db_manager.create_table_if_not_exists.assert_not_called()
+        current_aggregator.db_manager.insert_data.assert_not_called()
 
-    def test_pydantic_to_duckdb_schema_conversion(self):
-        """ 測試 _pydantic_to_duckdb_schema 輔助方法。 """
-        schema_str = self.aggregator._pydantic_to_duckdb_schema(MarketOHLCV1M)
-        expected_parts = [
-            "timestamp TIMESTAMP",
-            "instrument VARCHAR",
-            "open DOUBLE",
-            "high DOUBLE",
-            "low DOUBLE",
-            "close DOUBLE",
-            "volume INTEGER"
-        ]
-        for part in expected_parts:
-            self.assertIn(part, schema_str)
-        self.assertEqual(schema_str.count(','), len(expected_parts) - 1)
+# test_pydantic_to_duckdb_schema_conversion 測試案例已被移除
 
 
 class TestTimeAggregatorRunScript(unittest.TestCase):

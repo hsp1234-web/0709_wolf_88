@@ -4,19 +4,13 @@ import datetime
 from typing import Optional, Type, List
 from pydantic import BaseModel
 
-# 從同一應用程式的 schemas 導入
-from .schemas import MarketOHLCV1M
+# 從新的核心 schemas 導入
+from core.schemas.silver_schemas import MarketOHLCV1M
+from core.db_manager import DatabaseManager # <--- 導入 DatabaseManager
 
 # 與 taifex_tick_loader 中相似的 Pydantic 到 DuckDB 類型映射
 # 為了避免重複，理想情況下這個映射可以放到一個共享的 core.utils 或類似的地方
-# 但目前為了此微服務的獨立性，暫時在此處重定義
-PYDANTIC_TO_DUCKDB_TYPE_MAP = {
-    datetime.datetime: "TIMESTAMP",
-    float: "DOUBLE",
-    int: "INTEGER",
-    str: "VARCHAR",
-    bool: "BOOLEAN",
-}
+# PYDANTIC_TO_DUCKDB_TYPE_MAP 已被移除，將使用 core.db_manager 的功能
 
 class TimeAggregator:
     """
@@ -29,56 +23,25 @@ class TimeAggregator:
         Args:
             db_path (str): DuckDB 數據庫文件的路徑。
         """
-        self.db_path = db_path
-        self._connection: Optional[duckdb.DuckDBPyConnection] = None
-        # print(f"[TimeAggregator] 初始化，數據庫路徑: {self.db_path}")
-
-    def _connect(self) -> duckdb.DuckDBPyConnection:
-        """ 建立並返回一個 DuckDB 連接。 """
-        if self._connection is None:
-            # print(f"[TimeAggregator] 正在連接到 DuckDB: {self.db_path}")
-            self._connection = duckdb.connect(database=self.db_path, read_only=False) # 聚合器需要寫入
-        return self._connection
-
-    def close(self):
-        """ 關閉 DuckDB 連接。 """
-        if self._connection is not None:
-            # print("[TimeAggregator] 正在關閉 DuckDB 連接。")
-            self._connection.close()
-            self._connection = None
+        self.db_manager = DatabaseManager(db_path=db_path)
+        # print(f"[TimeAggregator] 初始化，使用 DatabaseManager，數據庫路徑: {db_path}")
 
     def __enter__(self):
-        # print("[TimeAggregator] 進入上下文管理器，建立連接。")
-        self._connect()
+        # print("[TimeAggregator] 進入上下文管理器。")
+        # db_manager 的連接由其自身管理，或在使用時自動打開
+        self.db_manager.__enter__() # 確保 db_manager 也進入上下文
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        # print("[TimeAggregator] 退出上下文管理器，關閉連接。")
-        self.close()
+        # print("[TimeAggregator] 退出上下文管理器。")
+        self.db_manager.__exit__(exc_type, exc_val, exc_tb) # 確保 db_manager 也退出上下文並關閉連接
 
-    def _pydantic_to_duckdb_schema(self, model: Type[BaseModel]) -> str:
-        """ 將 Pydantic 模型轉換為 DuckDB 表的欄位定義字串。 """
-        columns = []
-        for field_name, field_obj in model.model_fields.items():
-            pydantic_type = field_obj.annotation
-            duckdb_type = PYDANTIC_TO_DUCKDB_TYPE_MAP.get(pydantic_type)
-            if duckdb_type is None:
-                raise ValueError(f"不支援的 Pydantic 類型: {pydantic_type} 用於欄位 '{field_name}'")
-            columns.append(f"{field_name} {duckdb_type}")
-        return ", ".join(columns)
+    def _get_db_connection(self) -> duckdb.DuckDBPyConnection:
+        """ 輔助方法：獲取 DatabaseManager 維護的連接。 """
+        return self.db_manager._connect() # 訪問內部連接以執行查詢
 
-    def _create_table_if_not_exists(self, table_name: str, model: Type[BaseModel]):
-        """ 根據 Pydantic 模型自動生成 CREATE TABLE SQL 語句並執行。 """
-        conn = self._connect()
-        try:
-            schema_str = self._pydantic_to_duckdb_schema(model)
-            query = f"CREATE TABLE IF NOT EXISTS {table_name} ({schema_str})"
-            # print(f"[TimeAggregator] 執行 SQL: {query}")
-            conn.execute(query)
-            # print(f"[TimeAggregator] 資料表 '{table_name}' 已成功檢查/創建。")
-        except Exception as e:
-            # print(f"[TimeAggregator] 創建資料表 '{table_name}' 失敗: {e}")
-            raise
+    # _pydantic_to_duckdb_schema 和 _create_table_if_not_exists 已被移除
+    # 將使用 self.db_manager.create_table_if_not_exists
 
     def read_bronze_ticks(self, start_time: datetime.datetime, end_time: datetime.datetime,
                           bronze_table_name: str = "bronze_taifex_ticks") -> pd.DataFrame:
@@ -94,7 +57,7 @@ class TimeAggregator:
             pd.DataFrame: 包含秒級 Tick 數據的 DataFrame。
                           欄位應包含 'timestamp', 'price', 'volume', 'instrument'。
         """
-        conn = self._connect()
+        conn = self._get_db_connection() # <--- 使用新的連接獲取方式
         # print(f"[TimeAggregator] 準備從 '{bronze_table_name}' 讀取 {start_time} 到 {end_time} 的數據")
         query = f"""
         SELECT timestamp, price, volume, instrument
@@ -195,25 +158,27 @@ class TimeAggregator:
             # print(f"[TimeAggregator] OHLCV DataFrame 為空，無需寫入 '{silver_table_name}'。")
             return
 
-        conn = self._connect()
+        # conn = self._connect() # 不再直接使用 conn，改用 db_manager
 
         # 1. 確保目標表存在且結構正確
         # print(f"[TimeAggregator] 正在檢查/創建銀層資料表 '{silver_table_name}'...")
-        self._create_table_if_not_exists(silver_table_name, MarketOHLCV1M)
+        self.db_manager.create_table_if_not_exists(silver_table_name, MarketOHLCV1M) # <--- 使用 db_manager
 
-        # 2. 寫入數據
-        # print(f"[TimeAggregator] 準備將 {len(ohlcv_df)} 筆聚合數據寫入 '{silver_table_name}'...")
-        try:
-            # DuckDB 可以直接從 Pandas DataFrame 插入數據
-            # 使用 register + INSERT INTO SELECT * 模式，或 conn.append()
-            # conn.append(silver_table_name, ohlcv_df) # 較新版本的 DuckDB
-            conn.register('ohlcv_df_temp_view', ohlcv_df)
-            conn.execute(f"INSERT INTO {silver_table_name} SELECT * FROM ohlcv_df_temp_view")
-            conn.unregister('ohlcv_df_temp_view')
-            # print(f"[TimeAggregator] 成功將 {len(ohlcv_df)} 筆數據寫入 '{silver_table_name}'。")
-        except Exception as e:
-            # print(f"[TimeAggregator] 將數據寫入 '{silver_table_name}' 失敗: {e}")
-            raise
+        # 2. 將 DataFrame 轉換為 Pydantic 模型列表
+        ohlcv_records = [MarketOHLCV1M(**row) for row in ohlcv_df.to_dict(orient='records')]
+
+        # 3. 寫入數據
+        # print(f"[TimeAggregator] 準備將 {len(ohlcv_records)} 筆聚合數據寫入 '{silver_table_name}'...")
+        if ohlcv_records:
+            try:
+                self.db_manager.insert_data(silver_table_name, ohlcv_records) # <--- 使用 db_manager
+                # print(f"[TimeAggregator] 成功將 {len(ohlcv_records)} 筆數據寫入 '{silver_table_name}'。")
+            except Exception as e:
+                # print(f"[TimeAggregator] 將數據寫入 '{silver_table_name}' 失敗: {e}")
+                raise
+        else:
+            # print(f"[TimeAggregator] 沒有數據可寫入 '{silver_table_name}'。")
+            pass
 
 # 簡單的測試/使用範例
 if __name__ == '__main__':
@@ -233,7 +198,8 @@ if __name__ == '__main__':
 
     try:
         with TimeAggregator(db_path=test_db_path) as aggregator:
-            conn = aggregator._connect() # 獲取連接以手動準備數據
+            conn = aggregator._get_db_connection() # <--- 更新連接獲取方式
+            # 注意：此處的 conn 是 TimeAggregator 內部 db_manager 的連接
 
             # 1. 準備銅層假數據 (模擬 taifex_tick_loader 的輸出)
             print(f"\n[Test Setup] 正在準備銅層假數據到 '{bronze_table}'...")

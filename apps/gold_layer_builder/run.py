@@ -11,7 +11,7 @@ if project_root not in sys.path:
 import pandas as pd
 import datetime
 import numpy as np
-from apps.gold_layer_builder.core.builder import GoldLayerBuilder
+from apps.gold_layer_builder.builder import GoldLayerBuilder # <--- 已修改
 
 # --- 核心邏輯 ---
 def main():
