@@ -31,10 +31,12 @@ pytest-mock==3.14.1
 python-dateutil==2.9.0.post0
 pytz==2025.2
 requests==2.32.4
+rich
 scipy==1.15.3
 six==1.17.0
 soupsieve==2.7
 statsmodels==0.14.5
+typer
 typing_extensions==4.14.1
 tzdata==2025.2
 urllib3==2.5.0
