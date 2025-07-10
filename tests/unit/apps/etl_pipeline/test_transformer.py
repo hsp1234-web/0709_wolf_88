@@ -5,6 +5,7 @@ import sys
 import os
 from pathlib import Path
 import zipfile # Needed for creating dummy zip
+import pandas as pd
 
 # --- 確保 apps.etl_pipeline.transformer 可以被導入 ---
 try:

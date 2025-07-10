@@ -4,6 +4,7 @@ from unittest.mock import patch, MagicMock, mock_open
 import sys
 import os
 from pathlib import Path
+import pandas as pd
 
 # --- 確保 apps.etl_pipeline.aggregator 可以被導入 ---
 # 假設此測試腳本位於 tests/unit/apps/etl_pipeline/

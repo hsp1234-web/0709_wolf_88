@@ -124,7 +124,21 @@ def _aggregate_ticks_to_ohlcv_internal( # 將原 aggregate_ticks_to_ohlcv 更名
                         'volume': 'sum'
                     }
                     resampled_data = ticks_df.resample(period_code).agg(agg_rules)
-                    resampled_data.columns = ['open', 'high', 'low', 'close', 'volume']
+
+                    # 檢查是否為 MultiIndex columns，這是 agg 正常輸出的情況
+                    if isinstance(resampled_data.columns, pd.MultiIndex):
+                        resampled_data.columns = ['_'.join(col).strip() for col in resampled_data.columns.values]
+                        resampled_data.rename(columns={
+                            'price_first': 'open',
+                            'price_max': 'high',
+                            'price_min': 'low',
+                            'price_last': 'close',
+                            'volume_sum': 'volume'
+                        }, inplace=True)
+                    # 如果不是 MultiIndex (例如在某些 mock 的情況下，或者 agg 結果不符合預期)
+                    # 則假設欄位名可能已經是 'open', 'high', etc. 或者需要進一步處理
+                    # 這裡我們依賴 dropna 來驗證欄位是否存在
+
                     ohlcv_df = resampled_data.dropna(subset=['open', 'high', 'low', 'close'], how='all')
 
                     if ohlcv_df.empty:
