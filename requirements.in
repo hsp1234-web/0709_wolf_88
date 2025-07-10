@@ -11,11 +11,13 @@ llvmlite==0.44.0
 multitasking==0.0.11
 narwhals==1.46.0
 numba==0.61.2
-numpy==2.2.6
+numpy<2.0 # pandas-ta 0.3.14b0 與 numpy 2.x 不兼容 (NaN vs nan)
 packaging==25.0
-pandas==2.3.1
+pandas==2.3.1 # pandas 2.x 應與 numpy 1.x 兼容
+pandas-ta==0.3.14b0 # 添加 pandas-ta
 pandas-ta-openbb==0.4.22
 patsy==1.0.1
+setuptools # pandas-ta 依賴 pkg_resources from setuptools
 peewee==3.18.2
 platformdirs==4.3.8
 plotly==6.2.0
