@@ -208,6 +208,19 @@ python main.py --help
     ```
     這將調用 `apps/backtesting_engine/engine.py` 中的 `execute_backtest` 函式。請注意，此功能依賴 `vectorbt` 套件。如果尚未安裝，您可能會收到錯誤提示。
 
+*   **執行每日市場分析 (Daily Market Analyzer):**
+    `daily_market_analyzer` 功能也已初步整合至中央 CLI，可通過 `analyze-market` 命令調用。
+    ```bash
+    python main.py analyze-market --tickers <您的股票代碼> --start-date <開始日期> --end-date <結束日期> [其他選項]
+    ```
+    例如：
+    ```bash
+    python main.py analyze-market --tickers AAPL,GOOG --start-date 2023-01-01 --end-date 2023-12-31
+    ```
+    您可以通過 `python main.py analyze-market --help` 查看所有可用選項。
+
+    **請注意：** 由於環境限制，`analyze-market` 命令的完整測試和驗證尚未完成。雖然該命令已可用，但在解決環境問題並完成全面測試之前，請謹慎使用其所有功能。
+
 未來，更多應用功能將會陸續整合至此中央指揮部。舊有的直接運行 `apps/` 目錄下特定應用腳本的方式將逐步被取代。
 
 ## **六、 戰術校準：執行測試**
