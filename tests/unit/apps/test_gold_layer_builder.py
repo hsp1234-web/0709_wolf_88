@@ -4,14 +4,14 @@ import pandas as pd
 import pandas_ta as ta # 用於對比計算結果
 import datetime
 import numpy as np
-import sys # <--- 手動路徑校正
-import os # <--- 手動路徑校正
+# import sys # <--- 移除
+# import os # <--- 移除
 
-# --- 手動路徑校正 ---
-current_script_path = os.path.abspath(__file__)
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_script_path))))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# --- 手動路徑校正 (移除) ---
+# current_script_path = os.path.abspath(__file__)
+# project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_script_path))))
+# if project_root not in sys.path:
+#     sys.path.insert(0, project_root)
 
 from apps.gold_layer_builder.builder import GoldLayerBuilder
 from core.schemas.gold_schemas import GoldMarketOHLCVDaily, GoldMarketFeaturesDaily

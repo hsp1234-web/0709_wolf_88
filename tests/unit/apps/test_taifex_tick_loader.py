@@ -1,16 +1,17 @@
 import unittest
 from unittest.mock import patch, MagicMock, call
 import datetime
-import sys # <--- 手動路徑校正
-import os # <--- 手動路徑校正
+# sys 和 os 的導入如果僅用於路徑校正，則可以移除
+# import sys
+# import os
 
-# --- 手動路徑校正 ---
-current_script_path = os.path.abspath(__file__)
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_script_path))))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# --- 手動路徑校正 (移除) ---
+# current_script_path = os.path.abspath(__file__)
+# project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_script_path))))
+# if project_root not in sys.path:
+#     sys.path.insert(0, project_root)
 
-# 現在可以導入
+# 假設 pytest.ini 中的 pythonpath = . 會處理路徑問題
 from apps.taifex_tick_loader import run
 from core.schemas.bronze_schemas import TaifexTick
 

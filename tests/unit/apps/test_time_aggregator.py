@@ -3,14 +3,14 @@ from unittest.mock import patch, MagicMock, call, ANY
 import pandas as pd
 import datetime
 import numpy as np # 用於 NaN 比較
-import sys # <--- 手動路徑校正
-import os # <--- 手動路徑校正
+# import sys # <--- 移除
+# import os # <--- 移除
 
-# --- 手動路徑校正 ---
-current_script_path = os.path.abspath(__file__)
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_script_path))))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# --- 手動路徑校正 (移除) ---
+# current_script_path = os.path.abspath(__file__)
+# project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_script_path))))
+# if project_root not in sys.path:
+#     sys.path.insert(0, project_root)
 
 # 導入重構後的模組
 from apps.time_aggregator.aggregator import TimeAggregator
