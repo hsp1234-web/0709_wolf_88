@@ -2,6 +2,7 @@
 # 針對 core.clients.finmind 模組的單元測試。
 
 import pytest
+import requests
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from unittest.mock import patch, MagicMock
