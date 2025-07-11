@@ -199,11 +199,15 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
         ]
         self._insert_daily_ohlc_data(test_data)
 
-        self.analyzer.run_taifex_pc_ratio_analysis(
+        # 修改調用方式以適應 BaseAnalyzer
+        pc_analyzer_basic = ChimeraAnalyzer(
+            db_path=self.db_path_str, # 使用 setUp 中定義的 db_path_str
+            analysis_type="pc_ratio",
             target_products=["TXO", "TEO"],
             start_date="2023-01-01",
-            end_date="2023-01-02",
+            end_date="2023-01-02"
         )
+        pc_analyzer_basic.run()
 
         with duckdb.connect(self.db_path_str) as conn:
             result_df = conn.execute(
@@ -303,9 +307,16 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
             ),
         ]
         self._insert_daily_ohlc_data(test_data)
-        self.analyzer.run_taifex_pc_ratio_analysis(
-            target_products=["TXO"], start_date="2023-01-01", end_date="2023-01-01"
+
+        pc_analyzer_zero_call = ChimeraAnalyzer(
+            db_path=self.db_path_str,
+            analysis_type="pc_ratio",
+            target_products=["TXO"],
+            start_date="2023-01-01",
+            end_date="2023-01-01"
         )
+        pc_analyzer_zero_call.run()
+
         with duckdb.connect(self.db_path_str) as conn:
             result_df = conn.execute(
                 f"SELECT pc_volume_ratio, pc_oi_ratio FROM {self.analyzer.taifex_pc_ratio_table} WHERE product_id = 'TXO'"
@@ -336,7 +347,16 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
             ),
         ]
         self._insert_daily_ohlc_data(test_data)
-        self.analyzer.run_taifex_pc_ratio_analysis(target_products=["TXO"])
+
+        pc_analyzer_no_match = ChimeraAnalyzer(
+            db_path=self.db_path_str,
+            analysis_type="pc_ratio",
+            target_products=["TXO"]
+            # start_date 和 end_date 可以省略，如果 ChimeraAnalyzer 的 __init__ 有合適的預設
+            # 或者它們在 run() 中是可選的。根據目前的 ChimeraAnalyzer 設計，它們是可選的。
+        )
+        pc_analyzer_no_match.run()
+
         with duckdb.connect(self.db_path_str) as conn:
             result_df = conn.execute(
                 f"SELECT * FROM {self.analyzer.taifex_pc_ratio_table}"
@@ -385,9 +405,15 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
         ]
         self._insert_daily_ohlc_data(test_data)
 
-        self.analyzer.run_taifex_pc_ratio_analysis(
-            target_products=["TXO"], start_date="2023-01-01", end_date="2023-01-01"
+        pc_analyzer_idempotency_run1 = ChimeraAnalyzer(
+            db_path=self.db_path_str,
+            analysis_type="pc_ratio",
+            target_products=["TXO"],
+            start_date="2023-01-01",
+            end_date="2023-01-01"
         )
+        pc_analyzer_idempotency_run1.run()
+
         with duckdb.connect(self.db_path_str) as conn:
             count_after_first_run = conn.execute(
                 f"SELECT COUNT(*) FROM {self.analyzer.taifex_pc_ratio_table}"
@@ -396,9 +422,17 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
                 f"SELECT * FROM {self.analyzer.taifex_pc_ratio_table} ORDER BY trading_date, product_id"
             ).fetchdf()
 
-        self.analyzer.run_taifex_pc_ratio_analysis(
-            target_products=["TXO"], start_date="2023-01-01", end_date="2023-01-01"
+
+        # 創建新的實例以模擬第二次運行
+        pc_analyzer_idempotency_run2 = ChimeraAnalyzer(
+            db_path=self.db_path_str,
+            analysis_type="pc_ratio",
+            target_products=["TXO"],
+            start_date="2023-01-01",
+            end_date="2023-01-01"
         )
+        pc_analyzer_idempotency_run2.run() # Run again
+
         with duckdb.connect(self.db_path_str) as conn:
             count_after_second_run = conn.execute(
                 f"SELECT COUNT(*) FROM {self.analyzer.taifex_pc_ratio_table}"
