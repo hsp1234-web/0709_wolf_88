@@ -1,319 +1,177 @@
-# core/clients/fred.py
-# 此模組包含與 FRED (Federal Reserve Economic Data) API 互動的客戶端邏輯。
-
-import os
-import requests
+# -*- coding: utf-8 -*-
+"""
+核心數據客戶端：聯準會經濟數據庫 (FRED) (v2.1 - 快取與金鑰管理升級版)
+"""
 import pandas as pd
-from typing import Optional, List, Dict, Any
+# 使用官方的 fredapi 函式庫，而不是直接操作 requests
+from fredapi import Fred as FredAPILib
+from typing import List, Dict, Any, Optional
 
 from .base import BaseAPIClient
+from core.config import get_fred_api_key # **關鍵改造**：導入金鑰獲取函數
 
-# FRED API 的主機 URL
-FRED_API_HOST = "https://api.stlouisfed.org"
-# FRED 獲取觀測數據的特定端點路徑
-FRED_OBSERVATIONS_ENDPOINT = "/fred/series/observations"
-
-
-class FREDClient(BaseAPIClient):  # 類名從 FREDAPIClient 改為 FREDClient 以求簡潔
+class FredClient(BaseAPIClient):
     """
-    用於與 FRED API 互動的客戶端，以獲取經濟數據系列。
+    用於從 FRED API 獲取經濟數據的客戶端。
+    使用官方 fredapi 函式庫進行數據獲取。
     """
-
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self):
         """
-        初始化 FREDClient。
-
-        Args:
-            api_key (Optional[str]): FRED API Key。如果未提供，
-                                       將嘗試從環境變數 FRED_API_KEY 讀取。
-        Raises:
-            ValueError: 如果 API Key 未提供且環境變數中也未設定。
+        初始化 FredClient。
+        金鑰會自動從 config.yml 讀取。
         """
-        fred_api_key = api_key or os.getenv("FRED_API_KEY")
-        if not fred_api_key:
-            raise ValueError(
-                "FRED API Key 未設定。請設定 FRED_API_KEY 環境變數或在初始化時傳入 api_key。"
-            )
-
-        super().__init__(api_key=fred_api_key, base_url=FRED_API_HOST)
-        print("資訊：FREDClient 初始化成功。")
-
-    def _prepare_params(self, series_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        準備請求 FRED API 所需的參數。
-        """
-        request_params: Dict[str, Any] = params.copy()
-        request_params["series_id"] = series_id
-        request_params["api_key"] = self.api_key
-        request_params["file_type"] = "json"  # FRED API 要求指定 file_type
-
-        # 將 limit 和 offset (如果存在) 轉換為字串，因為 API 可能期望它們是字串
-        if "limit" in request_params and request_params["limit"] is not None:
-            request_params["limit"] = str(request_params["limit"])
-        if "offset" in request_params and request_params["offset"] is not None:
-            request_params["offset"] = str(request_params["offset"])
-
-        return request_params
-
-    def fetch_data(self, symbol: str, **kwargs) -> pd.DataFrame:
-        """
-        從 FRED API 獲取指定經濟數據系列的觀測值。
-
-        Args:
-            symbol (str): 要獲取的 FRED Series ID (例如 "DGS10", "CPIAUCSL")。
-                          在 FRED 中，這對應 'series_id'。
-            **kwargs: 其他可選的 FRED API 參數，例如:
-                realtime_start (str, optional): YYYY-MM-DD
-                realtime_end (str, optional): YYYY-MM-DD
-                limit (int, optional): 返回的最大觀測數量。
-                offset (int, optional): 數據偏移量。
-                sort_order (str, optional): 'asc' 或 'desc'。
-                observation_start (str, optional): YYYY-MM-DD
-                observation_end (str, optional): YYYY-MM-DD
-
-        Returns:
-            pd.DataFrame: 包含觀測數據的 DataFrame (欄位: date, series_id, value)。
-                          如果請求失敗或無數據，則返回空的 DataFrame。
-        Raises:
-            requests.exceptions.HTTPError: 如果 API 請求遭遇 HTTP 錯誤。
-        """
-        # 從 kwargs 提取 FRED API 參數
-        # 注意：BaseAPIClient 的 fetch_data 簽名是 (self, symbol: str, **kwargs)
-        # symbol 在此處即為 series_id
-
-        api_params = {}
-        allowed_fred_params = [
-            "realtime_start",
-            "realtime_end",
-            "limit",
-            "offset",
-            "sort_order",
-            "observation_start",
-            "observation_end",
-            # "units", "frequency", "aggregation_method", "output_type" 等其他參數可按需添加
-        ]
-        for key, value in kwargs.items():
-            if key in allowed_fred_params and value is not None:
-                api_params[key] = value
-
-        # 準備最終參數 (包括 series_id, api_key, file_type)
-        final_params = self._prepare_params(series_id=symbol, params=api_params)
-
-        print(
-            f"資訊：FREDClient 正在獲取 Series ID: {symbol}, Params (不含apikey): { {k:v for k,v in final_params.items() if k != 'api_key'} }"
-        )
-
         try:
-            # 從 kwargs 中提取 force_refresh，預設為 False
-            force_refresh = kwargs.get('force_refresh', False)
+            # **關鍵改造**: 自動從設定檔獲取金鑰
+            api_key = get_fred_api_key()
+        except ValueError as e:
+            # 如果金鑰未設定，提供清晰的錯誤指引
+            print(f"錯誤：無法初始化 FredClient。{e}")
+            # 應該重新拋出原始錯誤或一個新的特定錯誤，以阻止客戶端在沒有金鑰的情況下被建立
+            raise ValueError(f"FredClient 初始化失敗: {e}") from e
 
-            # **關鍵變更**: 使用 self._get_request_context 控制快取行為
-            with self._get_request_context(force_refresh=force_refresh):
-                # 直接使用 self._session 進行請求，並拼接 base_url 和 endpoint
-                request_url = f"{self.base_url}{FRED_OBSERVATIONS_ENDPOINT}"
-                response = self._session.get(request_url, params=final_params)
-                response.raise_for_status()  # 檢查 HTTP 錯誤
-                json_response = response.json() # 解析 JSON
+        # BaseAPIClient 的 base_url 在此情境下不是主要用途，
+        # 因為 fredapi 函式庫內部管理其 API 端點。
+        # 但我們仍需調用 super().__init__ 以設定好 self._session (儘管 fredapi 不直接用它)
+        # 和 self.api_key (fredapi 會用到)。
+        super().__init__(api_key=api_key, base_url="https://api.stlouisfed.org/fred")
 
-            if not json_response or not json_response.get("observations"): # 檢查 json_response 是否為 None
-                print(
-                    f"警告：FRED API 未返回 Series ID '{symbol}' 的觀測數據或請求失敗。可能是無效的 ID、日期範圍無數據、API Key 權限問題或網路問題。"
-                )
-                return pd.DataFrame()
+        # 使用獲取的金鑰初始化官方 fredapi 實例
+        # self.api_key 是由 super().__init__ 設定的
+        self._fred_official_client = FredAPILib(api_key=self.api_key)
+        print(f"資訊：FredClient ({self.__class__.__name__}) 初始化成功，已載入 API 金鑰。")
 
-            df = pd.DataFrame(json_response["observations"])
-
-            # FRED 返回的 'value' 可能包含 '.' 表示無數據，需要處理
-            # 我們只需要 date 和 value
-            if "date" not in df.columns or "value" not in df.columns:
-                print(
-                    f"警告：FRED API 返回的數據缺少 'date' 或 'value' 欄位。Series ID: {symbol}"
-                )
-                return pd.DataFrame()
-
-            df = df[["date", "value"]]
-            df["date"] = pd.to_datetime(df["date"])
-            df["value"] = pd.to_numeric(df["value"], errors="coerce")
-            df.dropna(subset=["value"], inplace=True)
-
-            if df.empty:
-                print(f"資訊：FRED API Series ID '{symbol}' 在處理後無有效觀測數據。")
-                return pd.DataFrame()
-
-            df["series_id"] = symbol  # 新增 series_id 欄位以標識數據來源
-            df = df[["date", "series_id", "value"]]  # 重新排列欄位順序
-
-            print(
-                f"資訊：FREDClient 成功獲取並處理了 {len(df)} 筆 Series ID '{symbol}' 的有效觀測數據。"
-            )
-            return df
-
-        except (
-            requests.exceptions.HTTPError
-        ) as http_err:  # 由 BaseClient 的 _request 引發
-            print(
-                f"錯誤：FREDClient 請求遭遇 HTTP 錯誤 (Series ID: {symbol}): {http_err}"
-            )
-            raise  # 允許 HTTPError 向上傳播，以便調用者可以根據狀態碼做不同處理
-        except (
-            requests.exceptions.RequestException
-        ) as req_err:  # 其他請求相關錯誤，例如超時、連接錯誤
-            print(
-                f"錯誤：FREDClient 請求遭遇網路或請求配置錯誤 (Series ID: {symbol}): {req_err}"
-            )
-            return pd.DataFrame()  # 對於這類錯誤，返回空 DataFrame
-        except (
-            ValueError
-        ) as json_err:  # super()._request() 中的 response.json() 可能引發的錯誤
-            print(
-                f"錯誤：FREDClient 解析 JSON 回應失敗 (Series ID: {symbol})：{json_err}"
-            )
-            return pd.DataFrame()
-        except Exception as e:  # 其他所有未知錯誤
-            print(f"錯誤：FREDClient 處理數據時發生未知錯誤 (Series ID: {symbol})：{e}")
-            return pd.DataFrame()
-
-    def get_multiple_series(self, series_ids: List[str], **kwargs) -> pd.DataFrame:
+    def fetch_data(self, symbol: str, **kwargs: Any) -> pd.DataFrame:
         """
-        獲取多個 FRED 經濟數據系列的觀測值並將它們合併。
-        這是一個便捷方法，內部多次調用 fetch_data。
+        從 FRED 獲取單個時間序列數據。
 
         Args:
-            series_ids (List[str]): 要獲取的 FRED Series ID 列表。
-            **kwargs: 其他傳遞給 fetch_data 的參數 (例如 observation_start)。
+            symbol (str): FRED 指標的代碼 (e.g., 'DGS10', 'VIXCLS')。
+            **kwargs: 可接受 'force_refresh' (bool) 以建議繞過快取 (主要用於日誌和一致性，
+                      因為 fredapi 的快取行為獨立)。
+                      其他參數如 'observation_start', 'observation_end' 等會傳遞給 fredapi。
 
         Returns:
-            pd.DataFrame: 包含所有成功請求系列數據的合併 DataFrame。
-                          如果所有系列都請求失敗或無數據，則返回空的 DataFrame。
+            pd.DataFrame: 包含 'Date' 和指標值的時間序列數據。
+                          若獲取失敗或數據無效，則返回包含 'Date' 和 symbol 列的空 DataFrame。
+        Raises:
+            ValueError: 如果 FRED 回傳的數據無效或全為空值。
         """
-        all_series_data = []
-        print(f"資訊：FREDClient 開始批量獲取 Series IDs: {series_ids}")
-        for series_id in series_ids:
-            print(f"資訊：FREDClient 處理批量請求中的 Series ID: {series_id}")
+        print(f"資訊：{self.__class__.__name__} 正在獲取指標 {symbol}...")
+        force_refresh = kwargs.get('force_refresh', False)
+
+        # 提取 fredapi 支援的參數
+        fred_params = {k: v for k, v in kwargs.items() if k in [
+            'observation_start', 'observation_end',
+            'realtime_start', 'realtime_end',
+            'limit', 'offset', 'sort_order',
+            'aggregation_method', 'frequency', 'units'
+        ]}
+
+        # 使用 BaseAPIClient 的快取控制上下文，主要是為了日誌記錄和保持介面一致性
+        # 注意：requests-cache 不會直接攔截 fredapi 函式庫的內部請求。
+        # fredapi 可能有自己的快取邏輯 (雖然其文件未明確說明客戶端快取)。
+        # 我們的快取層主要作用於我們自己發出的 requests 請求。
+        # 這裡的 force_refresh 更多是作為一個「意圖」傳遞。
+        with self._get_request_context(force_refresh=force_refresh):
             try:
-                series_df = self.fetch_data(symbol=series_id, **kwargs)
-                if not series_df.empty:
-                    all_series_data.append(series_df)
-            except requests.exceptions.HTTPError:
-                # fetch_data 會打印錯誤，這裡可以選擇性地記錄 series_id 失敗
-                print(
-                    f"警告：FREDClient 批量獲取中，Series ID '{series_id}' 數據獲取遭遇 HTTP 錯誤，已跳過。"
-                )
-            # 其他異常由 fetch_data 內部處理並可能返回空 DataFrame
-
-        if not all_series_data:
-            print("警告：FREDClient 批量獲取未成功獲取任何系列的有效數據。")
-            return pd.DataFrame()
-
-        combined_df = pd.concat(all_series_data, ignore_index=True)
-        print(
-            f"資訊：FREDClient 成功合併 {len(all_series_data)} 個 FRED 系列的數據，總共 {len(combined_df)} 筆記錄。"
-        )
-        return combined_df
+                # 使用官方 fredapi 函式庫獲取數據
+                series_data = self._fred_official_client.get_series(series_id=symbol, **fred_params)
+            except Exception as e: # 捕獲 fredapi 可能拋出的任何錯誤
+                print(f"錯誤：{self.__class__.__name__} 使用 fredapi 獲取 {symbol} 時發生錯誤: {e}")
+                # 返回標準化的空 DataFrame
+                return pd.DataFrame(columns=['Date', symbol]).set_index('Date')
 
 
-# 範例使用 (主要用於開發時測試)
-if __name__ == "__main__":
-    print("--- FREDClient 重構後測試 (直接執行 core/clients/fred.py) ---")
-    # 執行此測試前，請確保設定了 FRED_API_KEY 環境變數
+        if not isinstance(series_data, pd.Series):
+            print(f"警告：{self.__class__.__name__} 從 FRED 獲取的指標 {symbol} 數據類型不是 pd.Series，而是 {type(series_data)}。")
+            return pd.DataFrame(columns=['Date', symbol]).set_index('Date')
+
+        if series_data.empty:
+            print(f"警告：{self.__class__.__name__} 從 FRED 獲取的指標 {symbol} 數據為空。")
+            # 返回標準化的空 DataFrame
+            return pd.DataFrame(columns=['Date', symbol]).set_index('Date')
+
+        df = series_data.to_frame(name=symbol)
+        df.index.name = 'Date'
+
+        # 髒數據防護點: 檢查轉換後的 DataFrame 是否合理
+        if df.empty or (symbol in df and df[symbol].isnull().all()):
+            # 即使 fredapi 返回了東西，如果全是 NaN，也認為是無效數據
+            print(f"警告：{self.__class__.__name__} 獲取的指標 {symbol} 數據轉換後無效或全為空值。")
+            # 保險起見，返回標準化的空 DataFrame
+            return pd.DataFrame(columns=['Date', symbol]).set_index('Date')
+
+        print(f"資訊：{self.__class__.__name__} 成功獲取 {len(df)} 筆 {symbol} 數據。")
+        return df
+
+    def close_session(self):
+        """
+        關閉由 BaseAPIClient 管理的 requests session。
+        fredapi 函式庫不直接暴露其 session 管理，因此這裡只調用父類的方法。
+        """
+        super().close_session()
+        print(f"資訊：{self.__class__.__name__} 的基礎 session (如果已初始化) 已關閉。")
+
+
+if __name__ == '__main__':
+    print("--- FredClient 金鑰與快取升級後測試 ---")
+    print("請確保您的 config.yml 中已填寫有效的 FRED API Key。")
+
+    client: Optional[FredClient] = None
     try:
-        client = FREDClient()
-        print("FREDClient 初始化成功。")
+        client = FredClient()
 
-        # 測試獲取單一系列數據 (DGS10) 並測試快取
-        print("\n--- 測試 FREDClient 快取功能 (Series: DGS10) ---")
-        series_id_test = "DGS10"
-        test_params = {"observation_start": "2024-01-01", "observation_end": "2024-01-05"}
+        test_series_id = 'DGS10' # 10年期公債殖利率
+        test_params_initial = {'observation_start': '2023-01-01', 'observation_end': '2023-01-10'}
 
-        print(f"\n[DGS10] 執行第一次 (應會下載, URL 包含 {test_params})...")
-        data_dgs10_first = client.fetch_data(symbol=series_id_test, **test_params)
-        if not data_dgs10_first.empty:
-            print(f"成功獲取 DGS10 數據 (第一次): {len(data_dgs10_first)} 筆")
-            print(data_dgs10_first.head())
+        print(f"\n--- 測試獲取 {test_series_id} (第一次, 應實際請求) ---")
+        data_first = client.fetch_data(test_series_id, **test_params_initial)
+        if not data_first.empty:
+            print(f"{test_series_id} 數據範例 (第一次):")
+            print(data_first.tail(3))
         else:
-            print(f"DGS10 (第一次) 返回空 DataFrame。請檢查 API Key 或 FRED 服務狀態。")
+            print(f"無法獲取 {test_series_id} 數據 (第一次)。")
 
-        print(f"\n[DGS10] 執行第二次 (應從快取讀取, URL 包含 {test_params})...")
-        data_dgs10_second = client.fetch_data(symbol=series_id_test, **test_params)
-        if not data_dgs10_second.empty:
-            print(f"成功獲取 DGS10 數據 (第二次): {len(data_dgs10_second)} 筆")
-            # 這裡可以加入對 response.from_cache 的檢查 (如果 BaseClient._request 返回 response 物件)
-            # 目前 BaseAPIClient._request 直接返回 json，所以依賴 print 訊息判斷
+        # 由於 fredapi 不使用我們的 requests-cache，重複請求通常會再次命中 API。
+        # BaseAPIClient 的快取上下文在這裡主要是日誌作用和概念上的一致性。
+        # 若要測試 fredapi 自身的潛在快取或避免重複 API 呼叫，需更複雜的 mock。
+        print(f"\n--- 測試獲取 {test_series_id} (第二次, 參數相同) ---")
+        data_second = client.fetch_data(test_series_id, **test_params_initial)
+        if not data_second.empty:
+            print(f"{test_series_id} 數據範例 (第二次):")
+            print(data_second.tail(3))
+            if data_first.equals(data_second):
+                print("INFO: 第二次獲取數據與第一次一致。")
+            else:
+                print("WARNING: 第二次獲取數據與第一次不一致。")
         else:
-            print(f"DGS10 (第二次) 返回空 DataFrame。")
+            print(f"無法獲取 {test_series_id} 數據 (第二次)。")
 
-        if not data_dgs10_first.empty and not data_dgs10_second.empty:
-            if data_dgs10_first.equals(data_dgs10_second):
-                print("[DGS10] 快取驗證：第一次和第二次獲取的數據一致。")
-            else:
-                print("警告：[DGS10] 快取驗證失敗：第一次和第二次獲取的數據不一致！")
-
-        print(f"\n[DGS10] 執行第三次 (強制刷新, URL 包含 {test_params})...")
-        data_dgs10_third = client.fetch_data(symbol=series_id_test, force_refresh=True, **test_params)
-        if not data_dgs10_third.empty:
-            print(f"成功獲取 DGS10 數據 (強制刷新): {len(data_dgs10_third)} 筆")
+        print(f"\n--- 測試獲取 {test_series_id} (強制刷新, 意圖) ---")
+        data_refresh = client.fetch_data(test_series_id, force_refresh=True, **test_params_initial)
+        if not data_refresh.empty:
+            print(f"{test_series_id} 數據範例 (強制刷新):")
+            print(data_refresh.tail(3))
         else:
-            print(f"DGS10 (強制刷新) 返回空 DataFrame。")
+            print(f"無法獲取 {test_series_id} 數據 (強制刷新)。")
 
-        if not data_dgs10_first.empty and not data_dgs10_third.empty:
-            if data_dgs10_first.equals(data_dgs10_third):
-                print("[DGS10] 強制刷新驗證：第一次和強制刷新獲取的數據一致。")
-            else:
-                print("警告：[DGS10] 強制刷新驗證失敗：第一次和強制刷新獲取的數據不一致！")
-
-        # 測試 get_multiple_series 是否也受益於快取 (間接測試)
-        # 注意：get_multiple_series 本身不直接處理 force_refresh，它會傳遞 kwargs 給 fetch_data
-        # 所以如果 fetch_data 的快取邏輯正確，這裡應該也能體現
-        print("\n--- 測試 get_multiple_series 是否間接受益於快取 (Series: DGS10, UNRATE) ---")
-        series_list_test = ["DGS10", "UNRATE"] # DGS10 應該已經快取了 (如果參數相同)
-        multi_params = {"observation_start": "2024-01-01", "observation_end": "2024-01-05"}
-
-        print(f"\n[批量] 第一次執行 (DGS10 可能從快取讀取, UNRATE 應下載, URL 包含 {multi_params})...")
-        multi_data_first = client.get_multiple_series(series_ids=series_list_test, **multi_params)
-        if not multi_data_first.empty:
-            print(f"成功批量獲取數據 (第一次): {len(multi_data_first)} 筆")
-            print(f"Series IDs: {multi_data_first['series_id'].unique()}")
-
-        print(f"\n[批量] 第二次執行 (DGS10, UNRATE 均應從快取讀取, URL 包含 {multi_params})...")
-        multi_data_second = client.get_multiple_series(series_ids=series_list_test, **multi_params)
-        if not multi_data_second.empty:
-            print(f"成功批量獲取數據 (第二次): {len(multi_data_second)} 筆")
-
-        if not multi_data_first.empty and not multi_data_second.empty:
-            if multi_data_first.equals(multi_data_second):
-                print("[批量] 快取驗證：批量獲取的數據一致。")
-            else:
-                 print("警告：[批量] 快取驗證失敗：批量獲取的數據不一致！")
-
-        print(f"\n[批量] 第三次執行 (強制刷新 DGS10, UNRATE, URL 包含 {multi_params})...")
-        multi_data_third = client.get_multiple_series(series_ids=series_list_test, force_refresh=True, **multi_params)
-        if not multi_data_third.empty:
-            print(f"成功批量獲取數據 (強制刷新): {len(multi_data_third)} 筆")
-
-        if not multi_data_first.empty and not multi_data_third.empty:
-            if multi_data_first.equals(multi_data_third):
-                print("[批量] 強制刷新驗證：批量獲取的數據一致。")
-            else:
-                print("警告：[批量] 強制刷新驗證失敗：批量獲取的數據不一致！")
+        # 測試一個可能不存在的指標
+        print("\n--- 測試獲取不存在的指標 (FAKEID123) ---")
+        fake_data = client.fetch_data('FAKEID123')
+        if fake_data.empty:
+            print("成功處理不存在的指標 FAKEID123，返回空 DataFrame。")
+        else:
+            print("錯誤：獲取不存在指標 FAKEID123 時未返回空 DataFrame。")
 
 
-        # 測試獲取一個可能不存在的系列 (確保錯誤處理仍然正常)
-        print("\n--- 測試獲取不存在的系列 'NONEXISTENTSERIES123' (應不使用快取) ---")
-        try:
-            non_existent_data = client.fetch_data("NONEXISTENTSERIES123", force_refresh=False) # 快取無關緊要
-            if non_existent_data.empty:
-                print("獲取不存在系列數據返回空 DataFrame (API 可能返回錯誤或無觀測，已被處理)。")
-        except requests.exceptions.HTTPError as e:
-            print(f"成功捕獲到 HTTP 錯誤 (符合預期，因為系列不存在): {e.response.status_code if e.response else 'N/A'}")
-            # print(f"詳細錯誤: {e.response.text if e.response else 'N/A'}") # 可能過於詳細
-
-    except ValueError as ve_init:  # API Key 未設定等初始化問題
-        print(f"初始化錯誤: {ve_init}")
+    except ValueError as ve: # 例如金鑰未設定
+        print(f"\n測試過程中發生設定錯誤: {ve}")
     except Exception as e:
-        print(f"執行 FREDClient 測試期間發生未預期錯誤: {e}")
+        print(f"\n測試過程中發生未預期錯誤: {e}")
         import traceback
         traceback.print_exc()
     finally:
-        client.close_session() # 確保關閉 session
+        if client:
+            client.close_session()
 
-    print("\n--- FREDClient 快取整合後測試結束 ---")
+    print("\n--- FredClient 測試結束 ---")

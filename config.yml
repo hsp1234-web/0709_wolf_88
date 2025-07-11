@@ -1,19 +1,27 @@
-# config.yml
-# 這是整個專案的唯一設定檔
+# ==============================================================================
+# 專案組態設定檔 (v2.0)
+# 說明：集中管理所有需要靈活調整的參數與 API 金鑰。
+# ==============================================================================
 
-# 全域設定
-global:
-  log_level: "INFO"
+# --- API 金鑰管理 ---
+# 警告：請勿將真實金鑰直接提交到版本控制系統。
+# 建議將此檔案加入 .gitignore，並在部署環境中手動創建或透過 CI/CD 注入。
+api_keys:
+  # 請在此處填入您的 FRED API 金鑰
+  fred: "c85a224a0e0d72a7bccb471c0021eb7b"
 
-# 各應用的專屬設定
-news_client:
-  api_key: "YOUR_NEWS_API_KEY_HERE" # 待填寫的憑證
-  max_retries: 3
+  # 其他未來可能用到的金鑰
+  # fmp: "YOUR_FMP_KEY_HERE"
+  # finmind: "YOUR_FINMIND_KEY_HERE"
 
-pipeline_metadata_manager:
-  database_path: "metadata.sqlite"
-  lock_timeout: 60
-  table_name: "processed_files_metadata" # 新增
-  default_etl_version: "v1.0.0-core-config" # 新增
+# --- 資料庫設定 ---
+database:
+  path: "data/financial_data.db"
+  # 其他可能的設定，例如: timeout: 30
 
-# 其他應用的設定可以陸續加入...
+# --- 數據獲取設定 ---
+data_acquisition:
+  # 重試次數
+  retries: 3
+  # 重試間隔 (秒)
+  retry_backoff: 2
