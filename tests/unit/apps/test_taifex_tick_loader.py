@@ -1,10 +1,11 @@
 import unittest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 import datetime
 
 # 由於 run.py 中的路徑校正，我們可以直接導入
 from apps.taifex_tick_loader import run
 from apps.taifex_tick_loader.core.schemas import TaifexTick
+
 
 class TestTaifexTickLoaderRun(unittest.TestCase):
 
@@ -15,10 +16,14 @@ class TestTaifexTickLoaderRun(unittest.TestCase):
         """
         self.assertIsNotNone(run, "run 模組導入失敗。")
 
-    @patch('apps.taifex_tick_loader.run.DatabaseManager') # 模擬 run 模組中的 DatabaseManager
-    @patch('apps.taifex_tick_loader.run.os.remove') # 模擬 os.remove
-    @patch('apps.taifex_tick_loader.run.os.path.exists') # 模擬 os.path.exists
-    def test_fetch_and_store_ticks_flow(self, mock_path_exists, mock_os_remove, MockDatabaseManager):
+    @patch(
+        "apps.taifex_tick_loader.run.DatabaseManager"
+    )  # 模擬 run 模組中的 DatabaseManager
+    @patch("apps.taifex_tick_loader.run.os.remove")  # 模擬 os.remove
+    @patch("apps.taifex_tick_loader.run.os.path.exists")  # 模擬 os.path.exists
+    def test_fetch_and_store_ticks_flow(
+        self, mock_path_exists, mock_os_remove, MockDatabaseManager
+    ):
         """
         測試 fetch_and_store_ticks 函式是否正確調用 DatabaseManager 的方法。
         """
@@ -27,7 +32,9 @@ class TestTaifexTickLoaderRun(unittest.TestCase):
         mock_path_exists.return_value = False
 
         # 創建 DatabaseManager 的模擬實例
-        mock_db_manager_instance = MockDatabaseManager.return_value.__enter__.return_value
+        mock_db_manager_instance = (
+            MockDatabaseManager.return_value.__enter__.return_value
+        )
 
         # --- 執行被測函式 ---
         # print("\n[Test] 呼叫 run.fetch_and_store_ticks()") # 用於調試
@@ -42,26 +49,33 @@ class TestTaifexTickLoaderRun(unittest.TestCase):
         # 2. 驗證 create_table_if_not_exists 是否以 TaifexTick 模型被調用
         # print(f"[Test] mock_db_manager_instance.create_table_if_not_exists.call_args: {mock_db_manager_instance.create_table_if_not_exists.call_args}") # 用於調試
         mock_db_manager_instance.create_table_if_not_exists.assert_called_once_with(
-            "bronze_taifex_ticks",
-            TaifexTick
+            "bronze_taifex_ticks", TaifexTick
         )
 
         # 3. 驗證 insert_ticks 是否被調用，並且其參數是一個 TaifexTick 對象的列表
         # print(f"[Test] mock_db_manager_instance.insert_ticks.call_args: {mock_db_manager_instance.insert_ticks.call_args}") # 用於調試
-        self.assertTrue(mock_db_manager_instance.insert_ticks.called, "insert_ticks 未被調用")
+        self.assertTrue(
+            mock_db_manager_instance.insert_ticks.called, "insert_ticks 未被調用"
+        )
 
         # 獲取 insert_ticks 被調用時的參數
         args, kwargs = mock_db_manager_instance.insert_ticks.call_args
 
         # 驗證第一個位置參數是正確的表名
-        self.assertEqual(args[0], "bronze_taifex_ticks", "insert_ticks 的表名參數不正確")
+        self.assertEqual(
+            args[0], "bronze_taifex_ticks", "insert_ticks 的表名參數不正確"
+        )
 
         # 驗證第二個位置參數 (ticks 列表)
         inserted_ticks_list = args[1]
-        self.assertIsInstance(inserted_ticks_list, list, "insert_ticks 的第二個參數應為列表")
+        self.assertIsInstance(
+            inserted_ticks_list, list, "insert_ticks 的第二個參數應為列表"
+        )
         self.assertTrue(len(inserted_ticks_list) > 0, "insert_ticks 列表不應為空")
         for item in inserted_ticks_list:
-            self.assertIsInstance(item, TaifexTick, "insert_ticks 列表中的元素應為 TaifexTick 實例")
+            self.assertIsInstance(
+                item, TaifexTick, "insert_ticks 列表中的元素應為 TaifexTick 實例"
+            )
 
         # 驗證模擬數據的內容 (抽樣檢查第一個 tick 的類型和部分內容)
         # 根據 run.py 中的模擬數據
@@ -70,23 +84,33 @@ class TestTaifexTickLoaderRun(unittest.TestCase):
             "price": 16500.0,
             "volume": 2,
             "instrument": "TXF202310",
-            "tick_type": "Trade"
+            "tick_type": "Trade",
         }
         # print(f"[Test] inserted_ticks_list[0]: {inserted_ticks_list[0].model_dump()}") # 用於調試
-        self.assertEqual(inserted_ticks_list[0].timestamp, expected_first_tick_data["timestamp"])
-        self.assertEqual(inserted_ticks_list[0].price, expected_first_tick_data["price"])
-        self.assertEqual(inserted_ticks_list[0].instrument, expected_first_tick_data["instrument"])
+        self.assertEqual(
+            inserted_ticks_list[0].timestamp, expected_first_tick_data["timestamp"]
+        )
+        self.assertEqual(
+            inserted_ticks_list[0].price, expected_first_tick_data["price"]
+        )
+        self.assertEqual(
+            inserted_ticks_list[0].instrument, expected_first_tick_data["instrument"]
+        )
 
-
-    @patch('apps.taifex_tick_loader.run.DatabaseManager')
-    @patch('apps.taifex_tick_loader.run.os.remove')
-    @patch('apps.taifex_tick_loader.run.os.path.exists')
-    def test_main_block_cleans_up_db_files(self, mock_path_exists, mock_os_remove, MockDatabaseManager):
+    @patch("apps.taifex_tick_loader.run.DatabaseManager")
+    @patch("apps.taifex_tick_loader.run.os.remove")
+    @patch("apps.taifex_tick_loader.run.os.path.exists")
+    def test_main_block_cleans_up_db_files(
+        self, mock_path_exists, mock_os_remove, MockDatabaseManager
+    ):
         """
         測試當 __name__ == '__main__' 時，是否會嘗試清理數據庫文件。
         """
         # 模擬 os.path.exists 回傳 True，表示文件存在
-        mock_path_exists.side_effect = [True, True] # 第一次給 market_data.duckdb, 第二次給 .wal
+        mock_path_exists.side_effect = [
+            True,
+            True,
+        ]  # 第一次給 market_data.duckdb, 第二次給 .wal
 
         # 模擬 DatabaseManager 的 __enter__ 方法返回一個 mock，以避免其他調用
         MockDatabaseManager.return_value.__enter__.return_value = MagicMock()
@@ -120,7 +144,9 @@ class TestTaifexTickLoaderRun(unittest.TestCase):
         # 對於 __main__ 區塊的測試，可以這樣做：
 
         # 模擬 `fetch_and_store_ticks`，因為我們只想測試 `__main__` 的文件清理部分
-        with patch('apps.taifex_tick_loader.run.fetch_and_store_ticks') as mock_fetch_and_store:
+        with patch(
+            "apps.taifex_tick_loader.run.fetch_and_store_ticks"
+        ) as mock_fetch_and_store:
             # 使用 runpy 來執行 run.py 就像它被直接運行一樣
             # 這需要將 run.py 的路徑添加到 sys.path 或者確保 CWD 正確
             # 為了簡化，我們將直接檢查 run.py 中 __main__ guard 內部的 os.remove 調用
@@ -137,13 +163,14 @@ class TestTaifexTickLoaderRun(unittest.TestCase):
             # 保留原意，但調整斷言：
             # 如果我們真的想測試 __main__ 的部分，需要更複雜的設置。
             # 目前，我們只確保在上面的測試中，fetch_and_store_ticks 不會意外刪除文件。
-            pass # 這個測試案例的目的需要重新評估，或者用集成測試覆蓋。
+            pass  # 這個測試案例的目的需要重新評估，或者用集成測試覆蓋。
 
         # 鑑於上述，我們將移除這個不明確的測試，或將其標記為待辦。
         # 目前，我們專注於 fetch_and_store_ticks 函式的正確性。
         # 為了讓測試套件通過，我將暫時移除這個測試的斷言部分，
         # 因為它試圖測試 __main__ 塊，這在單元測試中不直接。
-        self.assertTrue(True) # 暫時使其通過，以便其他測試可以運行
+        self.assertTrue(True)  # 暫時使其通過，以便其他測試可以運行
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

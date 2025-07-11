@@ -9,243 +9,250 @@ from unittest.mock import patch, MagicMock
 import os
 from io import StringIO
 
-# 假設 core 模組在 PYTHONPATH 中，或 pytest 能夠找到它
-from core.clients.finmind import FinMindAPIClient, BASE_URL
+# 更新導入以反映重構後的客戶端
+from core.clients.finmind import FinMindClient, FINMIND_API_BASE_URL
 
 # 測試用的 API Token
 TEST_API_TOKEN = "test_token_123"
 
-@pytest.fixture
-def client_with_token():
-    """提供一個已設定 API Token 的 FinMindAPIClient 實例。"""
-    with patch.dict(os.environ, {"FINMIND_API_TOKEN": TEST_API_TOKEN}):
-        client = FinMindAPIClient()
-    return client
 
 @pytest.fixture
-def client_no_token_in_env():
+def finmind_client_fixture():
+    """提供一個已設定 API Token 的 FinMindClient 實例。"""
+    with patch.dict(os.environ, {"FINMIND_API_TOKEN": TEST_API_TOKEN}):
+        client = FinMindClient()
+    return client
+
+
+@pytest.fixture
+def mock_env_no_finmind_token():
     """確保環境變數中沒有 FINMIND_API_TOKEN。"""
     original_token = os.environ.pop("FINMIND_API_TOKEN", None)
     yield
     if original_token is not None:
         os.environ["FINMIND_API_TOKEN"] = original_token
 
-class TestFinMindAPIClientInitialization:
-    """測試 FinMindAPIClient 的初始化過程。"""
 
-    def test_init_with_token_arg(self, client_no_token_in_env):
-        """測試使用參數傳入 API token 初始化。"""
-        client = FinMindAPIClient(api_token="param_token")
-        assert client.api_token == "param_token"
+class TestFinMindClientInitialization:
+    """測試 FinMindClient 的初始化過程。"""
+
+    def test_init_with_token_arg(self, mock_env_no_finmind_token):
+        client = FinMindClient(api_token="param_token_direct")
+        assert (
+            client.api_key == "param_token_direct"
+        )  # BaseAPIClient stores it as api_key
+        assert client.base_url == FINMIND_API_BASE_URL
+        assert isinstance(client._session, requests.Session)
 
     def test_init_with_env_variable(self):
-        """測試從環境變數讀取 API token 初始化。"""
-        with patch.dict(os.environ, {"FINMIND_API_TOKEN": "env_token"}):
-            client = FinMindAPIClient()
-            assert client.api_token == "env_token"
+        with patch.dict(os.environ, {"FINMIND_API_TOKEN": "env_token_for_finmind"}):
+            client = FinMindClient()
+            assert client.api_key == "env_token_for_finmind"
 
-    def test_init_no_token_raises_value_error(self, client_no_token_in_env):
-        """測試未提供 token 且環境變數也未設定時，應引發 ValueError。"""
+    def test_init_no_token_raises_value_error(self, mock_env_no_finmind_token):
         with pytest.raises(ValueError, match="FinMind API token 未設定"):
-            FinMindAPIClient()
+            FinMindClient()
 
     def test_init_token_priority_arg_over_env(self):
-        """測試參數傳入的 token 優先於環境變數。"""
-        with patch.dict(os.environ, {"FINMIND_API_TOKEN": "env_token"}):
-            client = FinMindAPIClient(api_token="param_token_override")
-            assert client.api_token == "param_token_override"
+        with patch.dict(
+            os.environ, {"FINMIND_API_TOKEN": "env_finmind_token_to_be_overridden"}
+        ):
+            client = FinMindClient(api_token="param_finmind_token_override")
+            assert client.api_key == "param_finmind_token_override"
 
 
-@patch('requests.get') # Mock requests.get 以避免真實網路請求
-class TestFinMindAPIMakeRequest:
-    """測試 FinMindAPIClient._make_request 方法的各種情境。"""
+# FinMindClient 覆寫了 _request 方法，所以我們直接 mock requests.Session.get
+# 或者，如果 _request 內部使用了 self._session，我們可以 mock self._session.get
+@patch("requests.Session.get")
+class TestFinMindClientRequestOverride:
+    """測試 FinMindClient 覆寫的 _request 方法。"""
 
-    def test_make_request_success_json_response(self, mock_requests_get, client_with_token):
-        """測試成功請求並處理 JSON 回應。"""
+    def test_request_override_success_json(
+        self, mock_session_get, finmind_client_fixture: FinMindClient
+    ):
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.headers = {'Content-Type': 'application/json; charset=utf-8'}
-        # FinMind JSON 成功的 status code 在 payload 裡面
+        mock_response.headers = {"Content-Type": "application/json; charset=utf-8"}
         mock_response.json.return_value = {
             "status": 200,
             "msg": "success",
-            "data": [{"date": "2023-01-01", "value": 100}, {"date": "2023-01-02", "value": 101}]
+            "data": [{"col_a": "val1"}, {"col_a": "val2"}],
         }
-        mock_requests_get.return_value = mock_response
+        mock_session_get.return_value = mock_response
 
-        params = {"dataset": "TestDataset", "data_id": "TestID", "start_date": "2023-01-01"}
-        result_df = client_with_token._make_request(params)
+        params = {"dataset": "TestDS", "data_id": "ID001", "start_date": "2023-01-01"}
+        # _request 內部會添加 token
+        result_df = finmind_client_fixture._request(params=params)
 
-        expected_df = pd.DataFrame([{"date": "2023-01-01", "value": 100}, {"date": "2023-01-02", "value": 101}])
+        expected_df = pd.DataFrame([{"col_a": "val1"}, {"col_a": "val2"}])
 
-        mock_requests_get.assert_called_once_with(
-            BASE_URL,
-            params={**params, "token": TEST_API_TOKEN}, # 驗證 token 是否被加入 params
-            headers={}
+        # 驗證 requests.Session.get 被調用的參數
+        # _request 方法會將 self.api_key (即 TEST_API_TOKEN) 加入到 params['token']
+        expected_call_params = params.copy()
+        expected_call_params["token"] = TEST_API_TOKEN
+        mock_session_get.assert_called_once_with(
+            FINMIND_API_BASE_URL, params=expected_call_params
         )
+
         assert_frame_equal(result_df, expected_df)
 
-    def test_make_request_success_csv_response(self, mock_requests_get, client_with_token):
-        """測試成功請求並處理 CSV 回應。"""
+    def test_request_override_success_csv(
+        self, mock_session_get, finmind_client_fixture: FinMindClient
+    ):
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.headers = {'Content-Type': 'text/csv; charset=utf-8'}
-        csv_data = "date,value\n2023-01-01,100\n2023-01-02,101"
-        mock_response.text = csv_data
-        mock_requests_get.return_value = mock_response
+        mock_response.headers = {"Content-Type": "text/csv; charset=utf-8"}
+        csv_content = "header1,header2\nvalue1,value2\nvalue3,value4"
+        mock_response.text = csv_content
+        mock_session_get.return_value = mock_response
 
-        params = {"dataset": "TestCSVDataset", "data_id": "TestID", "start_date": "2023-01-01"}
-        result_df = client_with_token._make_request(params)
+        params = {"dataset": "CSV_DS", "data_id": "ID002", "start_date": "2023-02-01"}
+        result_df = finmind_client_fixture._request(params=params)
 
-        expected_df = pd.read_csv(StringIO(csv_data))
-
-        mock_requests_get.assert_called_once()
+        expected_df = pd.read_csv(StringIO(csv_content))
         assert_frame_equal(result_df, expected_df)
 
-    def test_make_request_json_api_error_status(self, mock_requests_get, client_with_token):
-        """測試 FinMind API 返回 JSON 格式但 status 非 200 的情況。"""
+    def test_request_override_json_api_logic_error(
+        self, mock_session_get, finmind_client_fixture: FinMindClient
+    ):
         mock_response = MagicMock()
-        mock_response.status_code = 200 # HTTP 狀態碼是 200
-        mock_response.headers = {'Content-Type': 'application/json'}
+        mock_response.status_code = 200  # HTTP OK
+        mock_response.headers = {"Content-Type": "application/json"}
         mock_response.json.return_value = {
-            "status": 400, # 但 API 內部狀態碼是錯誤
-            "msg": "Invalid parameters",
-            "data": []
+            "status": 400,
+            "msg": "API specific error",
+            "data": [],
         }
-        mock_requests_get.return_value = mock_response
+        mock_session_get.return_value = mock_response
 
-        params = {"dataset": "TestDataset", "data_id": "InvalidID", "start_date": "2023-01-01"}
-        result_df = client_with_token._make_request(params)
+        result_df = finmind_client_fixture._request(params={"dataset": "ErrorDS"})
+        assert result_df.empty  # 預期返回空 DataFrame
 
-        assert result_df is None # 預期返回 None
-
-    def test_make_request_json_no_data(self, mock_requests_get, client_with_token):
-        """測試 FinMind API 返回 JSON 格式，status 200 但 data 為空。"""
+    def test_request_override_http_error_raises(
+        self, mock_session_get, finmind_client_fixture: FinMindClient
+    ):
         mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.headers = {'Content-Type': 'application/json'}
-        mock_response.json.return_value = {
-            "status": 200,
-            "msg": "success",
-            "data": [] # data 列表為空
+        mock_response.status_code = 403  # Forbidden
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "Simulated HTTP 403 Error", response=mock_response
+        )
+        mock_session_get.return_value = mock_response
+
+        with pytest.raises(
+            requests.exceptions.HTTPError, match="Simulated HTTP 403 Error"
+        ):
+            finmind_client_fixture._request(params={"dataset": "ProtectedDS"})
+
+    def test_request_override_empty_params_value_error(
+        self, mock_session_get, finmind_client_fixture: FinMindClient
+    ):
+        with pytest.raises(
+            ValueError, match="請求 FinMind API 時，params 參數不得為空。"
+        ):
+            finmind_client_fixture._request(params=None)
+        mock_session_get.assert_not_called()
+
+
+# 由於 FinMindClient._request 已經被徹底測試，fetch_data 的測試主要關注它如何調用 _request
+@patch.object(FinMindClient, "_request")
+class TestFinMindClientFetchData:
+    """測試 FinMindClient.fetch_data 方法。"""
+
+    def test_fetch_data_calls_request_correctly(
+        self, mock_internal_request, finmind_client_fixture: FinMindClient
+    ):
+        mock_df_response = pd.DataFrame({"data": [1, 2, 3]})
+        mock_internal_request.return_value = mock_df_response
+
+        symbol_id = "0050"
+        dataset_name = "TaiwanStockPrice"
+        start = "2023-01-01"
+        end = "2023-01-31"
+
+        result = finmind_client_fixture.fetch_data(
+            symbol=symbol_id, dataset=dataset_name, start_date=start, end_date=end
+        )
+
+        expected_params_to_request = {
+            "dataset": dataset_name,
+            "data_id": symbol_id,
+            "start_date": start,
+            "end_date": end,
+            # 'token' 會在 _request 內部添加
         }
-        mock_requests_get.return_value = mock_response
+        mock_internal_request.assert_called_once_with(
+            endpoint="", params=expected_params_to_request
+        )
+        assert_frame_equal(result, mock_df_response)
 
-        params = {"dataset": "NoDataDataset", "data_id": "ID", "start_date": "2023-01-01"}
-        result_df = client_with_token._make_request(params)
+    def test_fetch_data_default_end_date(
+        self, mock_internal_request, finmind_client_fixture: FinMindClient
+    ):
+        mock_internal_request.return_value = pd.DataFrame()  # 返回不重要
 
-        assert isinstance(result_df, pd.DataFrame) # 預期返回空的 DataFrame
-        assert result_df.empty
+        with patch(
+            "core.clients.finmind.datetime"
+        ) as mock_dt:  # Patch datetime in finmind.py
+            mock_dt.now.return_value.strftime.return_value = (
+                "2023-12-25"  # Mocked current date
+            )
 
-    def test_make_request_http_error(self, mock_requests_get, client_with_token):
-        """測試發生 HTTP 錯誤 (例如 401, 403, 500)。"""
-        mock_response = MagicMock()
-        mock_response.status_code = 401 # 未授權
-        mock_response.headers = {'Content-Type': 'application/json'}
-        mock_response.text = '{"error": "Unauthorized"}'
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("Simulated HTTP Error")
-        mock_requests_get.return_value = mock_response
-
-        params = {"dataset": "ProtectedDataset", "data_id": "ID", "start_date": "2023-01-01"}
-        result_df = client_with_token._make_request(params)
-
-        assert result_df is None
-
-    def test_make_request_network_error(self, mock_requests_get, client_with_token):
-        """測試發生網路請求錯誤 (例如 requests.exceptions.RequestException)。"""
-        mock_requests_get.side_effect = requests.exceptions.ConnectionError("Simulated Connection Error")
-
-        params = {"dataset": "SomeDataset", "data_id": "ID", "start_date": "2023-01-01"}
-        result_df = client_with_token._make_request(params)
-
-        assert result_df is None
-
-    def test_make_request_unknown_content_type(self, mock_requests_get, client_with_token):
-        """測試 API 返回未知的 Content-Type。"""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.headers = {'Content-Type': 'application/octet-stream'} # 未知類型
-        mock_requests_get.return_value = mock_response
-
-        params = {"dataset": "UnknownTypeDataset", "data_id": "ID", "start_date": "2023-01-01"}
-        result_df = client_with_token._make_request(params)
-
-        assert result_df is None
-
-
-@patch.object(FinMindAPIClient, '_make_request') # Mock _make_request 方法
-class TestFinMindAPIGetDataMethods:
-    """測試 FinMindAPIClient 的高階 get_data 和特定資料集方法。"""
-
-    def test_get_data_calls_make_request_correctly(self, mock_make_request, client_with_token):
-        """測試 get_data 是否以正確的參數調用 _make_request。"""
-        mock_df = pd.DataFrame({"test": [1]})
-        mock_make_request.return_value = mock_df
-
-        dataset = "MyDataset"
-        data_id = "MyID"
-        start_date = "2023-05-01"
-        end_date = "2023-05-10"
-
-        result = client_with_token.get_data(dataset, data_id, start_date, end_date)
+            finmind_client_fixture.fetch_data(
+                symbol="2330",
+                dataset="TaiwanStockInfo",
+                start_date="2023-01-01",
+                # end_date is omitted
+            )
 
         expected_params = {
-            "dataset": dataset,
-            "data_id": data_id,
-            "start_date": start_date,
-            "end_date": end_date,
+            "dataset": "TaiwanStockInfo",
+            "data_id": "2330",
+            "start_date": "2023-01-01",
+            "end_date": "2023-12-25",  # Defaulted to mocked now
         }
-        mock_make_request.assert_called_once_with(expected_params)
-        assert_frame_equal(result, mock_df)
+        mock_internal_request.assert_called_once_with(
+            endpoint="", params=expected_params
+        )
 
-    def test_get_data_default_end_date(self, mock_make_request, client_with_token):
-        """測試 get_data 在未提供 end_date 時，是否使用當前日期。"""
-        mock_make_request.return_value = pd.DataFrame() # 返回什麼不重要，重點是參數
+    def test_fetch_data_missing_required_kwargs(
+        self, mock_internal_request, finmind_client_fixture: FinMindClient
+    ):
+        with pytest.raises(ValueError, match="必須在 kwargs 中提供 'dataset' 參數"):
+            finmind_client_fixture.fetch_data(symbol="2330", start_date="2023-01-01")
 
-        dataset = "MyDataset"
-        data_id = "MyID"
-        start_date = "2023-05-01"
+        with pytest.raises(ValueError, match="必須在 kwargs 中提供 'start_date' 參數"):
+            finmind_client_fixture.fetch_data(symbol="2330", dataset="TaiwanStockPrice")
 
-        # 為了使測試穩定，我們需要 mock datetime.now()
-        with patch('core.clients.finmind.datetime') as mock_datetime:
-            mock_datetime.now.return_value.strftime.return_value = "2023-12-25" # 假設今天是 2023-12-25
-            client_with_token.get_data(dataset, data_id, start_date)
+        mock_internal_request.assert_not_called()
 
-        expected_params = {
-            "dataset": dataset,
-            "data_id": data_id,
-            "start_date": start_date,
-            "end_date": "2023-12-25", # 預期使用 mock 的當前日期
-        }
-        mock_make_request.assert_called_once_with(expected_params)
-
-    def test_get_taiwan_stock_institutional_investors_buy_sell(self, mock_make_request, client_with_token):
-        """測試 get_taiwan_stock_institutional_investors_buy_sell 方法。"""
+    def test_get_taiwan_stock_institutional_investors_buy_sell(
+        self, mock_internal_request, finmind_client_fixture: FinMindClient
+    ):
+        """測試便捷方法是否正確調用 fetch_data。"""
         mock_df = pd.DataFrame({"buy_sell": [1000]})
-        mock_make_request.return_value = mock_df
+        # fetch_data 會調用 _request, 所以我們 mock _request
+        # 或者，如果我們假設 fetch_data 內部正確調用 _request,
+        # 我們可以讓 mock_internal_request (代表 _request) 返回預期結果
+        # 這裡的 mock_internal_request 是 mock FinMindClient._request
 
-        stock_id = "2330"
-        start_date = "2024-01-01"
-        end_date = "2024-01-05"
+        # 為了測試 get_taiwan_stock_institutional_investors_buy_sell
+        # 它調用 fetch_data, fetch_data 調用 _request
+        # 所以我們 patch _request
 
-        result = client_with_token.get_taiwan_stock_institutional_investors_buy_sell(stock_id, start_date, end_date)
+        finmind_client_fixture.get_taiwan_stock_institutional_investors_buy_sell(
+            stock_id="2330", start_date="2024-01-01", end_date="2024-01-05"
+        )
 
-        expected_params = {
+        expected_params_for_request = {
             "dataset": "TaiwanStockInstitutionalInvestorsBuySell",
-            "data_id": stock_id,
-            "start_date": start_date,
-            "end_date": end_date,
+            "data_id": "2330",
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-05",
         }
-        # 驗證 _make_request 是透過 get_data 被間接調用的
-        # 或者，如果我們想直接驗證 get_data 被調用，可以 patch get_data
-        # 但這裡我們是測試這個特定方法是否正確地將參數傳遞給 get_data (並最終到 _make_request)
-        mock_make_request.assert_called_once_with(expected_params)
-        assert_frame_equal(result, mock_df)
+        # 驗證 _request 被調用時的參數
+        mock_internal_request.assert_called_once_with(
+            endpoint="", params=expected_params_for_request
+        )
 
-# 運行測試:
+
 # pytest tests/unit/core/clients/test_finmind.py -v
-# 或在專案根目錄:
-# python -m pytest -v
-# (需要安裝 pytest, pandas, requests)
-# pip install pytest pandas requests
-# (requests-mock 不是必需的，因為我們用了 unittest.mock.patch)

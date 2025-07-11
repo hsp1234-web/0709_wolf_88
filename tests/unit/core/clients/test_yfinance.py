@@ -5,275 +5,314 @@ import pytest
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from unittest.mock import patch, MagicMock
-from datetime import datetime
 
-# 待測試的模組應在測試執行環境的 PYTHONPATH 中
-# 假設專案結構允許直接導入
-from core.clients import yfinance
+# from datetime import datetime # 可能不需要了
+import requests  # 導入 requests 以修復 NameError
+
+# 更新導入以反映重構後的客戶端
+from core.clients.yfinance import YFinanceClient
+
 
 @pytest.fixture
-def mock_yfinance_interaction():
+def yfinance_client_fixture():
+    """提供一個 YFinanceClient 實例。"""
+    client = YFinanceClient()
+    return client
+
+
+@pytest.fixture
+def mock_yfinance_ticker():
     """
     提供 yfinance.Ticker 的 mock 建構函式和 mock 實例。
     """
-    with patch('yfinance.Ticker') as mock_ticker_constructor:
+    with patch("yfinance.Ticker") as mock_ticker_constructor:
         mock_ticker_instance = MagicMock()
         mock_ticker_constructor.return_value = mock_ticker_instance
         yield mock_ticker_constructor, mock_ticker_instance
 
-def create_sample_stock_data(symbol: str, start_date_str: str, end_date_str: str) -> pd.DataFrame:
+
+def create_sample_stock_data_for_test(
+    start_date_str: str, end_date_str: str, has_volume: bool = True, tz_info=None
+) -> pd.DataFrame:
     """
-    輔助函數，用於創建符合 yfinance.history() 輸出格式的假數據 DataFrame。
+    輔助函數，創建符合 yfinance.history() 輸出格式的假數據 DataFrame。
     """
-    dates = pd.to_datetime(pd.date_range(start=start_date_str, end=end_date_str, freq='B')) # Business days
+    dates = pd.to_datetime(
+        pd.date_range(start=start_date_str, end=end_date_str, freq="B")
+    )
     if dates.empty:
         return pd.DataFrame()
 
     data = {
-        'Open': [100 + i for i in range(len(dates))],
-        'High': [105 + i for i in range(len(dates))],
-        'Low': [95 + i for i in range(len(dates))],
-        'Close': [102 + i for i in range(len(dates))],
-        'Adj Close': [101 + i for i in range(len(dates))], # yfinance 使用 'Adj Close'
-        'Volume': [1000000 + i*10000 for i in range(len(dates))]
+        "Open": [100 + i for i in range(len(dates))],
+        "High": [105 + i for i in range(len(dates))],
+        "Low": [95 + i for i in range(len(dates))],
+        "Close": [102 + i for i in range(len(dates))],
+        # yfinance.history(auto_adjust=False) 會包含 'Adj Close'
+        "Adj Close": [101 + i for i in range(len(dates))],
     }
+    if has_volume:
+        data["Volume"] = [1000000 + i * 10000 for i in range(len(dates))]
+
     df = pd.DataFrame(data, index=dates)
-    df.index.name = 'Date' # yfinance 的 history() 返回的 DataFrame 索引是 'Date'
+    df.index.name = "Date"
+    if tz_info:
+        df = df.tz_localize(tz_info)
     return df
 
-class TestFetchDailyOhlcv:
-    """
-    測試 fetch_daily_ohlcv 函數的各種情境。
-    """
 
-    def test_fetch_single_symbol_success(self, mock_yfinance_interaction):
-        """測試成功抓取單一商品代碼的數據。"""
-        mock_ticker_constructor, mock_ticker_instance = mock_yfinance_interaction
-        symbol = 'AAPL'
-        start_date = '2023-01-01'
-        end_date = '2023-01-05'
+class TestYFinanceClientInitialization:
+    """測試 YFinanceClient 的初始化。"""
 
-        # 設定 mock Ticker(...).history(...) 的返回值
-        mock_df = create_sample_stock_data(symbol, start_date, end_date)
-        mock_ticker_instance.history.return_value = mock_df.copy() # 確保返回副本
+    def test_init_success(self, yfinance_client_fixture: YFinanceClient):
+        assert yfinance_client_fixture.api_key is None
+        assert yfinance_client_fixture.base_url is None
+        assert isinstance(
+            yfinance_client_fixture._session, requests.Session
+        )  # From BaseAPIClient
 
-        result_df = yfinance.fetch_daily_ohlcv([symbol], start_date, end_date)
 
-        # 驗證 yf.Ticker 是否以正確的 symbol 被調用
+class TestYFinanceClientFetchData:
+    """測試 YFinanceClient.fetch_data 方法。"""
+
+    def test_fetch_single_symbol_success(
+        self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
+    ):
+        mock_ticker_constructor, mock_ticker_instance = mock_yfinance_ticker
+        symbol = "AAPL"
+        start_date = "2023-01-02"  # Monday
+        end_date = "2023-01-03"  # Tuesday
+
+        mock_df_from_yf = create_sample_stock_data_for_test(start_date, end_date)
+        mock_ticker_instance.history.return_value = mock_df_from_yf.copy()
+
+        result_df = yfinance_client_fixture.fetch_data(
+            symbol=symbol, start_date=start_date, end_date=end_date
+        )
+
         mock_ticker_constructor.assert_called_once_with(symbol)
+        mock_ticker_instance.history.assert_called_once_with(
+            start=start_date,
+            end=end_date,
+            auto_adjust=False,
+            progress=False,
+            interval="1d",
+            actions=False,
+        )
 
-        # 驗證 history 方法是否以正確的參數被調用
-        mock_ticker_instance.history.assert_called_once_with(start=start_date, end=end_date, auto_adjust=False)
+        expected_df = mock_df_from_yf.reset_index()
+        expected_df["symbol"] = symbol
+        expected_df.rename(columns={"Adj Close": "Adj_Close"}, inplace=True)
+        expected_df["Date"] = pd.to_datetime(expected_df["Date"])
 
-        # 準備預期結果 DataFrame
-        expected_df = mock_df.reset_index()
-        expected_df['symbol'] = symbol
-        expected_df.rename(columns={'Adj Close': 'Adj_Close'}, inplace=True)
-        # 確保 Date 欄位是 datetime64[ns] 型別 (create_sample_stock_data 已處理 index，reset_index 後保持)
-        expected_df['Date'] = pd.to_datetime(expected_df['Date'])
-
-        # 欄位順序
-        expected_cols = ['Date', 'symbol', 'Open', 'High', 'Low', 'Close', 'Adj_Close', 'Volume']
+        expected_cols = [
+            "Date",
+            "symbol",
+            "Open",
+            "High",
+            "Low",
+            "Close",
+            "Adj_Close",
+            "Volume",
+        ]
         expected_df = expected_df[expected_cols]
 
         assert_frame_equal(result_df, expected_df, check_dtype=True)
 
-    def test_fetch_multiple_symbols_success(self, mock_yfinance_interaction):
-        """測試成功抓取多個商品代碼的數據。"""
-        mock_ticker_constructor, mock_ticker_instance = mock_yfinance_interaction
-        symbols = ['AAPL', 'MSFT']
-        start_date = '2023-01-01'
-        end_date = '2023-01-03'
+    def test_fetch_data_with_period_instead_of_dates(
+        self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
+    ):
+        mock_ticker_constructor, mock_ticker_instance = mock_yfinance_ticker
+        symbol = "MSFT"
+        period = "5d"
+        # 當使用 period 時，yfinance 會自動計算 start/end，所以我們的 mock 數據日期不那麼重要
+        mock_df_from_yf = create_sample_stock_data_for_test(
+            "2023-01-02", "2023-01-06"
+        )  # 5 business days
+        mock_ticker_instance.history.return_value = mock_df_from_yf.copy()
 
-        # 為每個 symbol 準備 mock 數據
-        mock_data_aapl = create_sample_stock_data('AAPL', start_date, end_date)
-        mock_data_msft = create_sample_stock_data('MSFT', start_date, end_date)
+        result_df = yfinance_client_fixture.fetch_data(symbol=symbol, period=period)
 
-        # 設定 mock Ticker(...).history(...) 針對不同 symbol 的返回值
-        # yf.Ticker(symbol).history(...)
-        # 第一次調用 Ticker('AAPL').history(...)
-        # 第二次調用 Ticker('MSFT').history(...)
-        mock_ticker_instance.history.side_effect = [mock_data_aapl.copy(), mock_data_msft.copy()]
+        mock_ticker_instance.history.assert_called_once_with(
+            period=period,
+            auto_adjust=False,
+            progress=False,
+            interval="1d",
+            actions=False,
+            # start 和 end 不應在 history_params 中
+        )
+        # 後續的 DataFrame 轉換和斷言邏輯與上面的測試類似
+        assert not result_df.empty
+        assert result_df["symbol"].iloc[0] == symbol
 
-        result_df = yfinance.fetch_daily_ohlcv(symbols, start_date, end_date)
+    def test_fetch_data_no_data_returned_by_yfinance(
+        self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
+    ):
+        _, mock_ticker_instance = mock_yfinance_ticker
+        mock_ticker_instance.history.return_value = (
+            pd.DataFrame()
+        )  # yf.Ticker().history() 返回空 DataFrame
 
-        # 驗證 Ticker 的調用次數和參數
-        assert mock_ticker_constructor.call_count == len(symbols)
-        mock_ticker_constructor.assert_any_call('AAPL')
-        mock_ticker_constructor.assert_any_call('MSFT')
-
-        # 驗證 history 的調用次數
-        assert mock_ticker_instance.history.call_count == len(symbols)
-        mock_ticker_instance.history.assert_any_call(start=start_date, end=end_date, auto_adjust=False)
-
-        # 準備預期結果 DataFrame
-        expected_aapl = mock_data_aapl.reset_index()
-        expected_aapl['symbol'] = 'AAPL'
-        expected_msft = mock_data_msft.reset_index()
-        expected_msft['symbol'] = 'MSFT'
-
-        expected_df = pd.concat([expected_aapl, expected_msft], ignore_index=True)
-        expected_df.rename(columns={'Adj Close': 'Adj_Close'}, inplace=True)
-        expected_df['Date'] = pd.to_datetime(expected_df['Date'])
-
-        expected_cols = ['Date', 'symbol', 'Open', 'High', 'Low', 'Close', 'Adj_Close', 'Volume']
-        expected_df = expected_df[expected_cols]
-
-        # 比較時可能需要排序，因為 concat 的順序可能不保證
-        result_df = result_df.sort_values(by=['symbol', 'Date']).reset_index(drop=True)
-        expected_df = expected_df.sort_values(by=['symbol', 'Date']).reset_index(drop=True)
-
-        assert_frame_equal(result_df, expected_df, check_dtype=True)
-
-    def test_fetch_no_data_for_symbol(self, mock_yfinance_interaction):
-        """測試當某個商品代碼無數據時的情況。"""
-        mock_ticker_constructor, mock_ticker_instance = mock_yfinance_interaction
-        symbols = ['VALID', 'EMPTY']
-        start_date = '2023-01-01'
-        end_date = '2023-01-02'
-
-        mock_data_valid = create_sample_stock_data('VALID', start_date, end_date)
-        mock_data_empty = pd.DataFrame() # EMPTY 代碼返回空 DataFrame
-
-        mock_ticker_instance.history.side_effect = [mock_data_valid.copy(), mock_data_empty.copy()]
-
-        result_df = yfinance.fetch_daily_ohlcv(symbols, start_date, end_date)
-
-        # 預期只包含 VALID 的數據
-        expected_valid = mock_data_valid.reset_index()
-        expected_valid['symbol'] = 'VALID'
-        expected_valid.rename(columns={'Adj Close': 'Adj_Close'}, inplace=True)
-        expected_valid['Date'] = pd.to_datetime(expected_valid['Date'])
-
-        expected_cols = ['Date', 'symbol', 'Open', 'High', 'Low', 'Close', 'Adj_Close', 'Volume']
-        expected_df = expected_valid[expected_cols]
-
-        assert_frame_equal(result_df, expected_df, check_dtype=True)
-
-    def test_fetch_all_symbols_no_data(self, mock_yfinance_interaction):
-        """測試所有商品代碼均無數據時返回空 DataFrame。"""
-        mock_ticker_constructor, mock_ticker_instance = mock_yfinance_interaction
-        symbols = ['EMPTY1', 'EMPTY2']
-        start_date = '2023-01-01'
-        end_date = '2023-01-02'
-
-        mock_ticker_instance.history.return_value = pd.DataFrame() # 所有調用都返回空
-
-        result_df = yfinance.fetch_daily_ohlcv(symbols, start_date, end_date)
-
-        assert result_df.empty
-        assert mock_ticker_instance.history.call_count == len(symbols)
-
-    def test_fetch_yfinance_api_error(self, mock_yfinance_interaction):
-        """測試 yfinance API 調用引發異常時返回空 DataFrame。"""
-        mock_ticker_constructor, mock_ticker_instance = mock_yfinance_interaction
-        symbols = ['AAPL']
-        start_date = '2023-01-01'
-        end_date = '2023-01-02'
-
-        mock_ticker_instance.history.side_effect = Exception("Simulated API Error")
-
-        result_df = yfinance.fetch_daily_ohlcv(symbols, start_date, end_date)
-
-        assert result_df.empty
-        # 即使發生錯誤，也應該有嘗試調用
-        mock_ticker_constructor.assert_called_once_with(symbols[0])
-        mock_ticker_instance.history.assert_called_once()
-
-
-    def test_fetch_empty_symbol_list(self):
-        """測試傳入空的商品代碼列表時返回空 DataFrame。"""
-        result_df = yfinance.fetch_daily_ohlcv([], '2023-01-01', '2023-01-02')
+        result_df = yfinance_client_fixture.fetch_data(
+            symbol="EMPTY", start_date="2023-01-01", end_date="2023-01-01"
+        )
         assert result_df.empty
 
-    def test_fetch_invalid_symbols_type(self):
-        """測試傳入無效的 symbols 參數類型 (非列表) 時返回空 DataFrame。"""
-        result_df = yfinance.fetch_daily_ohlcv("AAPL", '2023-01-01', '2023-01-02') # type: ignore
+    def test_fetch_data_yfinance_raises_exception(
+        self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
+    ):
+        _, mock_ticker_instance = mock_yfinance_ticker
+        mock_ticker_instance.history.side_effect = Exception("Simulated yfinance error")
+
+        result_df = yfinance_client_fixture.fetch_data(
+            symbol="ERROR", start_date="2023-01-01", end_date="2023-01-01"
+        )
+        assert result_df.empty  # 錯誤應被捕獲並返回空 DataFrame
+
+    def test_fetch_data_missing_dates_or_period_raises_value_error(
+        self, yfinance_client_fixture: YFinanceClient
+    ):
+        with pytest.raises(
+            ValueError,
+            match="必須提供 'period' 或 'start_date' 與 'end_date' 其中之一。",
+        ):
+            yfinance_client_fixture.fetch_data(symbol="AAPL")  # 缺少所有日期/期間參數
+
+        with pytest.raises(
+            ValueError,
+            match="必須提供 'period' 或 'start_date' 與 'end_date' 其中之一。",
+        ):
+            yfinance_client_fixture.fetch_data(
+                symbol="AAPL", start_date="2023-01-01"
+            )  # 缺少 end_date
+
+    def test_fetch_data_handles_datetime_column(
+        self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
+    ):
+        """測試當 yfinance 返回 'Datetime' 而不是 'Date' 時 (通常是 intraday)。"""
+        _, mock_ticker_instance = mock_yfinance_ticker
+        symbol = "SPY"
+        # 創建一個帶 'Datetime' 索引的 mock DataFrame
+        dates = pd.to_datetime(
+            pd.date_range(start="2023-01-02 09:30:00", periods=2, freq="1min")
+        )
+        mock_data = pd.DataFrame({"Open": [100, 101]}, index=dates)
+        mock_data.index.name = "Datetime"  # yfinance 對 intraday 可能用 'Datetime'
+        mock_ticker_instance.history.return_value = mock_data.copy()
+
+        result_df = yfinance_client_fixture.fetch_data(
+            symbol=symbol, period="1d", interval="1m"
+        )
+
+        assert "Date" in result_df.columns
+        assert "Datetime" not in result_df.columns
+        assert result_df["Date"].iloc[0] == pd.Timestamp("2023-01-02 09:30:00")
+
+    def test_fetch_data_timezone_handling(
+        self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
+    ):
+        _, mock_ticker_instance = mock_yfinance_ticker
+        symbol = "MSFT"
+        # 創建帶時區的數據
+        mock_df_tz = create_sample_stock_data_for_test(
+            "2023-01-02", "2023-01-02", tz_info="US/Eastern"
+        )
+        mock_ticker_instance.history.return_value = mock_df_tz.copy()
+
+        result_df = yfinance_client_fixture.fetch_data(
+            symbol=symbol, start_date="2023-01-02", end_date="2023-01-02"
+        )
+
+        assert result_df["Date"].dt.tz is None  # 確保時區被移除
+        # 驗證 tz_localize(None) 的效果，它會保留 "絕對" 時間點，然後移除時區標記
+        # '2023-01-02 00:00:00-05:00' (EST) -> '2023-01-02 05:00:00' (naive UTC)
+        assert result_df["Date"].iloc[0] == pd.Timestamp("2023-01-02 05:00:00")
+
+
+class TestYFinanceClientFetchMultipleSymbolsData:
+    """測試 YFinanceClient.fetch_multiple_symbols_data 方法。"""
+
+    @patch.object(YFinanceClient, "fetch_data")  # Mock YFinanceClient.fetch_data
+    def test_fetch_multiple_success(
+        self, mock_single_fetch, yfinance_client_fixture: YFinanceClient
+    ):
+        symbols = ["AAPL", "MSFT"]
+        df_aapl = pd.DataFrame({"symbol": ["AAPL"], "Close": [150]})
+        df_msft = pd.DataFrame({"symbol": ["MSFT"], "Close": [300]})
+
+        def side_effect_for_fetch(symbol, **kwargs):
+            if symbol == "AAPL":
+                return df_aapl
+            if symbol == "MSFT":
+                return df_msft
+            return pd.DataFrame()
+
+        mock_single_fetch.side_effect = side_effect_for_fetch
+
+        result_df = yfinance_client_fixture.fetch_multiple_symbols_data(
+            symbols=symbols, start_date="2023-01-01", end_date="2023-01-01"
+        )
+
+        expected_df = pd.concat([df_aapl, df_msft], ignore_index=True)
+        assert_frame_equal(result_df, expected_df)
+        assert mock_single_fetch.call_count == 2
+        mock_single_fetch.assert_any_call(
+            symbol="AAPL", start_date="2023-01-01", end_date="2023-01-01"
+        )
+        mock_single_fetch.assert_any_call(
+            symbol="MSFT", start_date="2023-01-01", end_date="2023-01-01"
+        )
+
+    @patch.object(YFinanceClient, "fetch_data")
+    def test_fetch_multiple_one_symbol_fails(
+        self, mock_single_fetch, yfinance_client_fixture: YFinanceClient
+    ):
+        symbols = ["GOOG", "FAIL", "AMZN"]
+        df_goog = pd.DataFrame({"symbol": ["GOOG"], "Close": [2000]})
+        df_amzn = pd.DataFrame({"symbol": ["AMZN"], "Close": [100]})
+
+        def side_effect_for_fetch(symbol, **kwargs):
+            if symbol == "GOOG":
+                return df_goog
+            if symbol == "FAIL":
+                raise Exception(
+                    "Simulated error for FAIL symbol"
+                )  # fetch_data 內部會捕獲並返回空 DF
+            if symbol == "AMZN":
+                return df_amzn
+            return pd.DataFrame()
+
+        # 調整：由於 fetch_data 內部捕獲異常並返回空 DF，這裡 side_effect 應返回空 DF 代表失敗
+        def side_effect_for_fetch_adjusted(symbol, **kwargs):
+            if symbol == "GOOG":
+                return df_goog
+            if symbol == "FAIL":
+                return pd.DataFrame()  # fetch_data 內部捕獲異常並返回空 DF
+            if symbol == "AMZN":
+                return df_amzn
+            return pd.DataFrame()
+
+        mock_single_fetch.side_effect = side_effect_for_fetch_adjusted
+
+        result_df = yfinance_client_fixture.fetch_multiple_symbols_data(
+            symbols=symbols, period="1d"
+        )
+
+        expected_df = pd.concat([df_goog, df_amzn], ignore_index=True)
+        assert_frame_equal(result_df, expected_df)
+        assert mock_single_fetch.call_count == 3  # 每個都會嘗試
+
+    def test_fetch_multiple_empty_symbol_list(
+        self, yfinance_client_fixture: YFinanceClient
+    ):
+        result_df = yfinance_client_fixture.fetch_multiple_symbols_data(symbols=[])
         assert result_df.empty
 
-    def test_fetch_data_with_missing_volume(self, mock_yfinance_interaction):
-        """測試抓取的數據可能缺少 'Volume' 欄位 (例如指數)。"""
-        mock_ticker_constructor, mock_ticker_instance = mock_yfinance_interaction
-        symbol = '^GSPC' # 指數通常沒有 Volume
-        start_date = '2023-01-01'
-        end_date = '2023-01-03'
+    def test_fetch_multiple_invalid_symbols_type(
+        self, yfinance_client_fixture: YFinanceClient
+    ):
+        result_df = yfinance_client_fixture.fetch_multiple_symbols_data(symbols="NOTALIST")  # type: ignore
+        assert result_df.empty
 
-        mock_data_no_volume = create_sample_stock_data(symbol, start_date, end_date)
-        del mock_data_no_volume['Volume'] # 模擬沒有 Volume 的情況
 
-        mock_ticker_instance.history.return_value = mock_data_no_volume.copy()
-
-        result_df = yfinance.fetch_daily_ohlcv([symbol], start_date, end_date)
-
-        expected_df = mock_data_no_volume.reset_index()
-        expected_df['symbol'] = symbol
-        expected_df.rename(columns={'Adj Close': 'Adj_Close'}, inplace=True)
-        expected_df['Date'] = pd.to_datetime(expected_df['Date'])
-
-        # 預期結果中不應包含 'Volume'
-        expected_cols = ['Date', 'symbol', 'Open', 'High', 'Low', 'Close', 'Adj_Close']
-        expected_df = expected_df[expected_cols]
-
-        assert_frame_equal(result_df, expected_df, check_dtype=True)
-        assert 'Volume' not in result_df.columns
-
-    def test_date_column_timezone_conversion(self, mock_yfinance_interaction):
-        """測試 Date 欄位時區被正確處理 (轉換為 UTC naive)。"""
-        mock_ticker_constructor, mock_ticker_instance = mock_yfinance_interaction
-        symbol = 'AAPL'
-        start_date = '2023-01-01'
-        end_date = '2023-01-01' # 單日測試
-
-        # 創建一個帶有時區的 Date 索引的 DataFrame
-        raw_date = pd.Timestamp('2023-01-01 00:00:00', tz='US/Eastern')
-        mock_data_with_tz = pd.DataFrame({
-            'Open': [100], 'High': [105], 'Low': [95], 'Close': [102], 'Adj Close': [101], 'Volume': [1000000]
-        }, index=pd.DatetimeIndex([raw_date], name='Date'))
-
-        mock_ticker_instance.history.return_value = mock_data_with_tz.copy()
-
-        result_df = yfinance.fetch_daily_ohlcv([symbol], start_date, end_date)
-
-        # 預期 Date 欄位是 datetime64[ns] 且沒有時區信息
-        assert result_df['Date'].dtype == 'datetime64[ns]'
-        assert result_df['Date'].dt.tz is None
-        # 驗證日期是否正確轉換 (假設 yfinance 返回的日期部分是正確的)
-        # 此處 mock_data_with_tz 的索引已經是轉換後的日期，所以 reset_index() 後的 Date 欄位值應該是 '2023-01-01'
-        # tz_convert(None) 會移除時區，但保持時間戳的"絕對時間點" (如果原始時間是 00:00 EST，轉換後會是 05:00 UTC naive)
-        # 但 yfinance 通常返回的是市場日期，不帶時間部分，或時間部分為00:00:00
-        # 這裡的 create_sample_stock_data 和 yfinance 實際行為可能略有差異
-        # 我們的 fetch_daily_ohlcv 邏輯是： if hist_data['Date'].dt.tz is not None: hist_data['Date'] = hist_data['Date'].dt.tz_convert(None)
-        # 如果 yf 返回的 Date 是 '2023-01-01 00:00:00-05:00' (EST)，tz_convert(None) 會變成 '2023-01-01 05:00:00' (UTC naive)
-        # 這可能不是我們想要的"日期"部分。但目前代碼就是這樣寫的。
-        # 更好的做法可能是 hist_data['Date'] = hist_data['Date'].dt.normalize().dt.tz_localize(None)
-        # 但我們現在是測試現有代碼。
-
-        # 根據現有代碼，我們預期 '2023-01-01 00:00:00 US/Eastern' 轉換為 UTC naive 後，日期部分不應改變，時間部分會根據偏移量改變
-        # 然而，yfinance 返回的通常是日期，時間部分為午夜。如果它返回的是 '2023-01-01' (日期對象)，則 reset_index 後變為 Timestamp('2023-01-01 00:00:00')
-        # 如果它返回的是帶時區的 Timestamp('2023-01-01 00:00:00-0500')，則 .dt.tz_convert(None) 會變成 Timestamp('2023-01-01 05:00:00')
-        # 由於我們的 create_sample_stock_data 使用的是 pd.date_range，它創建的是無時區的 Timestamp，
-        # 所以這個特定測試主要驗證 mock 的歷史數據若帶有時區，會被移除。
-
-        # 簡化驗證：只檢查時區被移除
-        assert result_df['Date'].iloc[0] == pd.Timestamp('2023-01-01 05:00:00') # 00:00 EST -> 05:00 UTC
-
-    def test_fetch_data_column_renaming_adj_close(self, mock_yfinance_interaction):
-        """測試 'Adj Close' 欄位被正確重命名為 'Adj_Close'。"""
-        mock_ticker_constructor, mock_ticker_instance = mock_yfinance_interaction
-        symbol = 'TEST'
-        # 使用一個營業日確保 create_sample_stock_data 返回非空 DataFrame
-        start_date = '2023-01-02' # 星期一
-        end_date = '2023-01-02'   # 星期一
-
-        # create_sample_stock_data 已經使用了 'Adj Close'
-        mock_df = create_sample_stock_data(symbol, start_date, end_date)
-        mock_ticker_instance.history.return_value = mock_df.copy()
-
-        result_df = yfinance.fetch_daily_ohlcv([symbol], start_date, end_date)
-
-        assert 'Adj_Close' in result_df.columns
-        assert 'Adj Close' not in result_df.columns
-
-        # 驗證數據是否正確
-        expected_adj_close_value = mock_df['Adj Close'].iloc[0]
-        assert result_df['Adj_Close'].iloc[0] == expected_adj_close_value
+# pytest tests/unit/core/clients/test_yfinance.py -v

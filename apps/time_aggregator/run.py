@@ -13,6 +13,7 @@ import pandas as pd
 import datetime
 from apps.time_aggregator.core.aggregator import TimeAggregator
 
+
 # --- 核心邏輯 ---
 def main():
     """
@@ -20,7 +21,7 @@ def main():
     """
     print("[INFO] Time Aggregator 服務啟動...")
     db_path = "market_data.duckdb"  # 實際應用中可能來自配置
-    silver_table_name = "silver_market_ohlcv_1m" # 銀層表名
+    silver_table_name = "silver_market_ohlcv_1m"  # 銀層表名
 
     # 清理舊的測試數據庫文件 (如果存在)，以便每次運行都是乾淨的狀態
     # 這主要用於本地測試，實際部署時可能不需要
@@ -42,41 +43,97 @@ def main():
             simulated_start_time = datetime.datetime(2023, 11, 1, 9, 0, 0)
             mock_ticks_list = []
             # 標的 A
-            mock_ticks_list.extend([
-                {'timestamp': simulated_start_time + datetime.timedelta(seconds=5), 'price': 100.0, 'volume': 10, 'instrument': 'INSTRUMENT_A'},
-                {'timestamp': simulated_start_time + datetime.timedelta(seconds=15), 'price': 101.0, 'volume': 5, 'instrument': 'INSTRUMENT_A'},
-                {'timestamp': simulated_start_time + datetime.timedelta(seconds=30), 'price': 99.0, 'volume': 8, 'instrument': 'INSTRUMENT_A'},
-                {'timestamp': simulated_start_time + datetime.timedelta(seconds=50), 'price': 100.5, 'volume': 12, 'instrument': 'INSTRUMENT_A'}, # Min 1 for A
-                {'timestamp': simulated_start_time + datetime.timedelta(minutes=1, seconds=10), 'price': 102.0, 'volume': 7, 'instrument': 'INSTRUMENT_A'}, # Min 2 for A
-            ])
+            mock_ticks_list.extend(
+                [
+                    {
+                        "timestamp": simulated_start_time
+                        + datetime.timedelta(seconds=5),
+                        "price": 100.0,
+                        "volume": 10,
+                        "instrument": "INSTRUMENT_A",
+                    },
+                    {
+                        "timestamp": simulated_start_time
+                        + datetime.timedelta(seconds=15),
+                        "price": 101.0,
+                        "volume": 5,
+                        "instrument": "INSTRUMENT_A",
+                    },
+                    {
+                        "timestamp": simulated_start_time
+                        + datetime.timedelta(seconds=30),
+                        "price": 99.0,
+                        "volume": 8,
+                        "instrument": "INSTRUMENT_A",
+                    },
+                    {
+                        "timestamp": simulated_start_time
+                        + datetime.timedelta(seconds=50),
+                        "price": 100.5,
+                        "volume": 12,
+                        "instrument": "INSTRUMENT_A",
+                    },  # Min 1 for A
+                    {
+                        "timestamp": simulated_start_time
+                        + datetime.timedelta(minutes=1, seconds=10),
+                        "price": 102.0,
+                        "volume": 7,
+                        "instrument": "INSTRUMENT_A",
+                    },  # Min 2 for A
+                ]
+            )
             # 標的 B
-            mock_ticks_list.extend([
-                {'timestamp': simulated_start_time + datetime.timedelta(seconds=10), 'price': 2000.0, 'volume': 20, 'instrument': 'INSTRUMENT_B'},
-                {'timestamp': simulated_start_time + datetime.timedelta(seconds=40), 'price': 1995.0, 'volume': 15, 'instrument': 'INSTRUMENT_B'}, # Min 1 for B
-            ])
+            mock_ticks_list.extend(
+                [
+                    {
+                        "timestamp": simulated_start_time
+                        + datetime.timedelta(seconds=10),
+                        "price": 2000.0,
+                        "volume": 20,
+                        "instrument": "INSTRUMENT_B",
+                    },
+                    {
+                        "timestamp": simulated_start_time
+                        + datetime.timedelta(seconds=40),
+                        "price": 1995.0,
+                        "volume": 15,
+                        "instrument": "INSTRUMENT_B",
+                    },  # Min 1 for B
+                ]
+            )
 
             simulated_ticks_df = pd.DataFrame(mock_ticks_list)
             # 確保 'timestamp' 欄位是 datetime 類型
-            simulated_ticks_df['timestamp'] = pd.to_datetime(simulated_ticks_df['timestamp'])
+            simulated_ticks_df["timestamp"] = pd.to_datetime(
+                simulated_ticks_df["timestamp"]
+            )
             print(f"[INFO] 成功創建 {len(simulated_ticks_df)} 筆模擬 Tick 數據。")
             # print("[DEBUG] 模擬 Tick DataFrame 預覽:")
             # print(simulated_ticks_df.head())
 
             # 2. 調用 aggregate_to_1m_ohlcv 處理這個假數據 DataFrame
-            print(f"\n[INFO] 步驟 2: 正在將 Tick 數據聚合為 1 分鐘 OHLCV...")
-            aggregated_ohlcv_df = aggregator.aggregate_to_1m_ohlcv(simulated_ticks_df.copy()) # 傳遞副本以防意外修改
+            print("\n[INFO] 步驟 2: 正在將 Tick 數據聚合為 1 分鐘 OHLCV...")
+            aggregated_ohlcv_df = aggregator.aggregate_to_1m_ohlcv(
+                simulated_ticks_df.copy()
+            )  # 傳遞副本以防意外修改
 
             if aggregated_ohlcv_df.empty:
                 print("[WARN] 聚合結果為空，可能沒有有效的 Tick 數據進行聚合。")
             else:
-                print(f"[INFO] 成功聚合為 {len(aggregated_ohlcv_df)} 筆 1 分鐘 OHLCV 數據。")
+                print(
+                    f"[INFO] 成功聚合為 {len(aggregated_ohlcv_df)} 筆 1 分鐘 OHLCV 數據。"
+                )
                 # print("[DEBUG] 聚合 OHLCV DataFrame 預覽:")
                 # print(aggregated_ohlcv_df)
 
             # 3. 調用 write_silver_ohlcv 將聚合結果寫入數據庫
             if not aggregated_ohlcv_df.empty:
-                print(f"\n[INFO] 步驟 3: 正在將聚合後的 OHLCV 數據寫入銀層資料表 '{silver_table_name}'...")
-                aggregator.write_silver_ohlcv(aggregated_ohlcv_df, silver_table_name=silver_table_name)
+                print(
+                    f"\n[INFO] 步驟 3: 正在將聚合後的 OHLCV 數據寫入銀層資料表 '{silver_table_name}'..."
+                )
+                aggregator.write_silver_ohlcv(
+                    aggregated_ohlcv_df, silver_table_name=silver_table_name
+                )
                 print(f"[INFO] 數據已成功存入銀層資料表 '{silver_table_name}'。")
 
                 # (可選) 驗證寫入
@@ -92,6 +149,7 @@ def main():
     except Exception as e:
         print(f"[ERROR] Time Aggregator 執行過程中發生錯誤: {e}")
         # 在實際應用中，這裡可能需要更複雜的錯誤處理機制
+
 
 if __name__ == "__main__":
     main()

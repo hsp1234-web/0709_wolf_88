@@ -3,90 +3,227 @@
 
 import yfinance as yf
 import pandas as pd
-from datetime import datetime
+
 import traceback
+from typing import List, Optional, Any, cast # Added Any, cast. Optional, List were already there.
 
-def fetch_daily_ohlcv(symbols: list[str], start_date: str, end_date: str) -> pd.DataFrame:
+from .base import BaseAPIClient
+
+
+class YFinanceClient(BaseAPIClient):
     """
-    從 Yahoo Finance 抓取指定商品代碼列表在給定日期範圍內的每日 OHLCV (開盤價, 最高價, 最低價, 收盤價, 成交量) 數據。
-    能夠處理單一或多個商品代碼。
-
-    Args:
-        symbols (list[str]): 商品代碼列表 (例如: ['^GSPC', 'AAPL'])。
-        start_date (str): 開始日期 (格式: YYYY-MM-DD)。
-        end_date (str): 結束日期 (格式: YYYY-MM-DD)。
-
-    Returns:
-        pd.DataFrame: 包含 OHLCV 數據的 DataFrame，欄位包括
-                      ['Date', 'symbol', 'Open', 'High', 'Low', 'Close', 'Adj_Close', 'Volume']。
-                      若抓取失敗或無數據，則返回一個空的 DataFrame。
+    用於從 Yahoo Finance 下載市場數據的客戶端。
+    此客戶端使用 yfinance 套件，不直接進行 HTTP 請求，
+    因此不使用 BaseAPIClient 的 _request 方法。
     """
-    print(f"資訊：開始從 Yahoo Finance 抓取數據：商品 {symbols}, 日期範圍 {start_date} - {end_date}")
-    if not isinstance(symbols, list):
-        print("錯誤：symbols 參數必須是一個列表。")
-        return pd.DataFrame()
-    if not symbols:
-        print("錯誤：symbols 列表不能為空。")
-        return pd.DataFrame()
 
-    try:
-        all_data_list = []
-        for symbol_ticker in symbols:
-            print(f"資訊：正在抓取 {symbol_ticker}...")
-            ticker_obj = yf.Ticker(symbol_ticker)
-            # history() 函數參數: period, start, end, interval, etc.
-            # 我們使用 start 和 end
-            hist_data = ticker_obj.history(start=start_date, end=end_date, auto_adjust=False)
+    def __init__(self):
+        """
+        初始化 YFinanceClient。
+        Yahoo Finance 不需要 API Key 或特定的 Base URL (由 yfinance 套件處理)。
+        """
+        super().__init__(api_key=None, base_url=None)
+        print("資訊：YFinanceClient 初始化完成。")
 
-            if hist_data.empty:
-                print(f"警告：商品 {symbol_ticker} 在 {start_date} - {end_date} 範圍內未找到數據。")
-                continue
+    def fetch_data(self, symbol: str, **kwargs) -> pd.DataFrame: # Return type changed to pd.DataFrame from Optional[pd.DataFrame]
+        """
+        從 Yahoo Finance 抓取指定商品代碼的每日 OHLCV 數據。
+        """
+        start_date = kwargs.get("start_date")
+        end_date = kwargs.get("end_date")
+        period = kwargs.get("period")
 
-            hist_data.reset_index(inplace=True) # 將 Date 從索引變為欄位
-            hist_data['symbol'] = symbol_ticker # 新增 symbol 欄位
+        if not period and (not start_date or not end_date):
+            raise ValueError(
+                "必須提供 'period' 或 'start_date' 與 'end_date' 其中之一。"
+            )
 
-            # yfinance 返回的 Date 欄位可能是 datetime unaware 或 aware，統一為 UTC naive
-            if hist_data['Date'].dt.tz is not None:
-                 hist_data['Date'] = hist_data['Date'].dt.tz_convert(None)
+        history_params = {
+            "start": start_date,
+            "end": end_date,
+            "auto_adjust": kwargs.get("auto_adjust", False),
+            "progress": kwargs.get("progress", False),
+            "interval": kwargs.get("interval", "1d"),
+            "actions": kwargs.get("actions", False),
+        }
+        if period:
+            history_params["period"] = period
+            history_params.pop("start", None)
+            history_params.pop("end", None)
 
-            all_data_list.append(hist_data)
+        print(
+            f"資訊：YFinanceClient 開始抓取數據：商品 {symbol}, 參數: {history_params}"
+        )
 
-        if not all_data_list:
-            print("資訊：未從任何指定商品抓取到數據。")
+        try:
+            ticker_obj: Any = yf.Ticker(symbol)
+            hist_data: Any = ticker_obj.history(**history_params)
+
+            # Check if hist_data is None or empty DataFrame before proceeding
+            if hist_data is None or hist_data.empty:
+                print(
+                    f"警告：YFinanceClient - 商品 {symbol} 使用參數 {history_params} 未找到數據或返回為空。"
+                )
+                return pd.DataFrame() # Return empty DataFrame as per original logic for failure/no data
+
+            # At this point, hist_data is a non-empty DataFrame (or yfinance would have errored/returned empty)
+            # We can now safely cast it if needed, or proceed with operations
+            hist_data = cast(pd.DataFrame, hist_data)
+
+
+            hist_data.reset_index(inplace=True)
+            hist_data["symbol"] = symbol
+
+            date_col_name = "Datetime" if "Datetime" in hist_data.columns else "Date"
+            if date_col_name not in hist_data.columns:
+                print(
+                    f"警告：YFinanceClient - 未找到預期的日期欄位 ('Date' 或 'Datetime')。可用欄位: {hist_data.columns.tolist()}"
+                )
+                return pd.DataFrame()
+
+            # Ensure the date column is datetime type before accessing .dt accessor
+            hist_data[date_col_name] = pd.to_datetime(hist_data[date_col_name])
+            if hist_data[date_col_name].dt.tz is not None:
+                hist_data[date_col_name] = hist_data[date_col_name].dt.tz_convert(
+                    None
+                )
+
+            if date_col_name == "Datetime":
+                hist_data.rename(columns={"Datetime": "Date"}, inplace=True)
+
+            rename_map = {"Adj Close": "Adj_Close"}
+            final_df = hist_data.rename(columns=rename_map)
+            final_df["Date"] = pd.to_datetime(final_df["Date"])
+
+            required_cols = [
+                "Date", "symbol", "Open", "High", "Low", "Close", "Adj_Close", "Volume",
+            ]
+            cols_to_keep = []
+            missing_cols = []
+
+            for col in required_cols:
+                if col in final_df.columns:
+                    cols_to_keep.append(col)
+                elif (
+                    col == "Adj_Close"
+                    and "Close" in final_df.columns
+                    and history_params["auto_adjust"] is True
+                ):
+                    final_df["Adj_Close"] = final_df["Close"]
+                    cols_to_keep.append("Adj_Close")
+                elif col not in final_df.columns: # only add to missing if not handled by auto_adjust case
+                    missing_cols.append(col)
+
+            if missing_cols:
+                 print(
+                    f"警告：YFinanceClient - 抓取的數據中缺少以下預期欄位: {missing_cols} (Symbol: {symbol})。"
+                )
+
+            # Ensure all cols_to_keep actually exist before trying to select them
+            # This can happen if auto_adjust is true, 'Adj_Close' is required but not initially present
+            valid_cols_to_keep = [col for col in cols_to_keep if col in final_df.columns]
+            if not valid_cols_to_keep: # If no valid columns remain (highly unlikely but a safeguard)
+                print(f"警告：YFinanceClient - 沒有有效的欄位可供選擇 (Symbol: {symbol})")
+                return pd.DataFrame()
+
+            final_df = final_df[valid_cols_to_keep]
+
+
+            print(
+                f"資訊：YFinanceClient 成功抓取並處理 {len(final_df)} 筆數據，商品: {symbol}。"
+            )
+            return final_df
+
+        except Exception as e:
+            print(f"錯誤：YFinanceClient 抓取數據時發生錯誤 (Symbol: {symbol})：{e}")
+            traceback.print_exc()
             return pd.DataFrame()
 
-        final_df = pd.concat(all_data_list, ignore_index=True)
+    def fetch_multiple_symbols_data(self, symbols: List[str], **kwargs) -> pd.DataFrame:
+        if not isinstance(symbols, list) or not symbols:
+            print(
+                "錯誤：YFinanceClient.fetch_multiple_symbols_data - symbols 參數必須是一個非空列表。"
+            )
+            return pd.DataFrame()
 
-        # 標準化欄位名稱並選擇所需欄位
-        final_df.rename(columns={
-            'Adj Close': 'Adj_Close', # yfinance 可能使用 'Adj Close'
-            'Date': 'Date',
-            'Open': 'Open',
-            'High': 'High',
-            'Low': 'Low',
-            'Close': 'Close',
-            'Volume': 'Volume'
-        }, inplace=True)
+        all_data_list = []
+        for symbol_ticker in symbols:
+            try:
+                df_symbol = self.fetch_data(symbol=symbol_ticker, **kwargs)
+                if df_symbol is not None and not df_symbol.empty: # Check for None as well
+                    all_data_list.append(df_symbol)
+            except Exception as e:
+                print(
+                    f"錯誤：YFinanceClient.fetch_multiple_symbols_data - 處理商品 {symbol_ticker} 時發生錯誤: {e}"
+                )
 
-        # 確保 'Date' 欄位是 datetime64[ns] 型別
-        final_df['Date'] = pd.to_datetime(final_df['Date'])
+        if not all_data_list:
+            print(
+                "資訊：YFinanceClient.fetch_multiple_symbols_data - 未從任何指定商品抓取到數據。"
+            )
+            return pd.DataFrame()
 
-        # 根據作戰命令，需要的欄位是 OHLCV，Adj Close 也很常用
-        required_cols = ['Date', 'symbol', 'Open', 'High', 'Low', 'Close', 'Adj_Close', 'Volume']
+        combined_df = pd.concat(all_data_list, ignore_index=True)
+        print(
+            f"資訊：YFinanceClient.fetch_multiple_symbols_data - 成功合併 {len(combined_df)} 筆來自 {len(all_data_list)} 個商品的數據。"
+        )
+        return combined_df
 
-        # 篩選出實際存在的欄位，以避免錯誤，並按指定順序排列
-        cols_to_keep = [col for col in required_cols if col in final_df.columns]
-        missing_cols = [col for col in required_cols if col not in cols_to_keep]
-        if missing_cols:
-            print(f"警告：抓取的數據中缺少以下預期欄位: {missing_cols}。這些欄位將不會包含在結果中。")
-            # 例如，某些指數可能沒有 Volume
+if __name__ == "__main__":
+    print("--- YFinanceClient 重構後測試 (直接執行 core/clients/yfinance.py) ---")
+    try:
+        client = YFinanceClient()
+        print("YFinanceClient 初始化成功。")
 
-        final_df = final_df[cols_to_keep]
+        print("\n測試獲取 AAPL 數據 (2023-12-01 至 2023-12-05)...")
+        aapl_data = client.fetch_data(
+            symbol="AAPL", start_date="2023-12-01", end_date="2023-12-05"
+        )
+        if aapl_data is not None and not aapl_data.empty:
+            print(f"成功獲取 AAPL 數據 (共 {len(aapl_data)} 筆):")
+            print(aapl_data.head())
+        else:
+            print("獲取 AAPL 數據返回空 DataFrame 或 None。")
 
-        print(f"資訊：成功抓取並合併 {len(final_df)} 筆數據。")
-        return final_df
+        print("\n測試獲取 AAPL 和 MSFT 數據 (最近5天, 1d 間隔)...")
+        multi_data = client.fetch_multiple_symbols_data(
+            symbols=["AAPL", "MSFT", "NONEXISTENTICKER"],
+            period="5d",
+            interval="1d",
+        )
+        if multi_data is not None and not multi_data.empty:
+            print(f"成功獲取多個商品數據 (共 {len(multi_data)} 筆):")
+            print(multi_data.head())
+            print("...")
+            print(multi_data.tail())
+            print(f"數據中包含的 Symbols: {multi_data['symbol'].unique()}")
+        else:
+            print("獲取多個商品數據返回空 DataFrame 或 None。")
+
+        print("\n測試獲取 ^GSPC 數據 (最近1個月)...")
+        gspc_data = client.fetch_data(symbol="^GSPC", period="1mo")
+        if gspc_data is not None and not gspc_data.empty:
+            print(f"成功獲取 ^GSPC 數據 (最近1個月，共 {len(gspc_data)} 筆):")
+            print(gspc_data.head())
+        else:
+            print("獲取 ^GSPC 數據返回空 DataFrame 或 None。")
+
+        print("\n測試獲取 SPY 數據 (最近1天, 1m 間隔)...")
+        spy_intraday = client.fetch_data(
+            symbol="SPY", period="1d", interval="1m"
+        )
+        if spy_intraday is not None and not spy_intraday.empty:
+            print(f"成功獲取 SPY 1分鐘數據 (共 {len(spy_intraday)} 筆):")
+            assert "Date" in spy_intraday.columns
+            assert "Datetime" not in spy_intraday.columns
+            print(spy_intraday.head())
+        else:
+            print(
+                "獲取 SPY 1分鐘數據返回空 DataFrame 或 None (可能是市場未開盤或超出 yfinance 限制)。"
+            )
 
     except Exception as e:
-        print(f"錯誤：抓取 Yahoo Finance 數據時發生錯誤：{e}")
+        print(f"執行 YFinanceClient 測試期間發生未預期錯誤: {e}")
         traceback.print_exc()
-        return pd.DataFrame()
+
+    print("--- YFinanceClient 重構後測試結束 ---")

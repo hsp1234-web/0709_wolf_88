@@ -33,12 +33,14 @@ try:
     # parent 3: /app/tests/integration
     # parent 4: /app/tests
     # parent 5: /app  <- This is the project root
-    project_root_for_test = current_script_path.parents[4] # .parents[0] is parent, so .parents[4] is 5 levels up.
+    project_root_for_test = current_script_path.parents[
+        4
+    ]  # .parents[0] is parent, so .parents[4] is 5 levels up.
 
-    apps_main_dir = project_root_for_test / "apps" # This is /app/apps
+    apps_main_dir = project_root_for_test / "apps"  # This is /app/apps
 
     if str(project_root_for_test) not in sys.path:
-        sys.path.insert(0, str(project_root_for_test)) # Add /app to sys.path
+        sys.path.insert(0, str(project_root_for_test))  # Add /app to sys.path
     # apps.etl_pipeline.run needs "apps" to be in sys.path for "from common import ..."
     # However, run.py itself does its own sys.path manipulation.
     # For direct imports in this test file, if any, /app needs to be in path.
@@ -49,7 +51,7 @@ try:
 
 except NameError:
     # Fallback for environments where __file__ might not be defined
-    project_root_for_test = Path(os.getcwd()) # Assuming CWD is project root /app
+    project_root_for_test = Path(os.getcwd())  # Assuming CWD is project root /app
     # apps_main_dir = project_root_for_test / "apps"
     # if str(project_root_for_test) not in sys.path:
     #     sys.path.insert(0, str(project_root_for_test))
@@ -57,6 +59,7 @@ except NameError:
     #    sys.path.insert(1, str(apps_main_dir))
 
 # --- 完成導入路徑設置 ---
+
 
 class TestEtlPipelineRun(unittest.TestCase):
 
@@ -66,7 +69,9 @@ class TestEtlPipelineRun(unittest.TestCase):
         self.transformed_data_dir = self.base_test_dir / "transformed_data"
         self.aggregated_data_dir = self.base_test_dir / "aggregated_data"
         self.db_path = self.base_test_dir / "test_etl_pipeline.db"
-        self.run_py_script_path = project_root_for_test / "apps" / "etl_pipeline" / "run.py"
+        self.run_py_script_path = (
+            project_root_for_test / "apps" / "etl_pipeline" / "run.py"
+        )
 
         # 清理並創建測試目錄
         if self.base_test_dir.exists():
@@ -78,27 +83,31 @@ class TestEtlPipelineRun(unittest.TestCase):
 
         # 創建樣本原始 CSV 數據 (模擬 TaiFEX 每日數據)
         self.sample_csv_filename = "Daily_20230101.csv"
-        self.sample_zip_filename = "Daily_20230101.zip" # Transformer 期望 ZIP 檔案
+        self.sample_zip_filename = "Daily_20230101.zip"  # Transformer 期望 ZIP 檔案
         sample_csv_path = self.source_data_dir / self.sample_csv_filename
         self.sample_zip_path = self.source_data_dir / self.sample_zip_filename
 
         csv_content = (
             "交易日期,契約,到期月份(週別),開盤價,最高價,最低價,收盤價,成交量,最後最佳買價,最後最佳賣價\n"
-            "20230101,TX,202301,14000,14050,13950,14020,1000,14018,14020\n" # TX 商品
-            "20230101,MXF,202301,1400,1405,1395,1402,500,1401,1402\n"     # MXF 商品 (用於聚合測試)
-            "20230101,TX,202301,14020,14080,14010,14070,1500,14068,14070\n" # TX 商品
-            "20230101,MXF,202301,1402,1408,1401,1407,700,1406,1407\n"     # MXF 商品
+            "20230101,TX,202301,14000,14050,13950,14020,1000,14018,14020\n"  # TX 商品
+            "20230101,MXF,202301,1400,1405,1395,1402,500,1401,1402\n"  # MXF 商品 (用於聚合測試)
+            "20230101,TX,202301,14020,14080,14010,14070,1500,14068,14070\n"  # TX 商品
+            "20230101,MXF,202301,1402,1408,1401,1407,700,1406,1407\n"  # MXF 商品
         )
-        with open(sample_csv_path, 'w', encoding='utf-8') as f:
+        with open(sample_csv_path, "w", encoding="utf-8") as f:
             f.write(csv_content)
 
         # 將 CSV 壓縮成 ZIP
-        with zipfile.ZipFile(self.sample_zip_path, 'w') as zf:
+        with zipfile.ZipFile(self.sample_zip_path, "w") as zf:
             zf.write(sample_csv_path, arcname=self.sample_csv_filename)
 
         # 定義其他路徑
-        self.transformed_parquet_path = self.transformed_data_dir / (Path(self.sample_csv_filename).stem + ".parquet")
-        self.aggregated_db_path = self.aggregated_data_dir / "analytics_mart.duckdb" # aggregator 的預設輸出
+        self.transformed_parquet_path = self.transformed_data_dir / (
+            Path(self.sample_csv_filename).stem + ".parquet"
+        )
+        self.aggregated_db_path = (
+            self.aggregated_data_dir / "analytics_mart.duckdb"
+        )  # aggregator 的預設輸出
 
     def tearDown(self):
         # 清理測試目錄
@@ -112,25 +121,37 @@ class TestEtlPipelineRun(unittest.TestCase):
         # project_root_for_test should be /app
         process = subprocess.run(
             [sys.executable, "-m", "apps.etl_pipeline.run"] + command_parts,
-            capture_output=True, text=True, encoding='utf-8',
-            cwd=str(project_root_for_test) # Explicitly set CWD to project root
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(project_root_for_test),  # Explicitly set CWD to project root
         )
         if process.returncode != 0:
             print(f"Command failed: {' '.join(command_parts)}")
             print(f"Stdout: {process.stdout}")
             print(f"Stderr: {process.stderr}")
-        self.assertEqual(process.returncode, 0, f"Command execution failed: {process.stderr}")
+        self.assertEqual(
+            process.returncode, 0, f"Command execution failed: {process.stderr}"
+        )
         return process
 
     def test_etl_pipeline_flow(self):
         # 1. 執行 Transform
-        transform_target_path = self.transformed_data_dir / (Path(self.sample_csv_filename).stem + ".parquet")
-        self._run_command([
-            "transform",
-            "--zipfile", str(self.sample_zip_path),
-            "--output", str(self.transformed_data_dir)
-        ])
-        self.assertTrue(transform_target_path.exists(), "Transformed parquet file was not created.")
+        transform_target_path = self.transformed_data_dir / (
+            Path(self.sample_csv_filename).stem + ".parquet"
+        )
+        self._run_command(
+            [
+                "transform",
+                "--zipfile",
+                str(self.sample_zip_path),
+                "--output",
+                str(self.transformed_data_dir),
+            ]
+        )
+        self.assertTrue(
+            transform_target_path.exists(), "Transformed parquet file was not created."
+        )
 
         # 2. 執行 Aggregate
         # Aggregator 需要 product_id, start_date, end_date
@@ -153,72 +174,107 @@ class TestEtlPipelineRun(unittest.TestCase):
             # 假設 '收盤價' 是 'price', '成交量' 是 'volume'
             # '交易日期' 需要轉換成 timestamp
             # '契約' 是 'product_id'
-            df['timestamp'] = pd.to_datetime(df['交易日期'], format='%Y%m%d') # 假設 transformer 未轉換日期格式
+            df["timestamp"] = pd.to_datetime(
+                df["交易日期"], format="%Y%m%d"
+            )  # 假設 transformer 未轉換日期格式
             # 為了簡化，假設所有 tick 都發生在日初。更真實的數據會有時分秒。
             # 為了讓聚合有意義，我們為 MXF 的兩條記錄稍微錯開時間
-            mxf_indices = df[df['契約'] == 'MXF'].index
+            mxf_indices = df[df["契約"] == "MXF"].index
             if len(mxf_indices) > 1:
-                df.loc[mxf_indices[0], 'timestamp'] = pd.Timestamp('2023-01-01 09:00:00')
-                df.loc[mxf_indices[1], 'timestamp'] = pd.Timestamp('2023-01-01 09:05:00')
+                df.loc[mxf_indices[0], "timestamp"] = pd.Timestamp(
+                    "2023-01-01 09:00:00"
+                )
+                df.loc[mxf_indices[1], "timestamp"] = pd.Timestamp(
+                    "2023-01-01 09:05:00"
+                )
 
-
-            ticks_data = pd.DataFrame({
-                'timestamp': df['timestamp'],
-                'product_id': df['契約'],
-                'price': df['收盤價'].astype(float), #確保為 float
-                'volume': df['成交量'].astype(int)   #確保為 int
-            })
-            con.execute("CREATE TABLE ticks (timestamp TIMESTAMP, product_id VARCHAR, price DOUBLE, volume BIGINT)")
+            ticks_data = pd.DataFrame(
+                {
+                    "timestamp": df["timestamp"],
+                    "product_id": df["契約"],
+                    "price": df["收盤價"].astype(float),  # 確保為 float
+                    "volume": df["成交量"].astype(int),  # 確保為 int
+                }
+            )
+            con.execute(
+                "CREATE TABLE ticks (timestamp TIMESTAMP, product_id VARCHAR, price DOUBLE, volume BIGINT)"
+            )
             con.append("ticks", ticks_data)
 
         # 現在執行 aggregate
         # aggregate 的輸出預設是 analytics_mart.duckdb 在專案根目錄，我們將其重定向到測試目錄
-        self._run_command([
-            "aggregate",
-            "MXF", # product_id
-            "2023-01-01", # start_date
-            "2023-01-02", # end_date (不包含)
-            "--source_db", str(temp_ticks_db_path),
-            "--analytics_db", str(self.aggregated_db_path)
-        ])
-        self.assertTrue(self.aggregated_db_path.exists(), "Aggregated DB (analytics_mart.duckdb) was not created.")
+        self._run_command(
+            [
+                "aggregate",
+                "MXF",  # product_id
+                "2023-01-01",  # start_date
+                "2023-01-02",  # end_date (不包含)
+                "--source_db",
+                str(temp_ticks_db_path),
+                "--analytics_db",
+                str(self.aggregated_db_path),
+            ]
+        )
+        self.assertTrue(
+            self.aggregated_db_path.exists(),
+            "Aggregated DB (analytics_mart.duckdb) was not created.",
+        )
 
         # 3. 執行 Load
         # Load 的輸入是 Parquet，但 aggregate 的輸出是 DuckDB。
         # 所以我們需要從 aggregated_db_path 中提取聚合後的數據 (例如 ohlcv_1min) 存為 Parquet，再餵給 loader
-        temp_load_input_parquet_path = self.base_test_dir / "ohlcv_1min_for_load.parquet"
+        temp_load_input_parquet_path = (
+            self.base_test_dir / "ohlcv_1min_for_load.parquet"
+        )
 
         with duckdb.connect(str(self.aggregated_db_path)) as agg_con:
             # 假設我們關心 1 分鐘線的數據 (如果聚合產生了的話)
             # 根據 aggregator 邏輯，它會為每個 TIME_PERIODS 創建一個表
             # 我們的樣本數據時間非常接近，可能只會落入一個 1min K棒
             try:
-                ohlcv_df = agg_con.execute("SELECT * FROM ohlcv_1min WHERE product_id = 'MXF'").fetchdf()
+                ohlcv_df = agg_con.execute(
+                    "SELECT * FROM ohlcv_1min WHERE product_id = 'MXF'"
+                ).fetchdf()
                 if not ohlcv_df.empty:
                     ohlcv_df.to_parquet(temp_load_input_parquet_path)
                 else:
-                    self.skipTest("Skipping load test: No 1-min OHLCV data was aggregated for MXF. This might be due to insufficient distinct timestamps in sample data for 1-min aggregation.")
+                    self.skipTest(
+                        "Skipping load test: No 1-min OHLCV data was aggregated for MXF. This might be due to insufficient distinct timestamps in sample data for 1-min aggregation."
+                    )
             except duckdb.CatalogException:
-                 self.skipTest("Skipping load test: ohlcv_1min table not found in aggregated DB. This might be due to sample data not producing this aggregation.")
-
+                self.skipTest(
+                    "Skipping load test: ohlcv_1min table not found in aggregated DB. This might be due to sample data not producing this aggregation."
+                )
 
         if not temp_load_input_parquet_path.exists():
-             self.skipTest(f"Skipping load test: Aggregated Parquet file {temp_load_input_parquet_path} for loading was not created.")
+            self.skipTest(
+                f"Skipping load test: Aggregated Parquet file {temp_load_input_parquet_path} for loading was not created."
+            )
 
         final_table_name = "mxf_ohlcv_1min"
-        self._run_command([
-            "load",
-            "--parquet-file", str(temp_load_input_parquet_path),
-            "--db-path", str(self.db_path),
-            "--table-name", final_table_name,
-            "--primary-key", "timestamp,product_id" # Loader 接受複合主鍵
-        ])
+        self._run_command(
+            [
+                "load",
+                "--parquet-file",
+                str(temp_load_input_parquet_path),
+                "--db-path",
+                str(self.db_path),
+                "--table-name",
+                final_table_name,
+                "--primary-key",
+                "timestamp,product_id",  # Loader 接受複合主鍵
+            ]
+        )
         self.assertTrue(self.db_path.exists(), "Final ETL database was not created.")
 
         # 4. 驗證最終數據庫中的數據
         with duckdb.connect(str(self.db_path)) as final_con:
-            result_df = final_con.execute(f"SELECT * FROM {final_table_name} WHERE product_id = 'MXF' ORDER BY timestamp").fetchdf()
-            self.assertFalse(result_df.empty, "No data found in the final table for MXF.")
+            result_df = final_con.execute(
+                f"SELECT * FROM {final_table_name} WHERE product_id = 'MXF' ORDER BY timestamp"
+            ).fetchdf()
+            self.assertFalse(
+                result_df.empty, "No data found in the final table for MXF."
+            )
 
             # 根據我們的樣本數據和時間戳調整：
             # MXF 20230101, 1402 (09:00:00)
@@ -239,19 +295,51 @@ class TestEtlPipelineRun(unittest.TestCase):
 
             # 我們的 aggregator 產生多個表，如 ohlcv_1min, ohlcv_5min 等。
             # 測試中我們從 ohlcv_1min 讀取並載入。
-            self.assertEqual(len(result_df), 2, "Expected two 1-min OHLCV records for MXF.")
+            self.assertEqual(
+                len(result_df), 2, "Expected two 1-min OHLCV records for MXF."
+            )
 
-            pd.testing.assert_series_equal(result_df['open'], pd.Series([1402.0, 1407.0], name='open'), check_dtype=False)
-            pd.testing.assert_series_equal(result_df['high'], pd.Series([1402.0, 1407.0], name='high'), check_dtype=False)
-            pd.testing.assert_series_equal(result_df['low'], pd.Series([1402.0, 1407.0], name='low'), check_dtype=False)
-            pd.testing.assert_series_equal(result_df['close'], pd.Series([1402.0, 1407.0], name='close'), check_dtype=False)
-            pd.testing.assert_series_equal(result_df['volume'], pd.Series([500, 700], name='volume').astype('int64'), check_dtype=False) # duckdb BIGINT might be int64
+            pd.testing.assert_series_equal(
+                result_df["open"],
+                pd.Series([1402.0, 1407.0], name="open"),
+                check_dtype=False,
+            )
+            pd.testing.assert_series_equal(
+                result_df["high"],
+                pd.Series([1402.0, 1407.0], name="high"),
+                check_dtype=False,
+            )
+            pd.testing.assert_series_equal(
+                result_df["low"],
+                pd.Series([1402.0, 1407.0], name="low"),
+                check_dtype=False,
+            )
+            pd.testing.assert_series_equal(
+                result_df["close"],
+                pd.Series([1402.0, 1407.0], name="close"),
+                check_dtype=False,
+            )
+            pd.testing.assert_series_equal(
+                result_df["volume"],
+                pd.Series([500, 700], name="volume").astype("int64"),
+                check_dtype=False,
+            )  # duckdb BIGINT might be int64
 
             # 驗證時間戳 (轉換為 datetime64[ns] 以便比較)
-            expected_timestamps = pd.to_datetime(['2023-01-01 09:00:00', '2023-01-01 09:05:00']).tz_localize(None) # DuckDB timestamp may not have tz
-            actual_timestamps = pd.to_datetime(result_df['timestamp']).dt.tz_localize(None)
-            pd.testing.assert_series_equal(actual_timestamps, pd.Series(expected_timestamps, name='timestamp'), check_dtype=False)
+            expected_timestamps = pd.to_datetime(
+                ["2023-01-01 09:00:00", "2023-01-01 09:05:00"]
+            ).tz_localize(
+                None
+            )  # DuckDB timestamp may not have tz
+            actual_timestamps = pd.to_datetime(result_df["timestamp"]).dt.tz_localize(
+                None
+            )
+            pd.testing.assert_series_equal(
+                actual_timestamps,
+                pd.Series(expected_timestamps, name="timestamp"),
+                check_dtype=False,
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

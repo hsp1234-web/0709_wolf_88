@@ -1,28 +1,30 @@
 # apps/news_client/config.py
 import os
+from typing import Optional # Ensure Optional is imported
 
 class NewsClientConfig:
     """
     新聞客戶端設定類別。
     """
+
     # NewsAPI.org 設定
-    NEWSAPI_API_KEY = os.getenv("NEWSAPI_API_KEY")
-    NEWSAPI_BASE_URL = "https://newsapi.org/v2/everything" # 'everything' 端點用於搜尋
-    # NEWSAPI_TOP_HEADLINES_URL = "https://newsapi.org/v2/top-headlines" # 另一個常用端點
+    NEWSAPI_API_KEY: Optional[str] = os.getenv("NEWSAPI_API_KEY") # Add type hint
+    NEWSAPI_BASE_URL: str = "https://newsapi.org/v2/everything"
+    # NEWSAPI_TOP_HEADLINES_URL = "https://newsapi.org/v2/top-headlines"
 
     # 預設數據輸出目錄
-    DEFAULT_OUTPUT_PATH = "data/news_data"
+    DEFAULT_OUTPUT_PATH: str = "data/news_data"
 
     # 情感分析相關設定 (如果有的話)
     # DEFAULT_SENTIMENT_MODEL = "vader"
 
     # 預設新聞搜尋參數
-    DEFAULT_LANGUAGE = "zh" # 預設搜尋中文新聞
-    DEFAULT_PAGE_SIZE = 20
-    DEFAULT_SORT_BY = "publishedAt" # publishedAt, relevancy, popularity
+    DEFAULT_LANGUAGE: str = "zh"
+    DEFAULT_PAGE_SIZE: int = 20
+    DEFAULT_SORT_BY: str = "publishedAt"
 
     @staticmethod
-    def get_newsapi_key() -> str:
+    def get_newsapi_key() -> Optional[str]: # Changed return type to Optional[str]
         """
         獲取 NewsAPI.org 的 API Key。
         如果環境變數 NEWSAPI_API_KEY 未設定，則返回 None 或可拋出錯誤。
@@ -33,13 +35,12 @@ class NewsClientConfig:
         """
         key = NewsClientConfig.NEWSAPI_API_KEY
         if not key:
-            # 可以選擇在這裡印出警告或讓調用者處理 None
-            # print("警告: NewsAPI Key (NEWSAPI_API_KEY) 未在環境變數中設定。")
             pass
         return key
 
+
 # 使用範例
-if __name__ == '__main__':
+if __name__ == "__main__":
     key = NewsClientConfig.get_newsapi_key()
     if key:
         print(f"NewsAPI Key (前三碼): {key[:3]}...")

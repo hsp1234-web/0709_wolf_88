@@ -1,238 +1,290 @@
 # tests/unit/core/clients/test_fred.py
-# 針對 core.clients.fred 模듈的單元測試。
+# 針對 core.clients.fred 模組的單元測試。
 
 import pytest
 import pandas as pd
 from pandas.testing import assert_frame_equal
 from unittest.mock import patch, MagicMock
 import os
-import requests # 用於 requests.exceptions
+import requests  # 用於 requests.exceptions
 
-# 假設 core 模組在 PYTHONPATH 中，或 pytest 能夠找到它
-from core.clients.fred import FREDAPIClient, FRED_API_BASE_URL
+# 更新導入以反映重構後的客戶端
+from core.clients.fred import FREDClient, FRED_API_HOST, FRED_OBSERVATIONS_ENDPOINT
 
 # 測試用的 API Key
 TEST_FRED_API_KEY = "test_fred_api_key_456"
 
-@pytest.fixture
-def client_with_key():
-    """提供一個已設定 API Key 的 FREDAPIClient 實例。"""
-    with patch.dict(os.environ, {"FRED_API_KEY": TEST_FRED_API_KEY}):
-        client = FREDAPIClient()
-    return client
 
 @pytest.fixture
-def client_no_key_in_env():
+def fred_client_fixture():
+    """提供一個 FREDClient 實例，並 mock 環境變數中的 API Key。"""
+    with patch.dict(os.environ, {"FRED_API_KEY": TEST_FRED_API_KEY}):
+        client = FREDClient()
+    return client
+
+
+@pytest.fixture
+def mock_env_no_fred_key():
     """確保環境變數中沒有 FRED_API_KEY。"""
     original_key = os.environ.pop("FRED_API_KEY", None)
     yield
     if original_key is not None:
         os.environ["FRED_API_KEY"] = original_key
 
-class TestFREDAPIClientInitialization:
-    """測試 FREDAPIClient 的初始化過程。"""
 
-    def test_init_with_key_arg(self, client_no_key_in_env):
-        client = FREDAPIClient(api_key="param_key")
-        assert client.api_key == "param_key"
+class TestFREDClientInitialization:
+    """測試 FREDClient 的初始化過程。"""
+
+    def test_init_with_key_arg(self, mock_env_no_fred_key):
+        client = FREDClient(api_key="param_key_direct")
+        assert client.api_key == "param_key_direct"
+        assert client.base_url == FRED_API_HOST
+        assert isinstance(client._session, requests.Session)
 
     def test_init_with_env_variable(self):
-        with patch.dict(os.environ, {"FRED_API_KEY": "env_key"}):
-            client = FREDAPIClient()
-            assert client.api_key == "env_key"
+        with patch.dict(os.environ, {"FRED_API_KEY": "env_key_for_fred"}):
+            client = FREDClient()
+            assert client.api_key == "env_key_for_fred"
 
-    def test_init_no_key_raises_value_error(self, client_no_key_in_env):
+    def test_init_no_key_raises_value_error(self, mock_env_no_fred_key):
         with pytest.raises(ValueError, match="FRED API Key 未設定"):
-            FREDAPIClient()
+            FREDClient()
 
-@patch('requests.get') # Mock requests.get 以避免真實網路請求
-class TestFREDAPIGetSeriesObservations:
-    """測試 FREDAPIClient.get_series_observations 方法。"""
 
-    def test_get_series_observations_success(self, mock_requests_get, client_with_key):
+# FREDClient 使用 BaseAPIClient 的 _request, 後者使用 self._session.get
+# 因此我們 mock requests.Session.get
+@patch("requests.Session.get")
+class TestFREDClientFetchData:
+    """測試 FREDClient.fetch_data 方法。"""
+
+    def test_fetch_data_success(
+        self, mock_session_get, fred_client_fixture: FREDClient
+    ):
         """測試成功獲取並處理觀測數據。"""
         series_id = "DGS10"
         mock_json_response = {
-            "realtime_start": "2023-01-01",
-            "realtime_end": "2023-01-10",
-            "observation_start": "1900-01-01", # API 回應中的，非請求參數
-            "observation_end": "2023-01-10",
-            "units": "lin",
-            "output_type": 1,
-            "file_type": "json",
-            "order_by": "observation_date",
-            "sort_order": "asc",
-            "count": 2,
-            "offset": 0,
-            "limit": 100000,
             "observations": [
-                {"realtime_start": "2023-01-05", "realtime_end": "2023-01-05", "date": "2023-01-01", "value": "3.88"},
-                {"realtime_start": "2023-01-06", "realtime_end": "2023-01-06", "date": "2023-01-02", "value": "3.85"},
-                {"realtime_start": "2023-01-07", "realtime_end": "2023-01-07", "date": "2023-01-03", "value": "."}, # 無效值
+                {"date": "2023-01-01", "value": "3.88"},
+                {"date": "2023-01-02", "value": "3.85"},
+                {"date": "2023-01-03", "value": "."},  # 無效值
             ]
         }
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = mock_json_response
-        mock_requests_get.return_value = mock_response
+        mock_response_obj = MagicMock()
+        mock_response_obj.status_code = 200
+        mock_response_obj.json.return_value = mock_json_response
+        mock_session_get.return_value = mock_response_obj
 
-        result_df = client_with_key.get_series_observations(series_id, observation_start="2023-01-01", observation_end="2023-01-02")
+        result_df = fred_client_fixture.fetch_data(
+            symbol=series_id,
+            observation_start="2023-01-01",
+            observation_end="2023-01-02",
+        )
 
-        expected_params = {
-            'series_id': series_id,
-            'api_key': TEST_FRED_API_KEY,
-            'file_type': 'json',
-            'observation_start': "2023-01-01",
-            'observation_end': "2023-01-02"
+        expected_params_to_session_get = {
+            "series_id": series_id,
+            "api_key": TEST_FRED_API_KEY,
+            "file_type": "json",
+            "observation_start": "2023-01-01",
+            "observation_end": "2023-01-02",
         }
-        mock_requests_get.assert_called_once_with(FRED_API_BASE_URL, params=expected_params)
+        expected_url = f"{fred_client_fixture.base_url}{FRED_OBSERVATIONS_ENDPOINT}"
+        mock_session_get.assert_called_once_with(
+            expected_url, params=expected_params_to_session_get
+        )
 
         expected_data = {
-            'date': pd.to_datetime(["2023-01-01", "2023-01-02"]),
-            'series_id': [series_id, series_id],
-            'value': [3.88, 3.85]
+            "date": pd.to_datetime(["2023-01-01", "2023-01-02"]),
+            "series_id": [series_id, series_id],
+            "value": [3.88, 3.85],
         }
         expected_df = pd.DataFrame(expected_data)
-
         assert_frame_equal(result_df, expected_df)
 
-    def test_get_series_observations_no_data(self, mock_requests_get, client_with_key):
+    def test_fetch_data_no_observations_in_response(
+        self, mock_session_get, fred_client_fixture: FREDClient
+    ):
         """測試 API 成功返回但 'observations' 為空或不存在。"""
-        series_id = "EMPTYSERIES"
-        mock_json_response_empty = {"observations": []}
-        mock_json_response_none = {} # 'observations' 鍵不存在
-
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-
-        # 情況1: observations 是空列表
-        mock_response.json.return_value = mock_json_response_empty
-        mock_requests_get.return_value = mock_response
-        result_df_empty = client_with_key.get_series_observations(series_id)
-        assert isinstance(result_df_empty, pd.DataFrame)
+        mock_response_obj_empty = MagicMock()
+        mock_response_obj_empty.status_code = 200
+        mock_response_obj_empty.json.return_value = {"observations": []}
+        mock_session_get.return_value = mock_response_obj_empty
+        result_df_empty = fred_client_fixture.fetch_data(symbol="EMPTYSERIES")
         assert result_df_empty.empty
 
-        # 情況2: observations 鍵不存在
-        mock_response.json.return_value = mock_json_response_none
-        mock_requests_get.return_value = mock_response
-        result_df_none = client_with_key.get_series_observations(series_id)
-        assert isinstance(result_df_none, pd.DataFrame)
+        mock_session_get.reset_mock()
+        mock_response_obj_none = MagicMock()
+        mock_response_obj_none.status_code = 200
+        mock_response_obj_none.json.return_value = {}
+        mock_session_get.return_value = mock_response_obj_none
+        result_df_none = fred_client_fixture.fetch_data(symbol="NOSERIESKEY")
         assert result_df_none.empty
 
-    def test_get_series_observations_http_error(self, mock_requests_get, client_with_key):
-        """測試發生 HTTP 錯誤 (例如 400 Bad Request for invalid series_id)。"""
-        series_id = "INVALID_ID"
-        mock_response = MagicMock()
-        mock_response.status_code = 400
-        mock_response.text = '{"error_code":400,"error_message":"Bad Request. The series_id provided does not exist."}'
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("Simulated HTTP Error 400")
-        mock_requests_get.return_value = mock_response
+    def test_fetch_data_http_error_from_session_get_propagates(
+        self, mock_session_get, fred_client_fixture: FREDClient
+    ):
+        """測試 session.get 拋出 HTTPError 時，fetch_data 也應拋出。"""
+        mock_response_obj = MagicMock()
+        mock_response_obj.status_code = 400
+        # 正確模擬 requests.Response 對象的行為，它本身不包含 raise_for_status 的 side_effect
+        # raise_for_status 是在 BaseAPIClient._request 中被調用的
+        # 我們需要讓 mock_session_get.return_value.raise_for_status() 拋出異常
+        mock_session_get.return_value = mock_response_obj
+        # 讓 session.get().raise_for_status() 拋出異常
+        mock_response_obj.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "400 Client Error: Bad Request for url: http://simulated.url/fail",  # 匹配實際錯誤信息模式
+            response=mock_response_obj,
+        )
 
-        result_df = client_with_key.get_series_observations(series_id)
-        assert result_df is None
+        with pytest.raises(
+            requests.exceptions.HTTPError,
+            match="400 Client Error: Bad Request for url: http://simulated.url/fail",
+        ):
+            fred_client_fixture.fetch_data(symbol="FAIL")
 
-    def test_get_series_observations_network_error(self, mock_requests_get, client_with_key):
-        """測試發生網路請求錯誤。"""
-        mock_requests_get.side_effect = requests.exceptions.ConnectionError("Simulated Connection Error")
-
-        result_df = client_with_key.get_series_observations("ANY_ID")
-        assert result_df is None
-
-    def test_get_series_observations_all_params(self, mock_requests_get, client_with_key):
-        """測試所有可選參數是否正確傳遞。"""
+    def test_fetch_data_all_fred_params_passed_correctly(
+        self, mock_session_get, fred_client_fixture: FREDClient
+    ):
+        """測試所有可選的 FRED API 參數是否都正確準備並傳遞給 _request。"""
         series_id = "GDPC1"
-        params_to_test = {
+        kwargs_to_pass = {
             "realtime_start": "2020-01-01",
             "realtime_end": "2020-01-31",
             "limit": 10,
             "offset": 5,
             "sort_order": "desc",
             "observation_start": "2019-01-01",
-            "observation_end": "2019-12-31"
+            "observation_end": "2019-12-31",
         }
+        mock_response_obj = MagicMock()
+        mock_response_obj.status_code = 200
+        mock_response_obj.json.return_value = {"observations": []}
+        mock_session_get.return_value = mock_response_obj
 
-        # 預期 API 請求中的參數 (limit 和 offset 應為字串)
-        expected_api_params = {
-            'series_id': series_id,
-            'api_key': TEST_FRED_API_KEY,
-            'file_type': 'json',
-            **params_to_test # Python 3.9+
+        fred_client_fixture.fetch_data(symbol=series_id, **kwargs_to_pass)
+
+        expected_params_to_session_get = {
+            "series_id": series_id,
+            "api_key": TEST_FRED_API_KEY,
+            "file_type": "json",
+            **kwargs_to_pass,
         }
-        expected_api_params['limit'] = str(params_to_test['limit'])
-        expected_api_params['offset'] = str(params_to_test['offset'])
+        expected_params_to_session_get["limit"] = str(kwargs_to_pass["limit"])
+        expected_params_to_session_get["offset"] = str(kwargs_to_pass["offset"])
+
+        expected_url = f"{fred_client_fixture.base_url}{FRED_OBSERVATIONS_ENDPOINT}"
+        mock_session_get.assert_called_once_with(
+            expected_url, params=expected_params_to_session_get
+        )
 
 
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"observations": []} # 返回內容不重要，重點是參數
-        mock_requests_get.return_value = mock_response
+@patch.object(FREDClient, "fetch_data")  # Mock FREDClient.fetch_data 仍然適用於此測試類
+class TestFREDClientGetMultipleSeries:
+    """測試 FREDClient.get_multiple_series 方法。"""
 
-        client_with_key.get_series_observations(series_id, **params_to_test)
-        mock_requests_get.assert_called_once_with(FRED_API_BASE_URL, params=expected_api_params)
-
-
-@patch.object(FREDAPIClient, 'get_series_observations') # Mock get_series_observations
-class TestFREDAPIGetMultipleSeries:
-    """測試 FREDAPIClient.get_multiple_series 方法。"""
-
-    def test_get_multiple_series_success(self, mock_get_series_obs, client_with_key):
+    def test_get_multiple_series_success(
+        self, mock_fetch_data, fred_client_fixture: FREDClient
+    ):
         """測試成功獲取並合併多個系列。"""
         series_ids = ["DGS10", "CPIAUCSL"]
-        df1_data = {'date': pd.to_datetime(['2023-01-01']), 'series_id': ["DGS10"], 'value': [3.5]}
-        df2_data = {'date': pd.to_datetime(['2023-01-01']), 'series_id': ["CPIAUCSL"], 'value': [200.0]}
-        df1 = pd.DataFrame(df1_data)
-        df2 = pd.DataFrame(df2_data)
+        df1 = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2023-01-01"]),
+                "series_id": ["DGS10"],
+                "value": [3.5],
+            }
+        )
+        df2 = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2023-01-01"]),
+                "series_id": ["CPIAUCSL"],
+                "value": [200.0],
+            }
+        )
 
-        # 設定 mock 方法的 side_effect，使其根據 series_id 返回不同的 DataFrame
-        def side_effect_func(series_id_arg, **kwargs):
-            if series_id_arg == "DGS10": return df1
-            if series_id_arg == "CPIAUCSL": return df2
+        def fetch_data_side_effect(symbol, **kwargs):
+            if symbol == "DGS10":
+                return df1
+            if symbol == "CPIAUCSL":
+                return df2
             return pd.DataFrame()
-        mock_get_series_obs.side_effect = side_effect_func
 
-        result_df = client_with_key.get_multiple_series(series_ids, observation_start="2023-01-01")
+        mock_fetch_data.side_effect = fetch_data_side_effect
 
+        result_df = fred_client_fixture.get_multiple_series(
+            series_ids, observation_start="2023-01-01"
+        )
         expected_df = pd.concat([df1, df2], ignore_index=True)
         assert_frame_equal(result_df, expected_df)
 
-        # 驗證 get_series_observations 被正確調用
-        assert mock_get_series_obs.call_count == len(series_ids)
-        mock_get_series_obs.assert_any_call("DGS10", observation_start="2023-01-01")
-        mock_get_series_obs.assert_any_call("CPIAUCSL", observation_start="2023-01-01")
+        assert mock_fetch_data.call_count == len(series_ids)
+        mock_fetch_data.assert_any_call(symbol="DGS10", observation_start="2023-01-01")
+        mock_fetch_data.assert_any_call(
+            symbol="CPIAUCSL", observation_start="2023-01-01"
+        )
 
-    def test_get_multiple_series_one_fails(self, mock_get_series_obs, client_with_key):
-        """測試部分系列獲取失敗，但其他成功。"""
-        series_ids = ["DGS10", "FAIL_ID", "UNRATE"]
-        df_dgs10 = pd.DataFrame({'date': pd.to_datetime(['2023-01-01']), 'series_id': ["DGS10"], 'value': [3.5]})
-        df_unrate = pd.DataFrame({'date': pd.to_datetime(['2023-01-01']), 'series_id': ["UNRATE"], 'value': [3.8]})
+    def test_get_multiple_series_one_fetch_fails_http_error(
+        self, mock_fetch_data, fred_client_fixture: FREDClient
+    ):
+        """測試當 fetch_data 對某個 series_id 拋出 HTTPError 時，get_multiple_series 如何處理。"""
+        series_ids = ["DGS10", "FAIL_ID_HTTP", "UNRATE"]
+        df_dgs10 = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2023-01-01"]),
+                "series_id": ["DGS10"],
+                "value": [3.5],
+            }
+        )
+        df_unrate = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2023-01-01"]),
+                "series_id": ["UNRATE"],
+                "value": [3.8],
+            }
+        )
 
-        def side_effect_func(series_id_arg, **kwargs):
-            if series_id_arg == "DGS10": return df_dgs10
-            if series_id_arg == "FAIL_ID": return None # 模擬失敗
-            if series_id_arg == "UNRATE": return df_unrate
+        def fetch_data_side_effect(symbol, **kwargs):
+            if symbol == "DGS10":
+                return df_dgs10
+            if symbol == "FAIL_ID_HTTP":
+                raise requests.exceptions.HTTPError(
+                    "Simulated HTTP Error for FAIL_ID_HTTP"
+                )
+            if symbol == "UNRATE":
+                return df_unrate
             return pd.DataFrame()
-        mock_get_series_obs.side_effect = side_effect_func
 
-        result_df = client_with_key.get_multiple_series(series_ids)
+        mock_fetch_data.side_effect = fetch_data_side_effect
+
+        result_df = fred_client_fixture.get_multiple_series(series_ids)
+        # 預期只包含成功的系列
         expected_df = pd.concat([df_dgs10, df_unrate], ignore_index=True)
         assert_frame_equal(result_df, expected_df)
+        assert mock_fetch_data.call_count == len(series_ids)  # 即使有異常，每個都嘗試了
 
-    def test_get_multiple_series_all_fail_or_empty(self, mock_get_series_obs, client_with_key):
+    def test_get_multiple_series_all_fail_or_empty(
+        self, mock_fetch_data, fred_client_fixture: FREDClient
+    ):
         """測試所有系列都獲取失敗或返回空數據。"""
         series_ids = ["FAIL1", "EMPTY2"]
 
-        def side_effect_func(series_id_arg, **kwargs):
-            if series_id_arg == "FAIL1": return None
-            if series_id_arg == "EMPTY2": return pd.DataFrame() # 空 DataFrame
-            return None
-        mock_get_series_obs.side_effect = side_effect_func
+        def fetch_data_side_effect(symbol, **kwargs):
+            if symbol == "FAIL1":
+                # 模擬 fetch_data 捕獲 ConnectionError 並返回空 DataFrame
+                # （基於我們對 FREDClient.fetch_data 錯誤處理的修改）
+                print(
+                    f"Mocking ConnectionError for {symbol}, fetch_data should return empty DF"
+                )
+                return pd.DataFrame()
+            if symbol == "EMPTY2":
+                return pd.DataFrame()  # 空 DataFrame
+            return pd.DataFrame()
 
-        result_df = client_with_key.get_multiple_series(series_ids)
-        assert isinstance(result_df, pd.DataFrame)
+        mock_fetch_data.side_effect = fetch_data_side_effect
+
+        result_df = fred_client_fixture.get_multiple_series(series_ids)
         assert result_df.empty
+        # 驗證 fetch_data 確實被調用了兩次
+        assert mock_fetch_data.call_count == len(series_ids)
 
-# 運行測試指令:
+
 # pytest tests/unit/core/clients/test_fred.py -v
-# 或在專案根目錄:
-# python -m pytest -v
-# (需要安裝 pytest, pandas, requests)

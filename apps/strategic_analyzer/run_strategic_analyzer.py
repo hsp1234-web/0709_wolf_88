@@ -10,17 +10,19 @@
 
 import os
 import sys
-import pandas as pd
 
 # 假設此腳本位於 apps/strategic_analyzer/run_strategic_analyzer.py
 # 專案根目錄是向上兩級
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
-    print(f"DEBUG (run_strategic_analyzer): 已將專案根目錄 {PROJECT_ROOT} 添加到 sys.path")
+    print(
+        f"DEBUG (run_strategic_analyzer): 已將專案根目錄 {PROJECT_ROOT} 添加到 sys.path"
+    )
 
 from apps.daily_market_analyzer.db_manager import DBManager
 from apps.strategic_analyzer.analyzer import StrategicAnalyzer
+
 
 def run_daily_strategic_analysis():
     """
@@ -33,7 +35,7 @@ def run_daily_strategic_analysis():
 
     # TODO: 數據庫路徑應從統一的配置文件中讀取
     # 暫時硬編碼，與 run_factor_etl.py 中的路徑保持一致
-    db_file_path = os.path.join(PROJECT_ROOT, 'data_workspace', 'market_data.duckdb')
+    db_file_path = os.path.join(PROJECT_ROOT, "data_workspace", "market_data.duckdb")
 
     # 檢查資料庫檔案是否存在
     if not os.path.exists(db_file_path):
@@ -64,10 +66,11 @@ def run_daily_strategic_analysis():
             print(f"錯誤: 將戰略信號寫入資料庫失敗: {e}")
     elif daily_signals_df is not None and daily_signals_df.empty:
         print("INFO: StrategicAnalyzer 生成了空的信號 DataFrame，無需寫入資料庫。")
-    else: # daily_signals_df is None (理論上 analyzer 應該返回空 DF 而不是 None)
+    else:  # daily_signals_df is None (理論上 analyzer 應該返回空 DF 而不是 None)
         print("警告: StrategicAnalyzer 未返回有效的信號 DataFrame (可能為 None)。")
 
     print("INFO: 每日戰略分析流程執行完畢。")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     run_daily_strategic_analysis()

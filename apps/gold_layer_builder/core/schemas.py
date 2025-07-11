@@ -2,10 +2,12 @@ import datetime
 from pydantic import BaseModel, Field
 from typing import Optional
 
+
 class GoldMarketOHLCVDaily(BaseModel):
     """
     定義金層每日 OHLCV 數據的標準結構。
     """
+
     date: datetime.date = Field(..., description="日期")
     instrument: str = Field(..., description="合約標的")
     open: float = Field(..., description="當日開盤價")
@@ -14,10 +16,12 @@ class GoldMarketOHLCVDaily(BaseModel):
     close: float = Field(..., description="當日收盤價")
     volume: int = Field(..., description="當日總成交量")
 
+
 class GoldMarketFeaturesDaily(BaseModel):
     """
     定義金層每日計算特徵的標準結構。
     """
+
     date: datetime.date = Field(..., description="日期")
     instrument: str = Field(..., description="合約標的")
     ma5: Optional[float] = Field(default=None, description="5日移動平均線 (收盤價)")

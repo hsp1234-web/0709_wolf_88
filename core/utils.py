@@ -1,6 +1,7 @@
 import logging
 import sys
 
+
 def setup_logger(name: str, level: int = logging.INFO):
     """
     設定並返回一個日誌記錄器。
@@ -20,7 +21,7 @@ def setup_logger(name: str, level: int = logging.INFO):
 
         # 創建模仿 pipeline 主腳本的日誌格式器
         formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s'
+            "%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s"
         )
         ch.setFormatter(formatter)
 
@@ -45,7 +46,8 @@ def setup_logger(name: str, level: int = logging.INFO):
 
     return logger
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # 測試 setup_logger
     logger1 = setup_logger("my_app_logger", level=logging.DEBUG)
     logger1.debug("這是一個調試訊息 from my_app_logger.")
@@ -53,7 +55,7 @@ if __name__ == '__main__':
     logger1.warning("這是一個警告訊息 from my_app_logger.")
 
     logger2 = setup_logger("another_module_logger", level=logging.INFO)
-    logger2.debug("這個調試訊息不應該出現 (logger2)。") # 不會顯示，因為級別是 INFO
+    logger2.debug("這個調試訊息不應該出現 (logger2)。")  # 不會顯示，因為級別是 INFO
     logger2.info("這是一個資訊訊息 from another_module_logger.")
 
     # 測試 logger.success (目前不會有特殊級別)

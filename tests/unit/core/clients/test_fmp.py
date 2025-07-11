@@ -6,211 +6,283 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 from unittest.mock import patch, MagicMock
 import os
-import requests # 用於 requests.exceptions
+import requests  # 用於 requests.exceptions
 
-# 假設 core 模組在 PYTHONPATH 中，或 pytest 能夠找到它
-from core.clients.fmp import FMPAPIClient, FMP_BASE_URL
+# 更新導入以反映重構後的客戶端
+from core.clients.fmp import (
+    FMPClient,
+    FMP_API_BASE_URL_NO_VERSION,
+)  # 導入新的 Client 和 base URL
 
 # 測試用的 API Key
 TEST_FMP_API_KEY = "test_fmp_api_key_123"
 
-@pytest.fixture
-def client_with_key():
-    """提供一個已設定 API Key 的 FMPAPIClient 實例。"""
-    with patch.dict(os.environ, {"FMP_API_KEY": TEST_FMP_API_KEY}):
-        client = FMPAPIClient(api_version="v3") # 固定版本以利測試
-    return client
 
 @pytest.fixture
-def client_no_key_in_env():
+def fmp_client_fixture():
+    """
+    提供一個 FMPClient 實例，並 mock 環境變數中的 API Key。
+    使用固定的 default_api_version 以確保測試一致性。
+    """
+    with patch.dict(os.environ, {"FMP_API_KEY": TEST_FMP_API_KEY}):
+        client = FMPClient(default_api_version="v3")
+    return client
+
+
+@pytest.fixture
+def mock_env_no_fmp_key():
     """確保環境變數中沒有 FMP_API_KEY。"""
     original_key = os.environ.pop("FMP_API_KEY", None)
     yield
     if original_key is not None:
         os.environ["FMP_API_KEY"] = original_key
 
-class TestFMPAPIClientInitialization:
-    """測試 FMPAPIClient 的初始化過程。"""
 
-    def test_init_with_key_arg(self, client_no_key_in_env):
-        client = FMPAPIClient(api_key="param_key", api_version="v3")
-        assert client.api_key == "param_key"
-        assert client.base_url_with_version == f"{FMP_BASE_URL}/v3"
+class TestFMPClientInitialization:
+    """測試 FMPClient 的初始化過程。"""
+
+    def test_init_with_key_arg(self, mock_env_no_fmp_key):
+        """測試使用參數傳入 API key 初始化。"""
+        client = FMPClient(api_key="param_key_direct", default_api_version="v3")
+        assert client.api_key == "param_key_direct"
+        assert client.base_url == FMP_API_BASE_URL_NO_VERSION
+        assert client.default_api_version == "v3"
+        assert isinstance(client._session, requests.Session)  # 驗證 session 初始化
 
     def test_init_with_env_variable(self):
-        with patch.dict(os.environ, {"FMP_API_KEY": "env_key"}):
-            client = FMPAPIClient(api_version="v4")
-            assert client.api_key == "env_key"
-            assert client.base_url_with_version == f"{FMP_BASE_URL}/v4"
+        """測試從環境變數讀取 API key 初始化。"""
+        with patch.dict(os.environ, {"FMP_API_KEY": "env_key_for_fmp"}):
+            client = FMPClient(default_api_version="v4")
+            assert client.api_key == "env_key_for_fmp"
+            assert client.default_api_version == "v4"
 
-    def test_init_no_key_raises_value_error(self, client_no_key_in_env):
+    def test_init_no_key_raises_value_error(self, mock_env_no_fmp_key):
+        """測試未提供 key 且環境變數也未設定時，應引發 ValueError。"""
         with pytest.raises(ValueError, match="FMP API key 未設定"):
-            FMPAPIClient()
+            FMPClient()
 
     def test_init_key_priority_arg_over_env(self):
-        with patch.dict(os.environ, {"FMP_API_KEY": "env_key"}):
-            client = FMPAPIClient(api_key="param_key_override")
-            assert client.api_key == "param_key_override"
+        """測試參數傳入的 key 優先於環境變數。"""
+        with patch.dict(os.environ, {"FMP_API_KEY": "env_fmp_key_to_be_overridden"}):
+            client = FMPClient(api_key="param_fmp_key_override")
+            assert client.api_key == "param_fmp_key_override"
 
-@patch('requests.get') # Mock requests.get 以避免真實網路請求
-class TestFMPAPIMakeRequest:
-    """測試 FMPAPIClient._make_request 方法。"""
 
-    def test_make_request_success_direct_list(self, mock_requests_get, client_with_key):
-        """測試 API 直接返回列表數據。"""
-        mock_data = [{"field": "value1"}, {"field": "value2"}]
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = mock_data
-        mock_requests_get.return_value = mock_response
+# 現在 FMPClient 使用 BaseAPIClient 的 _request, 後者使用 self._session.get
+# 因此我們 mock requests.Session.get
+@patch("requests.Session.get")
+class TestFMPClientFetchData:
+    """測試 FMPClient.fetch_data 方法的各種情境。"""
 
-        result = client_with_key._make_request("some_endpoint")
-
-        expected_url = f"{client_with_key.base_url_with_version}/some_endpoint"
-        mock_requests_get.assert_called_once_with(expected_url, params={"apikey": TEST_FMP_API_KEY})
-        assert result == mock_data
-
-    def test_make_request_success_wrapped_list(self, mock_requests_get, client_with_key):
-        """測試 API 返回的列表數據被包裝在 'historical' 鍵下。"""
-        mock_hist_data = [{"date": "2023-01-01"}, {"date": "2023-01-02"}]
-        mock_response_json = {"symbol": "AAPL", "historical": mock_hist_data}
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = mock_response_json
-        mock_requests_get.return_value = mock_response
-
-        result = client_with_key._make_request("historical-price-full/AAPL")
-        assert result == mock_hist_data
-
-    def test_make_request_api_error_message(self, mock_requests_get, client_with_key):
-        """測試 API 返回包含 "Error Message" 的 JSON。"""
-        mock_error_json = {"Error Message": "Invalid API KEY or symbol."}
-        mock_response = MagicMock()
-        mock_response.status_code = 200 # 有時 FMP 錯誤也返回 200 OK，但內容是錯誤訊息
-        mock_response.json.return_value = mock_error_json
-        mock_requests_get.return_value = mock_response
-
-        result = client_with_key._make_request("some_endpoint")
-        assert result is None
-
-    def test_make_request_http_error(self, mock_requests_get, client_with_key):
-        """測試發生 HTTP 錯誤 (例如 401, 403)。"""
-        mock_response = MagicMock()
-        mock_response.status_code = 401
-        mock_response.text = "Unauthorized"
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("Simulated HTTP Error")
-        mock_requests_get.return_value = mock_response
-
-        result = client_with_key._make_request("protected_endpoint")
-        assert result is None
-
-    def test_make_request_network_error(self, mock_requests_get, client_with_key):
-        """測試發生網路請求錯誤。"""
-        mock_requests_get.side_effect = requests.exceptions.ConnectionError("Simulated Connection Error")
-
-        result = client_with_key._make_request("any_endpoint")
-        assert result is None
-
-    def test_make_request_empty_list_response(self, mock_requests_get, client_with_key):
-        """測試 API 成功返回但數據列表為空。"""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [] # 直接返回空列表
-        mock_requests_get.return_value = mock_response
-
-        result = client_with_key._make_request("empty_data_endpoint")
-        assert result == []
-
-    def test_make_request_unexpected_dict_response(self, mock_requests_get, client_with_key):
-        """測試 API 返回未預期 (非錯誤、非列表、非已知包裝) 的字典。"""
-        mock_response_json = {"unexpected_key": "unexpected_value"}
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = mock_response_json
-        mock_requests_get.return_value = mock_response
-
-        result = client_with_key._make_request("unexpected_dict_endpoint")
-        assert result is None # 根據目前 _make_request 設計，應返回 None
-
-@patch.object(FMPAPIClient, '_make_request') # Mock _make_request 方法
-class TestFMPAPIGetDataMethods:
-    """測試 FMPAPIClient 的高階數據獲取方法。"""
-
-    def test_get_historical_daily_prices_success(self, mock_make_request, client_with_key):
+    def test_fetch_historical_price_success(
+        self, mock_session_get, fmp_client_fixture: FMPClient
+    ):
         """測試成功獲取歷史日線價格。"""
-        raw_data = [
-            {"date": "2023-01-02", "open": 101, "close": 102}, # 較新日期在前 (FMP 原始順序)
-            {"date": "2023-01-01", "open": 100, "close": 100},
-        ]
-        mock_make_request.return_value = raw_data
+        symbol = "AAPL"
+        api_version = "v3"  # 假設使用 v3
+        raw_json_response = {
+            "historical": [  # FMP 包裝歷史數據的方式
+                {"date": "2023-01-02", "open": 101, "close": 102},
+                {"date": "2023-01-01", "open": 100, "close": 100},
+            ]
+        }
+        # mock_session_get 需要返回一個 response-like object
+        mock_response_obj = MagicMock()
+        mock_response_obj.status_code = 200
+        mock_response_obj.json.return_value = raw_json_response
+        mock_session_get.return_value = mock_response_obj
 
-        result_df = client_with_key.get_historical_daily_prices("AAPL", "2023-01-01", "2023-01-02")
+        result_df = fmp_client_fixture.fetch_data(
+            symbol=symbol,
+            data_type="historical_price",
+            from_date="2023-01-01",
+            to_date="2023-01-02",
+            api_version=api_version,
+        )
+
+        expected_endpoint = f"{api_version}/historical-price-full/{symbol}"
+        expected_params_to_parent = {  # 傳給 BaseAPIClient._request 的 params
+            "from": "2023-01-01",
+            "to": "2023-01-02",
+            "apikey": TEST_FMP_API_KEY,  # FMPClient._prepare_params 會加入 apikey
+        }
+        # BaseAPIClient._request 會構建 URL
+        expected_url = f"{fmp_client_fixture.base_url}/{expected_endpoint}"
+        mock_session_get.assert_called_once_with(
+            expected_url, params=expected_params_to_parent
+        )
 
         expected_df_data = [
-            {"date": pd.to_datetime("2023-01-01"), "open": 100, "close": 100}, # 排序後較舊日期在前
+            {"date": pd.to_datetime("2023-01-01"), "open": 100, "close": 100},
             {"date": pd.to_datetime("2023-01-02"), "open": 101, "close": 102},
         ]
+        # 注意：fetch_data 內部會提取 'historical' 鍵下的列表
         expected_df = pd.DataFrame(expected_df_data)
-
-        mock_make_request.assert_called_once_with(
-            "historical-price-full/AAPL",
-            {"from": "2023-01-01", "to": "2023-01-02"}
+        # 欄位順序和完整性由 fetch_data 內部處理，這裡只需驗證核心數據
+        assert_frame_equal(
+            result_df[["date", "open", "close"]],
+            expected_df[["date", "open", "close"]],
+            check_like=True,
         )
-        assert_frame_equal(result_df, expected_df, check_like=True) # check_like 忽略欄位順序
 
-    def test_get_historical_daily_prices_no_data(self, mock_make_request, client_with_key):
-        """測試獲取歷史價格時 API 返回空列表。"""
-        mock_make_request.return_value = [] # API 返回空列表
-
-        result_df = client_with_key.get_historical_daily_prices("NODATA", "2023-01-01", "2023-01-02")
-
-        assert isinstance(result_df, pd.DataFrame)
-        assert result_df.empty
-
-    def test_get_historical_daily_prices_fail(self, mock_make_request, client_with_key):
-        """測試獲取歷史價格時 _make_request 返回 None。"""
-        mock_make_request.return_value = None # _make_request 失敗
-
-        result_df = client_with_key.get_historical_daily_prices("FAIL", "2023-01-01", "2023-01-02")
-        assert result_df is None
-
-    def test_get_financial_statements_success(self, mock_make_request, client_with_key):
-        """測試成功獲取財務報表。"""
-        raw_data = [
-            {"date": "2023-03-31", "symbol": "MSFT", "netIncome": 20000}, # FMP 財報通常日期降序
-            {"date": "2022-12-31", "symbol": "MSFT", "netIncome": 18000},
+    def test_fetch_income_statement_success(
+        self, mock_session_get, fmp_client_fixture: FMPClient
+    ):
+        """測試成功獲取損益表數據。"""
+        symbol = "MSFT"
+        api_version = "v3"
+        # FMP 財報數據通常是直接的列表
+        raw_json_response_list = [
+            {"date": "2023-03-31", "symbol": symbol, "netIncome": 20000},
+            {"date": "2022-12-31", "symbol": symbol, "netIncome": 18000},
         ]
-        mock_make_request.return_value = raw_data
+        mock_response_obj = MagicMock()
+        mock_response_obj.status_code = 200
+        mock_response_obj.json.return_value = raw_json_response_list
+        mock_session_get.return_value = mock_response_obj
 
-        result_df = client_with_key.get_financial_statements("MSFT", "income-statement", "quarter", 2)
+        result_df = fmp_client_fixture.fetch_data(
+            symbol=symbol,
+            data_type="income-statement",
+            period="quarter",
+            limit=2,
+            api_version=api_version,
+        )
+
+        expected_endpoint = f"{api_version}/income-statement/{symbol}"
+        expected_params_to_parent = {
+            "period": "quarter",
+            "limit": "2",  # 注意 limit 轉為字串
+            "apikey": TEST_FMP_API_KEY,
+        }
+        expected_url = f"{fmp_client_fixture.base_url}/{expected_endpoint}"
+        mock_session_get.assert_called_once_with(
+            expected_url, params=expected_params_to_parent
+        )
 
         expected_df_data = [
-            {"date": pd.to_datetime("2023-03-31"), "symbol": "MSFT", "netIncome": 20000},
-            {"date": pd.to_datetime("2022-12-31"), "symbol": "MSFT", "netIncome": 18000},
+            {
+                "date": pd.to_datetime("2023-03-31"),
+                "symbol": symbol,
+                "netIncome": 20000,
+            },
+            {
+                "date": pd.to_datetime("2022-12-31"),
+                "symbol": symbol,
+                "netIncome": 18000,
+            },
         ]
         expected_df = pd.DataFrame(expected_df_data)
-
-        mock_make_request.assert_called_once_with(
-            "income-statement/MSFT",
-            {"period": "quarter", "limit": "2"}
+        assert_frame_equal(
+            result_df[["date", "symbol", "netIncome"]],
+            expected_df[["date", "symbol", "netIncome"]],
+            check_like=True,
         )
-        assert_frame_equal(result_df, expected_df, check_like=True)
 
-    def test_get_financial_statements_no_data(self, mock_make_request, client_with_key):
-        """測試獲取財報時 API 返回空列表。"""
-        mock_make_request.return_value = []
-        result_df = client_with_key.get_financial_statements("EMPTY", "balance-sheet-statement")
-        assert isinstance(result_df, pd.DataFrame)
+    def test_fetch_data_unsupported_type_raises_value_error(
+        self, mock_session_get, fmp_client_fixture: FMPClient
+    ):
+        """測試不支援的 data_type 時引發 ValueError。"""
+        with pytest.raises(
+            ValueError, match="不支援的 data_type: invalid_financial_product"
+        ):
+            fmp_client_fixture.fetch_data(
+                symbol="AAPL", data_type="invalid_financial_product"
+            )
+        mock_session_get.assert_not_called()
+
+    def test_fetch_data_missing_data_type_raises_value_error(
+        self, mock_session_get, fmp_client_fixture: FMPClient
+    ):
+        """測試未提供 data_type 時引發 ValueError。"""
+        with pytest.raises(ValueError, match="必須在 kwargs 中提供 'data_type' 參數"):
+            fmp_client_fixture.fetch_data(symbol="AAPL")  # 缺少 data_type
+        mock_session_get.assert_not_called()
+
+    def test_fetch_data_api_returns_error_message_in_json(
+        self, mock_session_get, fmp_client_fixture: FMPClient
+    ):
+        """測試 FMP API 在 200 OK 回應中返回業務錯誤訊息。"""
+        mock_response_obj = MagicMock()
+        mock_response_obj.status_code = 200
+        mock_response_obj.json.return_value = {
+            "Error Message": "Invalid symbol or API key."
+        }
+        mock_session_get.return_value = mock_response_obj
+
+        result_df = fmp_client_fixture.fetch_data(
+            symbol="ERROR", data_type="historical_price"
+        )
+
+        assert result_df.empty  # 預期返回空 DataFrame
+
+    def test_fetch_data_http_error_from_session_get(
+        self, mock_session_get, fmp_client_fixture: FMPClient
+    ):
+        """測試 requests.Session.get 拋出 HTTPError 時的處理。"""
+        mock_response_obj = MagicMock()
+        mock_response_obj.status_code = 401  # e.g. Unauthorized
+        mock_response_obj.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            "Simulated HTTP 401 Error", response=mock_response_obj
+        )
+        mock_session_get.return_value = mock_response_obj
+
+        # FMPClient.fetch_data 內部會捕獲此 HTTPError 並返回空 DataFrame
+        result_df = fmp_client_fixture.fetch_data(
+            symbol="FAIL", data_type="income-statement"
+        )
         assert result_df.empty
 
-    def test_get_financial_statements_fail(self, mock_make_request, client_with_key):
-        """測試獲取財報時 _make_request 返回 None。"""
-        mock_make_request.return_value = None
-        result_df = client_with_key.get_financial_statements("ERROR", "cash-flow-statement")
-        assert result_df is None
+    def test_fetch_data_empty_list_from_api(
+        self, mock_session_get, fmp_client_fixture: FMPClient
+    ):
+        """測試 API 成功返回但數據列表為空。"""
+        mock_response_obj = MagicMock()
+        mock_response_obj.status_code = 200
+        mock_response_obj.json.return_value = []  # API 返回空列表
+        mock_session_get.return_value = mock_response_obj
+
+        result_df = fmp_client_fixture.fetch_data(
+            symbol="NODATA", data_type="income-statement"
+        )
+        assert result_df.empty
+
+        # 測試歷史數據，其中 data_list 是從 "historical" 鍵提取的
+        mock_session_get.reset_mock()
+        mock_response_obj_hist = MagicMock()
+        mock_response_obj_hist.status_code = 200
+        mock_response_obj_hist.json.return_value = {"historical": []}
+        mock_session_get.return_value = mock_response_obj_hist
+        result_df_hist = fmp_client_fixture.fetch_data(
+            symbol="NODATA_HIST", data_type="historical_price"
+        )
+        assert result_df_hist.empty
+
+    def test_fetch_data_uses_default_api_version(
+        self, mock_session_get, fmp_client_fixture: FMPClient
+    ):
+        """測試未使用 api_version kwarg 時，是否使用 client 的 default_api_version。"""
+        fmp_client_fixture.default_api_version = "v4"  # 設定一個不同的預設版本
+
+        mock_response_obj = MagicMock()
+        mock_response_obj.status_code = 200
+        mock_response_obj.json.return_value = []  # 返回內容不重要
+        mock_session_get.return_value = mock_response_obj
+
+        fmp_client_fixture.fetch_data(symbol="AAPL", data_type="income-statement")
+
+        # 驗證 URL 是否包含正確的版本號
+        called_url, called_params = mock_session_get.call_args
+        assert f"{fmp_client_fixture.base_url}/v4/income-statement/AAPL" in called_url
+
 
 # 運行測試指令:
 # pytest tests/unit/core/clients/test_fmp.py -v
-# 或在專案根目錄:
-# python -m pytest -v
 # (需要安裝 pytest, pandas, requests)
+# 注意：由於我們 mock 了 FMPClient 繼承的 _request 方法，
+# 這些測試更側重於 FMPClient 內部邏輯（參數準備、端點構建、數據後處理）
+# 而不是 BaseAPIClient 的請求執行細節。
+# 如果要測試 BaseAPIClient 的 _request，需要單獨為 base.py 寫測試，
+# 或者在子類測試中 mock requests.Session.get。
+# 目前的 mock 策略是合理的，因為我們信任 BaseAPIClient._request 的行為，
+# 這裡專注於 FMPClient 如何使用它。

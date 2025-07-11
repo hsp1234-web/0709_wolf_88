@@ -1,10 +1,10 @@
 # tests/unit/apps/etl_pipeline/test_transformer.py
 import unittest
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch, MagicMock
 import sys
 import os
 from pathlib import Path
-import zipfile # Needed for creating dummy zip
+import zipfile  # Needed for creating dummy zip
 import pandas as pd
 
 # --- 確保 apps.etl_pipeline.transformer 可以被導入 ---
@@ -21,6 +21,7 @@ except NameError:
 
 from apps.etl_pipeline import transformer
 
+
 class TestTransformer(unittest.TestCase):
 
     def setUp(self):
@@ -33,13 +34,16 @@ class TestTransformer(unittest.TestCase):
         self.test_output_dir.mkdir(parents=True, exist_ok=True)
 
         # 創建一個假的 ZIP 檔案用於測試
-        with zipfile.ZipFile(self.test_zip_path, 'w') as zf:
+        with zipfile.ZipFile(self.test_zip_path, "w") as zf:
             zf.writestr(self.test_csv_filename, "header1,header2\ndata1,data2\n")
 
         self.test_argv = [
-            "--zipfile", str(self.test_zip_path),
-            "--output", str(self.test_output_dir),
-            "--loglevel", "DEBUG" # Use DEBUG for more verbose test output if needed
+            "--zipfile",
+            str(self.test_zip_path),
+            "--output",
+            str(self.test_output_dir),
+            "--loglevel",
+            "DEBUG",  # Use DEBUG for more verbose test output if needed
         ]
 
     def tearDown(self):
@@ -62,10 +66,9 @@ class TestTransformer(unittest.TestCase):
                 # print(f"Warning: Could not remove {self.test_output_dir} as it might not be empty.")
                 pass
 
-
-    @patch('apps.etl_pipeline.transformer.pd.DataFrame.to_parquet')
-    @patch('apps.etl_pipeline.transformer.pd.read_csv')
-    @patch('apps.etl_pipeline.transformer.zipfile.ZipFile')
+    @patch("apps.etl_pipeline.transformer.pd.DataFrame.to_parquet")
+    @patch("apps.etl_pipeline.transformer.pd.read_csv")
+    @patch("apps.etl_pipeline.transformer.zipfile.ZipFile")
     def test_run_transformation_successful_execution(
         self, mock_zipfile, mock_read_csv, mock_to_parquet
     ):
@@ -75,11 +78,13 @@ class TestTransformer(unittest.TestCase):
         # 模擬 ZipFile 的行為
         mock_zip_instance = MagicMock()
         mock_zip_instance.namelist.return_value = [self.test_csv_filename]
-        mock_zip_instance.read.return_value = b"header1,header2\ndata1,data2" # CSV content as bytes
+        mock_zip_instance.read.return_value = (
+            b"header1,header2\ndata1,data2"  # CSV content as bytes
+        )
         mock_zipfile.return_value.__enter__.return_value = mock_zip_instance
 
         # 模擬 read_csv 返回一個簡單的 DataFrame
-        mock_df = pd.DataFrame({'header1': ['data1'], 'header2': ['data2']})
+        mock_df = pd.DataFrame({"header1": ["data1"], "header2": ["data2"]})
         mock_read_csv.return_value = mock_df
 
         # 執行函數
@@ -87,9 +92,9 @@ class TestTransformer(unittest.TestCase):
 
         # 驗證結果
         self.assertTrue(result, "run_transformation 應在成功時返回 True")
-        mock_zipfile.assert_called_with(self.test_zip_path, 'r')
-        mock_read_csv.assert_called_once() # 確保 read_csv 被調用
-        mock_to_parquet.assert_called_once() # 確保 to_parquet 被調用
+        mock_zipfile.assert_called_with(self.test_zip_path, "r")
+        mock_read_csv.assert_called_once()  # 確保 read_csv 被調用
+        mock_to_parquet.assert_called_once()  # 確保 to_parquet 被調用
 
         # 驗證輸出的 parquet 檔案名是否符合預期
         expected_parquet_name = Path(self.test_csv_filename).stem + ".parquet"
@@ -100,17 +105,20 @@ class TestTransformer(unittest.TestCase):
         self.assertEqual(called_output_path.name, expected_parquet_name)
         self.assertEqual(called_output_path.parent, self.test_output_dir)
 
-
     def test_run_transformation_missing_arguments(self):
         """
         測試 run_transformation 在缺少必要參數時 argparse 是否正確處理。
         """
         with self.assertRaises(SystemExit) as cm:
-            transformer.run_transformation(["--zipfile", str(self.test_zip_path)]) # Missing --output
+            transformer.run_transformation(
+                ["--zipfile", str(self.test_zip_path)]
+            )  # Missing --output
         self.assertEqual(cm.exception.code, 2)
 
         with self.assertRaises(SystemExit) as cm:
-            transformer.run_transformation(["--output", str(self.test_output_dir)]) # Missing --zipfile
+            transformer.run_transformation(
+                ["--output", str(self.test_output_dir)]
+            )  # Missing --zipfile
         self.assertEqual(cm.exception.code, 2)
 
     def test_run_transformation_zip_not_found(self):
@@ -118,13 +126,15 @@ class TestTransformer(unittest.TestCase):
         測試當 ZIP 檔案不存在時，函數是否返回 False。
         """
         invalid_argv = [
-            "--zipfile", "non_existent_file.zip",
-            "--output", str(self.test_output_dir)
+            "--zipfile",
+            "non_existent_file.zip",
+            "--output",
+            str(self.test_output_dir),
         ]
         result = transformer.run_transformation(invalid_argv)
         self.assertFalse(result, "run_transformation 應在 ZIP 檔案不存在時返回 False")
 
-    @patch('apps.etl_pipeline.transformer._find_target_csv_in_zip', return_value=None)
+    @patch("apps.etl_pipeline.transformer._find_target_csv_in_zip", return_value=None)
     def test_run_transformation_no_csv_in_zip(self, mock_find_csv):
         """
         測試當 ZIP 檔案中沒有 CSV 時，函數是否返回 False。
@@ -133,7 +143,7 @@ class TestTransformer(unittest.TestCase):
         self.assertFalse(result, "run_transformation 應在 ZIP 中無 CSV 時返回 False")
         mock_find_csv.assert_called_once()
 
-    @patch('apps.etl_pipeline.transformer.zipfile.ZipFile')
+    @patch("apps.etl_pipeline.transformer.zipfile.ZipFile")
     def test_run_transformation_bad_zip_file(self, mock_zipfile):
         """
         測試當 ZIP 檔案損壞時，函數是否返回 False。
@@ -143,5 +153,6 @@ class TestTransformer(unittest.TestCase):
         result = transformer.run_transformation(self.test_argv)
         self.assertFalse(result, "run_transformation 應在 ZIP 檔案損壞時返回 False")
 
-if __name__ == '__main__':
-    unittest.main(argv=['first-arg-is-ignored'], exit=False)
+
+if __name__ == "__main__":
+    unittest.main(argv=["first-arg-is-ignored"], exit=False)

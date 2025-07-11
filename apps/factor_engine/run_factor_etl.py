@@ -5,7 +5,8 @@
 import pandas as pd
 from apps.daily_market_analyzer.db_manager import DBManager
 from apps.factor_engine.engine import FactorEngine
-import os # 用於數據庫路徑
+import os  # 用於數據庫路徑
+
 
 def run_etl():
     """
@@ -15,18 +16,22 @@ def run_etl():
 
     # 假設資料庫檔案位於 data_workspace/market_data.duckdb
     # TODO: 應該從統一的配置文件中讀取數據庫路徑
-    db_file_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data_workspace', 'market_data.duckdb')
+    db_file_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "data_workspace", "market_data.duckdb"
+    )
     db_manager = DBManager(db_path=db_file_path)
     factor_engine = FactorEngine(db_manager=db_manager)
 
     # 1. 從 MarketPrices_Daily 表中獲取所有不重複的 ticker
     print("INFO: 正在從 MarketPrices_Daily 獲取所有 tickers...")
     try:
-        tickers_df = db_manager.execute_query("SELECT DISTINCT ticker FROM MarketPrices_Daily")
+        tickers_df = db_manager.execute_query(
+            "SELECT DISTINCT ticker FROM MarketPrices_Daily"
+        )
         if tickers_df.empty:
             print("警告: MarketPrices_Daily 中沒有找到任何 ticker。因子 ETL 流程終止。")
             return
-        tickers_list = tickers_df['ticker'].tolist()
+        tickers_list = tickers_df["ticker"].tolist()
         print(f"INFO: 共找到 {len(tickers_list)} 個 tickers。")
     except Exception as e:
         print(f"錯誤: 無法從 MarketPrices_Daily 獲取 tickers: {e}")
@@ -45,15 +50,18 @@ def run_etl():
             continue
 
         # 確保索引名為 'datetime'，方便後續轉換
-        if price_data_df.index.name != 'datetime':
-             price_data_df.index.name = 'datetime'
-
+        if price_data_df.index.name != "datetime":
+            price_data_df.index.name = "datetime"
 
         # 2b. 計算因子
         # 價格波動率 (hv_20d)
-        hv_20d = factor_engine.calculate_price_volatility(price_data_df.copy(), n_days=20) # 使用 .copy() 避免 SettingWithCopyWarning
+        hv_20d = factor_engine.calculate_price_volatility(
+            price_data_df.copy(), n_days=20
+        )  # 使用 .copy() 避免 SettingWithCopyWarning
         # 成交量波動率 (volume_hv_20d)
-        volume_hv_20d = factor_engine.calculate_volume_volatility(price_data_df.copy(), n_days=20)
+        volume_hv_20d = factor_engine.calculate_volume_volatility(
+            price_data_df.copy(), n_days=20
+        )
         # RSI (rsi_14)
         rsi_14 = factor_engine.calculate_rsi(price_data_df.copy(), n_days=14)
 
@@ -62,36 +70,48 @@ def run_etl():
 
         # 處理 hv_20d
         if hv_20d is not None and not hv_20d.empty:
-            hv_df = hv_20d.reset_index() # datetime 索引變為欄位
-            hv_df.columns = ['date', 'factor_value']
-            hv_df['ticker'] = ticker
-            hv_df['factor_name'] = 'hv_20d'
+            hv_df = hv_20d.reset_index()  # datetime 索引變為欄位
+            hv_df.columns = ["date", "factor_value"]
+            hv_df["ticker"] = ticker
+            hv_df["factor_name"] = "hv_20d"
             # 轉換 date 為 YYYY-MM-DD 格式的字串，如果它是 datetime 物件
-            hv_df['date'] = pd.to_datetime(hv_df['date']).dt.date
-            factors_for_current_ticker.append(hv_df[['ticker', 'date', 'factor_name', 'factor_value']].dropna())
+            hv_df["date"] = pd.to_datetime(hv_df["date"]).dt.date
+            factors_for_current_ticker.append(
+                hv_df[["ticker", "date", "factor_name", "factor_value"]].dropna()
+            )
 
         # 處理 volume_hv_20d
         if volume_hv_20d is not None and not volume_hv_20d.empty:
             vol_hv_df = volume_hv_20d.reset_index()
-            vol_hv_df.columns = ['date', 'factor_value']
-            vol_hv_df['ticker'] = ticker
-            vol_hv_df['factor_name'] = 'volume_hv_20d'
-            vol_hv_df['date'] = pd.to_datetime(vol_hv_df['date']).dt.date
-            factors_for_current_ticker.append(vol_hv_df[['ticker', 'date', 'factor_name', 'factor_value']].dropna())
+            vol_hv_df.columns = ["date", "factor_value"]
+            vol_hv_df["ticker"] = ticker
+            vol_hv_df["factor_name"] = "volume_hv_20d"
+            vol_hv_df["date"] = pd.to_datetime(vol_hv_df["date"]).dt.date
+            factors_for_current_ticker.append(
+                vol_hv_df[["ticker", "date", "factor_name", "factor_value"]].dropna()
+            )
 
         # 處理 rsi_14
         if rsi_14 is not None and not rsi_14.empty:
             rsi_df = rsi_14.reset_index()
-            rsi_df.columns = ['date', 'factor_value']
-            rsi_df['ticker'] = ticker
-            rsi_df['factor_name'] = 'rsi_14d' # 保持與 pandas-ta 輸出一致性，或統一為 rsi_14
-            rsi_df['date'] = pd.to_datetime(rsi_df['date']).dt.date
-            factors_for_current_ticker.append(rsi_df[['ticker', 'date', 'factor_name', 'factor_value']].dropna())
+            rsi_df.columns = ["date", "factor_value"]
+            rsi_df["ticker"] = ticker
+            rsi_df["factor_name"] = (
+                "rsi_14d"  # 保持與 pandas-ta 輸出一致性，或統一為 rsi_14
+            )
+            rsi_df["date"] = pd.to_datetime(rsi_df["date"]).dt.date
+            factors_for_current_ticker.append(
+                rsi_df[["ticker", "date", "factor_name", "factor_value"]].dropna()
+            )
 
         if factors_for_current_ticker:
-            current_ticker_factors_df = pd.concat(factors_for_current_ticker, ignore_index=True)
+            current_ticker_factors_df = pd.concat(
+                factors_for_current_ticker, ignore_index=True
+            )
             all_factors_to_store.append(current_ticker_factors_df)
-            print(f"INFO: 為 {ticker} 計算並準備了 {len(current_ticker_factors_df)} 筆因子數據。")
+            print(
+                f"INFO: 為 {ticker} 計算並準備了 {len(current_ticker_factors_df)} 筆因子數據。"
+            )
         else:
             print(f"INFO: 未能為 {ticker} 計算出任何因子數據。")
 
@@ -101,20 +121,28 @@ def run_etl():
     print("\nINFO: 開始計算殖利率曲線相關因子...")
     treasury_yields_data = factor_engine.get_treasury_yields()
     if not treasury_yields_data.empty:
-        yield_spread_factors = factor_engine.calculate_yield_spreads(treasury_yields_data)
+        yield_spread_factors = factor_engine.calculate_yield_spreads(
+            treasury_yields_data
+        )
         if not yield_spread_factors.empty:
             # 將寬表格式 (date 為索引, 各利差為欄位) 的殖利率因子轉換為長表格式，
             # 以符合 FactorStore_Daily 的 (ticker, date, factor_name, factor_value) 結構。
             yield_spread_factors_long = yield_spread_factors.reset_index().melt(
-                id_vars='date', # 將 'date' 索引轉換為欄位，並作為融合時的ID變數
-                var_name='factor_name', # 其餘欄位名 (如 'spread_10y_2y') 變為 'factor_name' 欄的值
-                value_name='factor_value'
+                id_vars="date",  # 將 'date' 索引轉換為欄位，並作為融合時的ID變數
+                var_name="factor_name",  # 其餘欄位名 (如 'spread_10y_2y') 變為 'factor_name' 欄的值
+                value_name="factor_value",
             )
-            yield_spread_factors_long['ticker'] = 'US_TREASURY' # 特殊 ticker 名稱
-            yield_spread_factors_long['date'] = pd.to_datetime(yield_spread_factors_long['date']).dt.date
-            yield_spread_factors_long = yield_spread_factors_long[['ticker', 'date', 'factor_name', 'factor_value']].dropna()
+            yield_spread_factors_long["ticker"] = "US_TREASURY"  # 特殊 ticker 名稱
+            yield_spread_factors_long["date"] = pd.to_datetime(
+                yield_spread_factors_long["date"]
+            ).dt.date
+            yield_spread_factors_long = yield_spread_factors_long[
+                ["ticker", "date", "factor_name", "factor_value"]
+            ].dropna()
             all_factors_to_store.append(yield_spread_factors_long)
-            print(f"INFO: 計算並準備了 {len(yield_spread_factors_long)} 筆殖利率曲線因子數據。")
+            print(
+                f"INFO: 計算並準備了 {len(yield_spread_factors_long)} 筆殖利率曲線因子數據。"
+            )
         else:
             print("INFO: 未能計算出殖利率曲線因子數據。")
     else:
@@ -126,21 +154,35 @@ def run_etl():
     if not credit_spread_proxy_factor.empty:
         # credit_spread_proxy_factor DataFrame 結構: date (索引), HYG_LQD_price_ratio (欄位)
         # 將其轉換為 FactorStore_Daily 的長表格式。
-        credit_spread_proxy_long = credit_spread_proxy_factor.reset_index() # date 索引變為 'date' 欄
+        credit_spread_proxy_long = (
+            credit_spread_proxy_factor.reset_index()
+        )  # date 索引變為 'date' 欄
         # 此時欄位為 ['date', 'HYG_LQD_price_ratio']
-        credit_spread_proxy_long.rename(columns={'HYG_LQD_price_ratio': 'factor_value'}, inplace=True)
-        credit_spread_proxy_long['factor_name'] = 'HYG_LQD_price_ratio' # 設定固定的因子名稱
-        credit_spread_proxy_long['ticker'] = 'CREDIT_SPREAD' # 特殊 ticker 名稱
-        credit_spread_proxy_long['date'] = pd.to_datetime(credit_spread_proxy_long['date']).dt.date
+        credit_spread_proxy_long.rename(
+            columns={"HYG_LQD_price_ratio": "factor_value"}, inplace=True
+        )
+        credit_spread_proxy_long["factor_name"] = (
+            "HYG_LQD_price_ratio"  # 設定固定的因子名稱
+        )
+        credit_spread_proxy_long["ticker"] = "CREDIT_SPREAD"  # 特殊 ticker 名稱
+        credit_spread_proxy_long["date"] = pd.to_datetime(
+            credit_spread_proxy_long["date"]
+        ).dt.date
         # 確保欄位順序符合 FactorStore_Daily 並移除空值
-        credit_spread_proxy_long = credit_spread_proxy_long[['ticker', 'date', 'factor_name', 'factor_value']].dropna()
+        credit_spread_proxy_long = credit_spread_proxy_long[
+            ["ticker", "date", "factor_name", "factor_value"]
+        ].dropna()
         all_factors_to_store.append(credit_spread_proxy_long)
-        print(f"INFO: 計算並準備了 {len(credit_spread_proxy_long)} 筆信用利差代理因子數據。")
+        print(
+            f"INFO: 計算並準備了 {len(credit_spread_proxy_long)} 筆信用利差代理因子數據。"
+        )
     else:
         print("INFO: 未能計算出信用利差代理因子數據。")
 
     # 5. 合併所有因子數據並存入資料庫
-    if all_factors_to_store: # 此時 all_factors_to_store 包含之前 ticker 因子 (如果有的話) 和新計算的宏觀因子
+    if (
+        all_factors_to_store
+    ):  # 此時 all_factors_to_store 包含之前 ticker 因子 (如果有的話) 和新計算的宏觀因子
         # 重新合併，因為之前 ticker_factors_df 可能未加入 all_factors_to_store
         # 或者，應該在 ticker 循環後就將 ticker_factors_df 加入 all_factors_to_store
         # 修正：all_factors_to_store 在 ticker 循環中已經收集了數據
@@ -148,7 +190,9 @@ def run_etl():
 
         final_factors_df = pd.concat(all_factors_to_store, ignore_index=True)
         if not final_factors_df.empty:
-            print(f"\nINFO: ETL 流程總共計算出 {len(final_factors_df)} 筆因子數據，準備寫入資料庫...")
+            print(
+                f"\nINFO: ETL 流程總共計算出 {len(final_factors_df)} 筆因子數據，準備寫入資料庫..."
+            )
             db_manager.insert_factors(final_factors_df)
             print("INFO: 所有因子數據已成功寫入 FactorStore_Daily。")
         else:
@@ -157,10 +201,10 @@ def run_etl():
         # 這個情況應該是 ticker 因子和宏觀因子都沒有產生
         print("\nINFO: ETL 流程未產生任何可儲存的因子數據。")
 
-
     print("\nINFO: 因子 ETL 流程執行完畢。")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # 為了能夠直接執行此腳本，需要確保 apps 目錄在 Python 的搜索路徑中
     # 這通常通過設置 PYTHONPATH 或在專案根目錄執行來實現
     # 例如: PYTHONPATH=. python apps/factor_engine/run_factor_etl.py
@@ -169,9 +213,10 @@ if __name__ == '__main__':
     # 臨時添加專案根目錄到 sys.path，以便於直接執行
     import sys
     import os
+
     # 假設此腳本位於 apps/factor_engine/run_factor_etl.py
     # 則專案根目錄是向上兩級
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
         print(f"DEBUG: 已將專案根目錄 {project_root} 添加到 sys.path")

@@ -1,192 +1,248 @@
 # core/clients/finmind.py
 # 此模組包含與 FinMind API 互動的客戶端邏輯。
-
+from __future__ import annotations
 import os
 import requests
 import pandas as pd
 from io import StringIO
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List # Ensure List is imported
 
-# FinMind API 基礎 URL
-BASE_URL = "https://api.finmindtrade.com/api/v4/data"
+from .base import BaseAPIClient
 
-class FinMindAPIClient:
+# FinMind API 基礎 URL (所有請求都使用此 URL)
+FINMIND_API_BASE_URL = "https://api.finmindtrade.com/api/v4/data"
+
+
+class FinMindClient(BaseAPIClient):
     """
     用於與 FinMind API 互動的客戶端。
+    FinMind API 的特點是所有數據請求都使用同一個基礎 URL，
+    具體的數據集和參數在請求的 params 中指定。
+    它可能返回 JSON 或 CSV 格式的數據。
     """
+
     def __init__(self, api_token: Optional[str] = None):
         """
-        初始化 FinMindAPIClient。
+        初始化 FinMindClient。
 
         Args:
             api_token (Optional[str]): FinMind API Token。如果未提供，
                                        將嘗試從環境變數 FINMIND_API_TOKEN 讀取。
-
         Raises:
             ValueError: 如果 API Token 未提供且環境變數中也未設定。
         """
-        self.api_token = api_token or os.getenv("FINMIND_API_TOKEN")
-        if not self.api_token:
-            raise ValueError("FinMind API token 未設定。請設定 FINMIND_API_TOKEN 環境變數或在初始化時傳入 api_token。")
+        finmind_api_token = api_token or os.getenv("FINMIND_API_TOKEN")
+        if not finmind_api_token:
+            raise ValueError(
+                "FinMind API token 未設定。請設定 FINMIND_API_TOKEN 環境變數或在初始化時傳入 api_token。"
+            )
 
-    def _make_request(self, endpoint_params: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        super().__init__(api_key=finmind_api_token, base_url=FINMIND_API_BASE_URL)
+        print("資訊：FinMindClient 初始化完成。")
+
+    def _request(
+        self, endpoint: str = "", params: Optional[Dict[str, Any]] = None
+    ) -> pd.DataFrame:
         """
-        向 FinMind API 發送請求並處理回應。
+        覆寫 BaseAPIClient._request 方法以處理 FinMind API 的特殊性：
+        1. API Token 參數名為 "token"。
+        2. 端點通常為空，所有資訊通過 params 傳遞。
+        3. 回應可能是 JSON 或 CSV，都需要轉換為 DataFrame。
+        4. FinMind 的 JSON 回應有自己的 status 和 msg 欄位需要檢查。
 
         Args:
-            endpoint_params (Dict[str, Any]): API 端點所需的參數字典。
-                                               此字典應包含 'dataset', 'data_id', 'start_date' 等。
-
+            endpoint (str): 對於 FinMind 通常為空字串。
+            params (Optional[Dict[str, Any]]): API 請求的查詢參數。
+                                               必須包含 'dataset', 'data_id', 'start_date' 等。
         Returns:
-            Optional[pd.DataFrame]: 包含 API 回應數據的 DataFrame，如果請求失敗或無數據則返回 None。
+            pd.DataFrame: 包含 API 回應數據的 DataFrame。如果請求失敗或無數據則返回空的 DataFrame。
+
+        Raises:
+            requests.exceptions.HTTPError: 如果 API 返回 HTTP 錯誤狀態碼。
+            ValueError: 如果 params 為空或缺少必要參數。
         """
-        # 移除 params 中的 token 參數，因為它將透過 headers 傳遞
-        # 或者 FinMind API 也接受 params 中的 token，原始碼是這樣做的
-        # 為了與原始碼行為一致，此處保留 params["token"] = self.api_token
-        request_params = endpoint_params.copy()
-        request_params["token"] = self.api_token
+        if not params:
+            raise ValueError("請求 FinMind API 時，params 參數不得為空。")
 
-        # 雖然原始碼也將 token 放入 params，但通常 token 是放在 header
-        # headers = {"Authorization": f"Bearer {self.api_token}"}
-        # 根據 FinMind 文件，token 確實是作為查詢參數 "token" 傳遞
-        headers = {} # FinMind API token 是透過 params 傳遞
+        request_params = params.copy()
+        request_params["token"] = (
+            self.api_key
+        )
 
-        print(f"資訊：向 FinMind API 發送請求，目標資料集：'{request_params.get('dataset')}', 資料ID：'{request_params.get('data_id')}'")
+        url = (
+            f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
+            if endpoint
+            else self.base_url
+        )
+
+        print(
+            f"資訊：向 FinMind API 發送請求，URL: {url}, 資料集：'{request_params.get('dataset')}', 資料ID：'{request_params.get('data_id')}'"
+        )
+
         try:
-            response = requests.get(BASE_URL, params=request_params, headers=headers)
-            response.raise_for_status()  # 如果 HTTP 狀態碼是 4xx 或 5xx，則引發 HTTPError
+            response: requests.Response = self._session.get(url, params=request_params)
+            response.raise_for_status()  # type: ignore[no-untyped-call]
 
-            # FinMind API 可能返回 CSV 或 JSON
-            content_type = response.headers.get('Content-Type', '')
-            if 'text/csv' in content_type:
+            content_type = response.headers.get("Content-Type", "")
+            if "text/csv" in content_type:
                 print("資訊：FinMind API 回應為 CSV 格式。")
-                return pd.read_csv(StringIO(response.text))
-            elif 'application/json' in content_type:
-                print("資訊：FinMind API 回應為 JSON 格式。")
-                json_response = response.json()
-                if json_response.get("status") != 200:
-                    error_msg = json_response.get('msg', '未知錯誤')
-                    print(f"錯誤：FinMind API 邏輯錯誤 (status {json_response.get('status')}): {error_msg}")
-                    return None
+                df = pd.read_csv(StringIO(response.text))
+                return df if not df.empty else pd.DataFrame()
 
-                data_list = json_response.get("data")
+            elif "application/json" in content_type:
+                print("資訊：FinMind API 回應為 JSON 格式。")
+                json_response: Dict[str, Any] = response.json()  # type: ignore[no-any-return]
+
+                if json_response.get("status") != 200:
+                    error_msg = json_response.get("msg", "未知 API 內部錯誤")
+                    status_code = json_response.get("status", "N/A")
+                    print(
+                        f"錯誤：FinMind API 邏輯錯誤 (內部 status {status_code}): {error_msg}"
+                    )
+                    return pd.DataFrame()
+
+                data_list: Optional[List[Dict[str, Any]]] = json_response.get("data")
                 if data_list:
                     return pd.DataFrame(data_list)
                 else:
-                    print(f"資訊：FinMind API 未返回任何數據 (data 列表為空或不存在)。資料集：'{request_params.get('dataset')}', ID：'{request_params.get('data_id')}'")
-                    return pd.DataFrame() # 返回空的 DataFrame 表示成功請求但無數據
+                    print(
+                        f"資訊：FinMind API 未返回任何數據 (data 列表為空或不存在)。資料集：'{request_params.get('dataset')}', ID：'{request_params.get('data_id')}'"
+                    )
+                    return pd.DataFrame()
             else:
                 print(f"錯誤：未知的 FinMind API 回應 Content-Type: {content_type}")
-                return None
+                return pd.DataFrame()
 
         except requests.exceptions.HTTPError as http_err:
-            print(f"錯誤：FinMind API HTTP 錯誤：{http_err} - 回應內容：{response.text}")
-            return None
+            print(
+                f"錯誤：FinMind API HTTP 錯誤：{http_err} - 回應內容：{http_err.response.text if http_err.response else '無回應內容'}"
+            )
+            raise
         except requests.exceptions.RequestException as req_err:
             print(f"錯誤：請求 FinMind API 時發生網路或請求配置錯誤：{req_err}")
-            return None
+            return pd.DataFrame()
         except Exception as e:
-            # 捕捉 pd.read_csv 或 response.json() 可能引發的錯誤
             print(f"錯誤：處理 FinMind API 回應時發生未知錯誤：{e}")
-            return None
+            return pd.DataFrame()
 
-    def get_data(self, dataset: str, data_id: str, start_date: str, end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
+    def fetch_data(self, symbol: str, **kwargs) -> pd.DataFrame:
         """
-        從 FinMind API 獲取指定資料集和股票的數據。
+        從 FinMind API 獲取數據。
 
         Args:
-            dataset (str): FinMind 資料集名稱 (例如 "TaiwanStockPrice")。
-            data_id (str): 股票代碼或特定資料ID。
-            start_date (str): 開始日期 (格式 YYYY-MM-DD)。
-            end_date (Optional[str]): 結束日期 (格式 YYYY-MM-DD)。預設為當前日期。
+            symbol (str): 資料 ID (例如股票代碼 "2330")。在 FinMind 中對應 'data_id'。
+            **kwargs:
+                dataset (str): 必須提供。FinMind 資料集名稱 (例如 "TaiwanStockPrice")。
+                start_date (str): 必須提供。開始日期 (格式 YYYY-MM-DD)。
+                end_date (str, optional): 結束日期 (格式 YYYY-MM-DD)。預設為當前日期。
 
         Returns:
-            Optional[pd.DataFrame]: 包含請求數據的 DataFrame，如果失敗則為 None。
+            pd.DataFrame: 包含請求數據的 DataFrame。如果失敗或無數據，則返回空的 DataFrame。
+
+        Raises:
+            ValueError: 如果缺少 'dataset' 或 'start_date' 參數。
+            requests.exceptions.HTTPError: 如果 API 請求遭遇 HTTP 錯誤。
         """
-        params = {
+        dataset = kwargs.get("dataset")
+        start_date = kwargs.get("start_date")
+
+        if not dataset:
+            raise ValueError(
+                "使用 FinMindClient.fetch_data 時，必須在 kwargs 中提供 'dataset' 參數。"
+            )
+        if not start_date:
+            raise ValueError(
+                "使用 FinMindClient.fetch_data 時，必須在 kwargs 中提供 'start_date' 參數。"
+            )
+
+        params: Dict[str,Any] = { # Add type hint for params
             "dataset": dataset,
-            "data_id": data_id,
+            "data_id": symbol,
             "start_date": start_date,
-            "end_date": end_date or datetime.now().strftime("%Y-%m-%d"),
+            "end_date": kwargs.get("end_date", datetime.now().strftime("%Y-%m-%d")),
         }
-        return self._make_request(params)
 
-    # 為了與舊版 client.py 的方法簽名保持一定程度的兼容性，
-    # 以及提供一個更具體的範例方法，保留此方法。
-    # 但通用的 get_data 方法更具彈性。
+        # Add any other kwargs to params for FinMind API
+        for key, value in kwargs.items():
+            if key not in ["dataset", "start_date", "end_date", "data_id", "symbol"]:
+                params[key] = value
+
+        try:
+            return self._request(endpoint="", params=params)
+        except requests.exceptions.HTTPError:
+            raise
+
     def get_taiwan_stock_institutional_investors_buy_sell(
-        self,
-        stock_id: str,
-        start_date: str,
-        end_date: Optional[str] = None
-    ) -> Optional[pd.DataFrame]:
-        """
-        獲取台灣股市特定股票的法人買賣超數據。
-        (此為對 `get_data` 方法使用 "TaiwanStockInstitutionalInvestorsBuySell" 資料集的一個封裝)
-
-        Args:
-            stock_id (str): 股票代碼 (例如 "2330")。
-            start_date (str): 開始日期 (格式 YYYY-MM-DD)。
-            end_date (Optional[str]): 結束日期 (格式 YYYY-MM-DD)。預設為當前日期。
-
-        Returns:
-            Optional[pd.DataFrame]: 包含法人買賣超數據的 DataFrame，如果失敗則為 None。
-        """
-        return self.get_data(
+        self, stock_id: str, start_date: str, end_date: Optional[str] = None
+    ) -> pd.DataFrame:
+        return self.fetch_data(
+            symbol=stock_id,
             dataset="TaiwanStockInstitutionalInvestorsBuySell",
-            data_id=stock_id,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
         )
 
-# 範例使用 (主要用於開發時測試，實際使用時應由其他模組導入 Client)
-if __name__ == '__main__':
-    print("--- FinMind API Client 測試 (直接執行 core/clients/finmind.py) ---")
-    # 執行此測試前，請確保設定了 FINMIND_API_TOKEN 環境變數
+if __name__ == "__main__":
+    print(
+        "--- FinMindClient 重構後測試 (直接執行 core/clients/finmind.py) ---"
+    )
     try:
-        client = FinMindAPIClient()
-        print("FinMindAPIClient 初始化成功。")
+        client = FinMindClient()
+        print("FinMindClient 初始化成功。")
 
-        # 測試台灣股市股價資料集
-        print("\n測試 TaiwanStockPrice (台積電 2330)...")
-        # stock_data = client.get_data(dataset="TaiwanStockPrice", data_id="2330", start_date="2023-01-01", end_date="2023-01-10")
-        # 為了避免 Token 實際調用產生費用或依賴外部服務，這裡使用一個較不易變動的、可能不需要 Token 的端點 (例如台灣股市日曆)
-        # 不過，FinMind 大部分數據都需要 Token。
-        # 這裡改為測試一個虛構或已知的小範圍數據，假設 API Token 已設定。
-        # 根據 FinMind 文件，"TaiwanStockInfo" 似乎是一個不需要頻繁更新的數據集，用來獲取股票基本資訊
-
-        # 測試法人買賣超 (使用特定方法)
-        # 注意：FinMind 的免費方案可能對此數據集有限制
+        print("\n測試獲取台積電 (2330) 法人買賣超 (2024-01-01 至 2024-01-05)...")
         investor_data = client.get_taiwan_stock_institutional_investors_buy_sell(
-            stock_id="2330",
-            start_date="2024-01-01",
-            end_date="2024-01-05"
+            stock_id="2330", start_date="2024-01-01", end_date="2024-01-05"
         )
-
-        if investor_data is not None:
-            if not investor_data.empty:
-                print(f"成功獲取股票 2330 的法人買賣超數據 (共 {len(investor_data)} 筆):")
-                print(investor_data.head())
-            else:
-                print("股票 2330 的法人買賣超數據請求成功，但返回為空 DataFrame (該日期範圍可能無數據或 Token 權限不足)。")
+        if not investor_data.empty:
+            print(f"成功獲取股票 2330 的法人買賣超數據 (共 {len(investor_data)} 筆):")
+            print(investor_data.head())
         else:
-            print("獲取股票 2330 的法人買賣超數據失敗。")
+            print(
+                "股票 2330 的法人買賣超數據請求成功，但返回為空 DataFrame (請檢查 API Key, 日期範圍或日誌)。"
+            )
 
-        # 測試一個可能不存在的資料
-        print("\n測試一個不存在的股票代碼 (XYZABC)...")
-        non_existent_data = client.get_data(dataset="TaiwanStockPrice", data_id="XYZABC", start_date="2023-01-01", end_date="2023-01-05")
-        if non_existent_data is not None:
-            if non_existent_data.empty:
-                print("獲取 XYZABC 數據成功，返回空的 DataFrame (符合預期，因為股票不存在或無數據)。")
-            else:
-                print(f"獲取 XYZABC 數據返回了非預期的數據: \n{non_existent_data.head()}")
+        print(
+            "\n測試使用 fetch_data 獲取聯發科 (2454) 股價 (2024-03-01 至 2024-03-05)..."
+        )
+        stock_price_data = client.fetch_data(
+            symbol="2454",
+            dataset="TaiwanStockPrice",
+            start_date="2024-03-01",
+            end_date="2024-03-05",
+        )
+        if not stock_price_data.empty:
+            print(f"成功獲取股票 2454 的股價數據 (共 {len(stock_price_data)} 筆):")
+            print(stock_price_data.head())
         else:
-            print("獲取 XYZABC 數據失敗 (符合預期，因為股票不存在或請求錯誤)。")
+            print("股票 2454 的股價數據請求成功，但返回為空 DataFrame。")
 
-    except ValueError as ve:
-        print(f"初始化錯誤: {ve}")
+        print("\n測試一個不存在的股票代碼 (XYZABC) 使用 fetch_data...")
+        non_existent_data = client.fetch_data(
+            symbol="XYZABC",
+            dataset="TaiwanStockPrice",
+            start_date="2023-01-01",
+            end_date="2023-01-05",
+        )
+        if non_existent_data.empty:
+            print(
+                "獲取 XYZABC 數據返回空 DataFrame (符合預期，因為股票不存在或請求錯誤)。"
+            )
+        else:
+            print(f"獲取 XYZABC 數據返回了非預期的數據: \n{non_existent_data.head()}")
+
+        try:
+            print("\n測試 fetch_data 缺少 'dataset'...")
+            client.fetch_data(symbol="2330", start_date="2024-01-01") # Missing dataset
+        except ValueError as ve:
+            print(f"成功捕獲錯誤 (符合預期): {ve}")
+
+    except ValueError as ve_init:
+        print(f"初始化錯誤: {ve_init}")
+    except requests.exceptions.HTTPError as http_e:
+        print(f"捕獲到 HTTP 錯誤 (可能是 API Token 無效或網路問題): {http_e}")
     except Exception as e:
         print(f"執行期間發生未預期錯誤: {e}")
 
-    print("--- FinMind API Client 測試結束 ---")
+    print("--- FinMindAPIClient 重構後測試結束 ---")
