@@ -73,6 +73,7 @@ types-pytz = "^2024.1.0"     # 類型存根 for pytz
 
 # --- 建構系統配置 ---
 # 由 `poetry init` 自動生成，定義專案的建構方式
+openpyxl = "^3.1.5"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
