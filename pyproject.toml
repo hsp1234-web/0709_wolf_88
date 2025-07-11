@@ -20,7 +20,7 @@ license = "MIT"
 python = ">=3.12, <3.14"
 
 # A. 核心數據科學與計算引擎
-numpy = "^2.2.6"            # 高效能多維陣列運算基石
+numpy = "<2.0"            # 高效能多維陣列運算基石 (pandas-ta 0.3.14b0 與 numpy 2.x 不兼容)
 pandas = "^2.3.1"           # 高效能 DataFrame 結構，用於操作與分析表格數據
 scipy = "^1.15.3"           # 提供高級數學演算法，用於複雜金融建模
 numba = "^0.61.2"           # JIT 編譯器，用於加速 Python 和 NumPy 程式碼
@@ -52,6 +52,7 @@ pytz = "^2025.2"                 # 世界時區資料庫
 tzdata = "^2025.2"               # 時區問題的標準解決方案之一
 psutil = "^6.0.0"                # 跨平台系統監控函式庫
 frozendict = "^2.4.6"            # 提供不可變的字典類型
+pandas-ta = "0.3.14b0"          # 添加 pandas-ta 금융 기술 분석 라이브러리
 
 # --- 開發依賴 (Development Dependencies) ---
 # 用於保證專案品質的基石，應在 [tool.poetry.group.dev.dependencies] 中定義

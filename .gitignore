@@ -35,3 +35,5 @@ reports/
 apps/**/tests/*.duckdb
 apps/**/tests/*.log
 output/
+
+poetry.lock
