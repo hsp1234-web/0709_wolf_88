@@ -66,6 +66,7 @@ pyarrow = "^20.0.0"
 pyyaml = "^6.0.2"
 appdirs = "^1.4.4"
 importlib-metadata = "^8.7.0"
+aiohttp = "^3.12.14"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"           # 核心測試框架
 pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件
