@@ -45,7 +45,7 @@
         *   `core/config.py`：提供統一的專案級配置讀取功能。
         *   `core/logger.py`：提供標準化的日誌記錄器 (`get_logger`)，方便各模組和應用統一日誌格式與輸出。
         *   `core/constants.py`：定義專案範圍內的共通常數。
-        *   `core/utils.py`（及 `core/utils/` 目錄）：包含通用的輔助函式和工具。
+        *   `core/utils/` (目錄)：包含各類通用的輔助函式和工具模組 (例如 `path_utils.py`)。獨立的 `core/utils.py` 檔案已被整合或移除。
         *   未來可能加入 `core/secrets.py` 用於管理敏感憑證。
 
 *   **標準數據流 (Standard Data Flow)：**
@@ -64,6 +64,7 @@
 .
 ├── .gitignore
 ├── README.md
+├── config.yml   # <--- 新增的中央設定檔
 ├── poetry.lock  # Poetry 依賴鎖定檔案
 ├── pyproject.toml # Poetry 專案設定與依賴文件
 ├── apps
@@ -76,12 +77,10 @@
 │   ├── factor_engine # 因子引擎
 │   │   ├── engine.py
 │   │   └── run_factor_etl.py
-│   ├── news_client # 新聞客戶端應用
-│   │   ├── config.py # (此應用特定配置，待評估是否整合至 core.config)
+│   ├── news_client # 新聞客戶端應用 (已移除本地 config.py)
 │   │   └── run.py
-│   ├── pipeline_metadata_manager # 管線元數據管理器
+│   ├── pipeline_metadata_manager # 管線元數據管理器 (已移除本地 config.py)
 │   │   ├── __init__.py
-│   │   ├── config.py # (此應用特定配置，待評估是否整合至 core.config)
 │   │   └── manager.py
 │   ├── portfolio_optimizer # 投資組合優化器
 │   │   ├── __init__.py
@@ -106,7 +105,7 @@
 │   │   ├── fred.py
 │   │   ├── nyfed.py
 │   │   └── yfinance.py
-│   ├── config.py # 核心配置模組
+│   ├── config.py # 核心配置模組 (讀取 config.yml)
 │   ├── constants.py # 核心常數定義
 │   ├── db # 資料庫相關模組
 │   │   ├── __init__.py
@@ -122,10 +121,10 @@
 │   │       ├── financial_steps.py
 │   │       └── loaders.py
 │   ├── py.typed # PEP 561 類型標記檔案
-│   ├── utils # 通用工具包 (目錄形式)
-│   │   ├── __init__.py
-│   │   └── path_utils.py
-│   └── utils.py # 通用工具函數 (獨立檔案，與 core/utils/ 並存)
+│   └── utils # 通用工具包 (注意：獨立的 core/utils.py 已被移除)
+│       ├── __init__.py
+│       └── path_utils.py # 範例：路徑相關工具
+# 如果 general_utils.py 被創建在 core/utils/ 下，也應列於此處
 ├── pytest.ini # Pytest 設定檔
 └── tests # 測試代碼
     ├── __init__.py
