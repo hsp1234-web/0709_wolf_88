@@ -70,13 +70,16 @@ aiohttp = "^3.12.14"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"           # 核心測試框架
 pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件
-types-requests = "^2.32.0"  # 類型存根 for requests
+types-requests = "*"  # 類型存根 for requests (放寬版本以解決 urllib3 衝突)
 types-PyYAML = "^6.0.12"    # 類型存根 for PyYAML
 types-pytz = "^2024.1.0"     # 類型存根 for pytz
 
 # --- 建構系統配置 ---
 # 由 `poetry init` 自動生成，定義專案的建構方式
 openpyxl = "^3.1.5"
+pybreaker = "^1.4.0"
+requests-cache = "^1.2.1"
+urllib3 = "<2.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

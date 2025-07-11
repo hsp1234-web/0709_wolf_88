@@ -1,4 +1,4 @@
 # This file makes 'engines' a Python sub-package of 'core'.
-from .data_acquisition_engine import DataAcquisitionEngine
+from .robust_acquisition_engine import RobustDataAcquisitionEngine
 
-__all__ = ['DataAcquisitionEngine']
+__all__ = ['RobustDataAcquisitionEngine']
