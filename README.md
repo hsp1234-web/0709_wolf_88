@@ -105,7 +105,7 @@
         ```yaml
         # config.yml 範例片段
         api_keys:
-          fred: "c85a224a0e0d72a7bccb471c0021eb7b" # <- 將此處替換為您的金鑰
+          fred: "123" # <- 將此處替換為您的金鑰
         ```
     *   **重要：** `config.yml` 預設應被加入 `.gitignore` 中，以避免將您的私密金鑰提交到版本控制系統。如果 `.gitignore` 中沒有，請手動添加。
 
