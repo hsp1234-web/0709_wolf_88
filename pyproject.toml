@@ -1,8 +1,8 @@
 # ==============================================================================
 #  通用 AI 輔助開發：磐石協議 (The Bedrock Protocol)
-#  專案配置文件：pyproject.toml
+#  專案配置文件：pyproject.toml (v1.1 - 修正版)
 #  功能：定義專案元數據、核心依賴、開發工具與建構系統
-#  原則：本文件是專案依賴的「唯一真理來源」 [cite: 60, 61]
+#  原則：本文件是專案依賴的「唯一真理來源」
 # ==============================================================================
 
 [tool.poetry]
@@ -14,49 +14,50 @@ readme = "README.md"
 license = "MIT"
 
 # --- 核心依賴 (Core Dependencies) ---
-# 構成了專案的計算心臟、數據處理、網路通訊與分析能力 [cite: 131]
+# 構成了專案的計算心臟、數據處理、網路通訊與分析能力
 [tool.poetry.dependencies]
-python = "^3.12"
+# ❗️ 關鍵修正：收緊 Python 版本範圍以相容所有套件
+python = ">=3.12, <3.14"
 
-# A. 核心數據科學與計算引擎 [cite: 132]
-numpy = "^2.2.6"            # 高效能多維陣列運算基石 [cite: 134, 135]
-pandas = "^2.3.1"           # 高效能 DataFrame 結構，用於操作與分析表格數據 [cite: 137, 138]
-scipy = "^1.15.3"           # 提供高級數學演算法，用於複雜金融建模 [cite: 140, 141]
-numba = "^0.61.2"           # JIT 編譯器，用於加速 Python 和 NumPy 程式碼 [cite: 143, 144]
+# A. 核心數據科學與計算引擎
+numpy = "^2.2.6"            # 高效能多維陣列運算基石
+pandas = "^2.3.1"           # 高效能 DataFrame 結構，用於操作與分析表格數據
+scipy = "^1.15.3"           # 提供高級數學演算法，用於複雜金融建模
+numba = "^0.61.2"           # JIT 編譯器，用於加速 Python 和 NumPy 程式碼
 
-# B. 數據庫與資料處理 [cite: 149]
-duckdb = "^1.3.2"           # 高效能嵌入式分析型數據庫，用於極速 SQL 查詢 [cite: 151, 152]
-peewee = "^3.18.2"          # 輕量級 ORM，用於結構化數據存儲 [cite: 154, 155]
-pandas-ta-openbb = "^0.4.22" # 提供數百種常用技術分析指標 [cite: 157, 158]
-narwhals = "^1.46.0"        # 跨 DataFrame API 的兼容層，具前瞻性 [cite: 160, 161]
+# B. 數據庫與資料處理
+duckdb = "^1.3.2"           # 高效能嵌入式分析型數據庫，用於極速 SQL 查詢
+peewee = "^3.18.2"          # 輕量級 ORM，用於結構化數據存儲
+pandas-ta-openbb = "^0.4.22" # 提供數百種常用技術分析指標
+narwhals = "^1.46.0"        # 跨 DataFrame API 的兼容層，具前瞻性
 
-# C. 數據獲取與網路通訊 [cite: 163]
-yfinance = "^0.2.65"        # 從 Yahoo Finance 獲取金融市場數據 [cite: 165, 166]
-requests = "^2.32.4"        # 標準 HTTP 函式庫，用於通用 API 請求 [cite: 168, 169]
-curl_cffi = "^0.11.4"       # 模擬瀏覽器行為，應對反爬蟲機制 [cite: 171, 172]
-websockets = "^15.0.1"      # 用於接收即時串流數據 [cite: 174, 175]
+# C. 數據獲取與網路通訊
+yfinance = "^0.2.65"        # 從 Yahoo Finance 獲取金融市場數據
+requests = "^2.32.4"        # 標準 HTTP 函式庫，用於通用 API 請求
+curl_cffi = "^0.11.4"       # 模擬瀏覽器行為，應對反爬蟲機制
+websockets = "^15.0.1"      # 用於接收即時串流數據
 
-# D. 網頁解析與資料提取 [cite: 177]
-beautifulsoup4 = "^4.13.4"  # 從 HTML 中提取數據的經典函式庫 [cite: 179, 180]
+# D. 網頁解析與資料提取
+beautifulsoup4 = "^4.13.4"  # 從 HTML 中提取數據的經典函式庫
 
-# E. 統計與模型 [cite: 185]
-statsmodels = "^0.14.5"     # 提供豐富的統計模型與測試 [cite: 187, 188]
+# E. 統計與模型
+statsmodels = "^0.14.5"     # 提供豐富的統計模型與測試
 
-# G. 資料視覺化 [cite: 201]
-plotly = "^6.2.0"           # 強大的互動式圖表函式庫 [cite: 202, 203]
+# G. 資料視覺化
+plotly = "^6.2.0"           # 強大的互動式圖表函式庫
 
-# H. 核心工具與輔助 [cite: 205]
-python-dateutil = "^2.9.0.post0" # 強大的日期字串解析功能 [cite: 207, 208]
-pytz = "^2025.2"                 # 世界時區資料庫 [cite: 210, 211]
-tzdata = "^2025.2"               # 時區問題的標準解決方案之一 [cite: 212]
-psutil = "^6.0.0"                # 跨平台系統監控函式庫 [cite: 219, 220]
-frozendict = "^2.4.6"            # 提供不可變的字典類型 [cite: 216, 217]
+# H. 核心工具與輔助
+python-dateutil = "^2.9.0.post0" # 強大的日期字串解析功能
+pytz = "^2025.2"                 # 世界時區資料庫
+tzdata = "^2025.2"               # 時區問題的標準解決方案之一
+psutil = "^6.0.0"                # 跨平台系統監控函式庫
+frozendict = "^2.4.6"            # 提供不可變的字典類型
 
 # --- 開發依賴 (Development Dependencies) ---
-# 用於保證專案品質的基石，應在 [tool.poetry.group.dev.dependencies] 中定義 [cite: 194]
+# 用於保證專案品質的基石，應在 [tool.poetry.group.dev.dependencies] 中定義
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.4.1"           # 核心測試框架 [cite: 195, 196]
-pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件 [cite: 198, 199]
+pytest = "^8.4.1"           # 核心測試框架
+pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件
 
 # --- 建構系統配置 ---
 # 由 `poetry init` 自動生成，定義專案的建構方式
