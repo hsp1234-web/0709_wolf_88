@@ -40,6 +40,7 @@ class DataPipeline:
                 self.logger.info(f"步驟 {step_name} 執行完畢。")
 
             self.logger.info("數據管線所有步驟均已成功執行。")
+            return data # 返回最後一個步驟的結果
 
         except Exception as e:
             self.logger.error(f"數據管線在執行步驟 '{step_name}' 時發生嚴重錯誤：{e}", exc_info=True)
