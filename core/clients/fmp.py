@@ -118,10 +118,11 @@ class FMPClient(BaseAPIClient):
         )
 
         try:
-            # super()._request() 返回的是 dict (原始 JSON)
-            json_response = super()._request(
-                endpoint=endpoint_path_template, params=final_params
+            # 調用 BaseAPIClient 的 _perform_request 獲取原始 response
+            response = super()._perform_request(
+                endpoint=endpoint_path_template, params=final_params, method="GET"
             )
+            json_response = response.json() # 解析 JSON
 
             # 檢查 FMP API 特有的錯誤訊息格式 (雖然 BaseAPIClient.raise_for_status() 會處理 HTTP 錯誤)
             # 但 FMP 有時在 200 OK 內返回錯誤

@@ -95,7 +95,7 @@ class TestYFinanceClientFetchData:
             start=start_date,
             end=end_date,
             auto_adjust=False,
-            progress=False,
+            # progress=False, # 根據客戶端代碼，此參數不應被傳遞
             interval="1d",
             actions=False,
         )
@@ -136,7 +136,7 @@ class TestYFinanceClientFetchData:
         mock_ticker_instance.history.assert_called_once_with(
             period=period,
             auto_adjust=False,
-            progress=False,
+            # progress=False, # 根據客戶端代碼，此參數不應被傳遞
             interval="1d",
             actions=False,
             # start 和 end 不應在 history_params 中

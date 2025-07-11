@@ -91,48 +91,83 @@ class TestNYFedClientInitialization:
         assert client.data_configs == custom_configs
 
 
-# NYFedClient._download_excel_to_dataframe 現在使用 self._session.get
-# 所以我們需要 mock requests.Session.get
-@patch("requests.Session.get")
 class TestNYFedClientDownloadExcel:
     """測試 _download_excel_to_dataframe 方法。"""
 
-    def test_download_success(
-        self, mock_session_get, nyfed_client_fixture: NYFedClient
-    ):
-        mock_response = MagicMock()
+    # 移除類級別的 @patch("requests.Session.get")
+
+    def test_download_success(self, nyfed_client_fixture: NYFedClient):
+        mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 200
         mock_response.content = mock_sbn_excel_bytes.getvalue()
-        mock_session_get.return_value = mock_response
 
-        df = nyfed_client_fixture._download_excel_to_dataframe(mock_test_config_sbn)
+        with patch.object(
+            nyfed_client_fixture._session, "get", return_value=mock_response
+        ) as mock_actual_get:
+            df = nyfed_client_fixture._download_excel_to_dataframe(
+                mock_test_config_sbn
+            )
 
-        # 驗證 nyfed_client_fixture._session.get 被調用
-        # nyfed_client_fixture._session 是一個 MagicMock (如果 BaseAPIClient.__init__ 被 mock)
-        # 或者是一個真實的 Session 物件。
-        # 如果我們 mock requests.Session.get，那麼它會捕獲所有 Session().get 調用。
-        mock_session_get.assert_called_once_with(
-            mock_test_config_sbn["url"], timeout=60
-        )
-        assert df is not None
-        assert not df.empty
-        assert "AS OF DATE" in df.columns
+            mock_actual_get.assert_called_once_with(
+                mock_test_config_sbn["url"], timeout=60
+            )
+            assert df is not None
+            assert not df.empty
+            assert "AS OF DATE" in df.columns  # 這是 Excel 中的原始欄位名
+            assert len(df) == 3
 
-    def test_download_http_error(
-        self, mock_session_get, nyfed_client_fixture: NYFedClient
-    ):
-        mock_response = MagicMock()
+    def test_download_http_error(self, nyfed_client_fixture: NYFedClient):
+        mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 404
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
-            "Simulated 404 Error"
+            "Simulated 404 Error", response=mock_response # HTTPError 需要 response 參數
         )
-        mock_session_get.return_value = mock_response
 
-        df = nyfed_client_fixture._download_excel_to_dataframe(mock_test_config_sbn)
-        assert df is None
+        with patch.object(
+            nyfed_client_fixture._session, "get", return_value=mock_response
+        ) as mock_actual_get:
+            df = nyfed_client_fixture._download_excel_to_dataframe(
+                mock_test_config_sbn
+            )
+            assert df is None
+            mock_actual_get.assert_called_once_with(
+                mock_test_config_sbn["url"], timeout=60
+            )
+            mock_response.raise_for_status.assert_called_once()
 
-    # 其他 _download_excel_to_dataframe 測試 (network error, bad excel) 保持類似，
-    # 確保 mock_session_get 的行為被正確觸發。
+
+    def test_download_request_exception(self, nyfed_client_fixture: NYFedClient):
+        with patch.object(
+            nyfed_client_fixture._session,
+            "get",
+            side_effect=requests.exceptions.ConnectionError("Connection failed"),
+        ) as mock_actual_get:
+            df = nyfed_client_fixture._download_excel_to_dataframe(
+                mock_test_config_sbn
+            )
+            assert df is None
+            mock_actual_get.assert_called_once_with(
+                mock_test_config_sbn["url"], timeout=60
+            )
+
+    def test_download_excel_parse_error(self, nyfed_client_fixture: NYFedClient):
+        mock_response = MagicMock(spec=requests.Response)
+        mock_response.status_code = 200
+        mock_response.content = b"This is not a valid excel file"
+
+        with patch.object(
+            nyfed_client_fixture._session, "get", return_value=mock_response
+        ) as mock_actual_get, patch( # 也 mock pandas.read_excel
+            "pandas.read_excel", side_effect=ValueError("Excel parse error")
+        ) as mock_read_excel:
+            df = nyfed_client_fixture._download_excel_to_dataframe(
+                mock_test_config_sbn
+            )
+            assert df is None
+            mock_actual_get.assert_called_once_with(
+                mock_test_config_sbn["url"], timeout=60
+            )
+            mock_read_excel.assert_called_once()
 
 
 class TestNYFedClientParseDealerPositions:

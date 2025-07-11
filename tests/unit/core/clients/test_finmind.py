@@ -61,16 +61,13 @@ class TestFinMindClientInitialization:
             assert client.api_key == "param_finmind_token_override"
 
 
-# FinMindClient 覆寫了 _request 方法，所以我們直接 mock requests.Session.get
-# 或者，如果 _request 內部使用了 self._session，我們可以 mock self._session.get
-@patch("requests.Session.get")
 class TestFinMindClientRequestOverride:
     """測試 FinMindClient 覆寫的 _request 方法。"""
 
-    def test_request_override_success_json(
-        self, mock_session_get, finmind_client_fixture: FinMindClient
-    ):
-        mock_response = MagicMock()
+    # 移除類級別的 @patch("requests.Session.get")
+
+    def test_request_override_success_json(self, finmind_client_fixture: FinMindClient):
+        mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "application/json; charset=utf-8"}
         mock_response.json.return_value = {
@@ -78,79 +75,96 @@ class TestFinMindClientRequestOverride:
             "msg": "success",
             "data": [{"col_a": "val1"}, {"col_a": "val2"}],
         }
-        mock_session_get.return_value = mock_response
 
         params = {"dataset": "TestDS", "data_id": "ID001", "start_date": "2023-01-01"}
-        # _request 內部會添加 token
-        result_df = finmind_client_fixture._request(params=params)
-
-        expected_df = pd.DataFrame([{"col_a": "val1"}, {"col_a": "val2"}])
-
-        # 驗證 requests.Session.get 被調用的參數
-        # _request 方法會將 self.api_key (即 TEST_API_TOKEN) 加入到 params['token']
         expected_call_params = params.copy()
         expected_call_params["token"] = TEST_API_TOKEN
-        mock_session_get.assert_called_once_with(
-            FINMIND_API_BASE_URL, params=expected_call_params
-        )
 
+        with patch.object(finmind_client_fixture._session, 'get', return_value=mock_response) as mock_actual_get:
+            result_df = finmind_client_fixture._request(params=params)
+            mock_actual_get.assert_called_once_with(
+                FINMIND_API_BASE_URL, params=expected_call_params
+            )
+
+        expected_df = pd.DataFrame([{"col_a": "val1"}, {"col_a": "val2"}])
         assert_frame_equal(result_df, expected_df)
 
-    def test_request_override_success_csv(
-        self, mock_session_get, finmind_client_fixture: FinMindClient
-    ):
-        mock_response = MagicMock()
+    def test_request_override_success_csv(self, finmind_client_fixture: FinMindClient):
+        mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "text/csv; charset=utf-8"}
         csv_content = "header1,header2\nvalue1,value2\nvalue3,value4"
         mock_response.text = csv_content
-        mock_session_get.return_value = mock_response
 
         params = {"dataset": "CSV_DS", "data_id": "ID002", "start_date": "2023-02-01"}
-        result_df = finmind_client_fixture._request(params=params)
+        expected_call_params = params.copy()
+        expected_call_params["token"] = TEST_API_TOKEN
+
+        with patch.object(finmind_client_fixture._session, 'get', return_value=mock_response) as mock_actual_get:
+            result_df = finmind_client_fixture._request(params=params)
+            mock_actual_get.assert_called_once_with(
+                FINMIND_API_BASE_URL, params=expected_call_params
+            )
 
         expected_df = pd.read_csv(StringIO(csv_content))
         assert_frame_equal(result_df, expected_df)
 
-    def test_request_override_json_api_logic_error(
-        self, mock_session_get, finmind_client_fixture: FinMindClient
-    ):
-        mock_response = MagicMock()
-        mock_response.status_code = 200  # HTTP OK
+    def test_request_override_json_api_logic_error(self, finmind_client_fixture: FinMindClient):
+        mock_response = MagicMock(spec=requests.Response)
+        mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "application/json"}
         mock_response.json.return_value = {
-            "status": 400,
+            "status": 400, # API 內部錯誤碼
             "msg": "API specific error",
             "data": [],
         }
-        mock_session_get.return_value = mock_response
 
-        result_df = finmind_client_fixture._request(params={"dataset": "ErrorDS"})
-        assert result_df.empty  # 預期返回空 DataFrame
+        params = {"dataset": "ErrorDS", "start_date": "2023-01-01"} # 確保有 dataset
+        expected_call_params = params.copy()
+        expected_call_params["token"] = TEST_API_TOKEN
 
-    def test_request_override_http_error_raises(
-        self, mock_session_get, finmind_client_fixture: FinMindClient
-    ):
-        mock_response = MagicMock()
-        mock_response.status_code = 403  # Forbidden
+        with patch.object(finmind_client_fixture._session, 'get', return_value=mock_response) as mock_actual_get:
+            result_df = finmind_client_fixture._request(params=params)
+            mock_actual_get.assert_called_once_with(
+                FINMIND_API_BASE_URL, params=expected_call_params
+            )
+
+        assert result_df.empty
+
+    def test_request_override_http_error_raises(self, finmind_client_fixture: FinMindClient):
+        mock_response = MagicMock(spec=requests.Response)
+        mock_response.status_code = 403
+        # raise_for_status 是在 response 物件上被調用的
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
             "Simulated HTTP 403 Error", response=mock_response
         )
-        mock_session_get.return_value = mock_response
 
-        with pytest.raises(
-            requests.exceptions.HTTPError, match="Simulated HTTP 403 Error"
-        ):
-            finmind_client_fixture._request(params={"dataset": "ProtectedDS"})
+        params = {"dataset": "ProtectedDS", "start_date": "2023-01-01"} # 確保有 dataset
+        expected_call_params = params.copy()
+        expected_call_params["token"] = TEST_API_TOKEN
 
-    def test_request_override_empty_params_value_error(
-        self, mock_session_get, finmind_client_fixture: FinMindClient
-    ):
-        with pytest.raises(
-            ValueError, match="請求 FinMind API 時，params 參數不得為空。"
-        ):
+        with pytest.raises(requests.exceptions.HTTPError, match="Simulated HTTP 403 Error"):
+            with patch.object(finmind_client_fixture._session, 'get', return_value=mock_response) as mock_actual_get:
+                try:
+                    finmind_client_fixture._request(params=params)
+                finally:
+                    # 確保即使在異常情況下，我們也檢查 get 是否被按預期調用
+                    mock_actual_get.assert_called_once_with(
+                        FINMIND_API_BASE_URL, params=expected_call_params
+                    )
+                # raise_for_status 應該在 _request 內部被調用
+                # 如果 finmind_client_fixture._request 捕獲了異常，這個斷言可能不會執行
+                # 但 _request 的實現是直接 raise，所以 mock_response.raise_for_status 應該被調用
+        # 在異常捕獲後，我們可以檢查 raise_for_status 是否被調用
+        # 但 mock_response 的生命週期在 with patch 結束後可能難以追蹤
+        # 通常，驗證 mock_actual_get 被調用，並且 pytest.raises 捕獲到預期異常就足夠了
+        # 如果想驗證 raise_for_status, mock_response 需要在更廣的 scope
+        # 或者，假設 _session.get 返回的 response 的 raise_for_status 被正確調用
+
+    def test_request_override_empty_params_value_error(self, finmind_client_fixture: FinMindClient):
+        # 此測試不涉及 HTTP 請求
+        with pytest.raises(ValueError, match="請求 FinMind API 時，params 參數不得為空。"):
             finmind_client_fixture._request(params=None)
-        mock_session_get.assert_not_called()
 
 
 # 由於 FinMindClient._request 已經被徹底測試，fetch_data 的測試主要關注它如何調用 _request

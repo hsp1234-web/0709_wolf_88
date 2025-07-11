@@ -56,6 +56,7 @@ pytz = "^2025.2"                 # 世界時區資料庫
 tzdata = "^2025.2"               # 時區問題的標準解決方案之一
 psutil = "^6.0.0"                # 跨平台系統監控函式庫
 frozendict = "^2.4.6"            # 提供不可變的字典類型
+fredapi = "^0.5.2"               # FRED API 客戶端
 
 # --- 開發依賴 (Development Dependencies) ---
 # 用於保證專案品質的基石，應在 [tool.poetry.group.dev.dependencies] 中定義
@@ -68,7 +69,7 @@ appdirs = "^1.4.4"
 importlib-metadata = "^8.7.0"
 aiohttp = "^3.12.14"
 requests-cache = "^1.2.1"
-fredapi = "^0.5.2"
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"           # 核心測試框架
 pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件
