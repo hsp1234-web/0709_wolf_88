@@ -1,235 +1,212 @@
-# **README.md - 【普羅米修斯之火】開發者手冊**
+# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.2.0**
 
-## **一、 計畫概述**
+## **一、 專案概覽與目的**
 
-【普羅米修斯之火】是一個為專業量化研究而設計的、本地化、具備高度擴展性的數據與分析框架。其核心目標是在標準硬體環境下，建立一個從「多源數據獲取」、「數據融合與清洗」、「量化因子挖掘」，到「策略回測」與「投資組合優化」的完整流程。
+【普羅米修斯之火】是一個專為進階量化研究與金融市場分析而設計的 Python 框架。本專案旨在提供一個從多樣化數據源獲取金融數據、進行複雜指標計算、並將結果視覺化的完整解決方案。其核心設計強調模組化、可擴展性以及數據處理的穩健性。
 
-本專案採用模組化架構，旨在提升系統的靈活性、可維護性與擴展性。
+**目前已實現的核心功能包括：**
 
-核心設計原則：
-1.  **使用者主導 (User-Led):** 系統的關鍵操作由使用者透過 API 或腳本觸發，後端負責執行與反饋。
-2.  **數據湖倉一體 (Lakehouse Architecture):** 原始數據完整載入數據湖，分析數據從湖中提煉至數據倉儲，確保數據可追溯性。數據以版本化或日期戳管理。
-3.  **內容感知獲取 (Content-Aware Fetching):** 數據獲取階段具備識別已有數據範圍的能力，精準補充數據缺口，提升效率。
+1.  **多源數據客戶端 (Multi-Source Data Clients):**
+    *   支援從 FRED (Federal Reserve Economic Data)、紐約聯儲 (NYFed) 等來源獲取經濟與金融數據。
+    *   客戶端設計基於統一的 `BaseAPIClient`，內建了強大的永久性 HTTP 請求快取機制 (`requests-cache`)，並支援手動強制刷新數據。
+2.  **安全的金鑰管理 (Secure API Key Management):**
+    *   透過 `config.yml` 檔案集中管理 API 金鑰，避免將敏感資訊硬編碼於程式碼中。
+    *   `core/config.py` 中的 `ConfigManager` 負責載入與提供設定。
+3.  **金融壓力指數引擎 (Financial Stress Index Engine):**
+    *   位於 `core/analysis/stress_index.py`，是本專案的核心分析模組。
+    *   能夠整合來自 FRED 和 NYFed 的多項指標 (如 VIX, 公債殖利率、聯邦準備金餘額、SOFR、一級交易商持倉數據)。
+    *   自動執行數據對齊 (每日頻率)、預處理 (如計算殖利率曲線利差)、使用滾動 Z-Score 標準化各指標，並最終合成為一個綜合的每日金融壓力指數。
+4.  **互動式視覺化 (Interactive Visualization):**
+    *   使用 `Plotly` 將計算出的金融壓力指數繪製成互動式圖表，方便使用者分析與解讀。
+
+本專案致力於為量化分析師和研究人員提供一個可靠、高效的工具，以應對複雜的金融數據分析挑戰。
 
 ## **二、 技術棧 (Technology Stack)**
 
-*   **核心數據處理:** Pandas, NumPy, PyArrow
-*   **數據持久化格式:** Apache Parquet (用於數據湖備份，引擎中暫未直接使用)
-*   **技術指標計算:** `pandas-ta`
-*   **非同步網路請求:** `aiohttp`
-*   **HTTP請求快取:** `requests-cache`
-*   **斷路器模式實現:** `pybreaker`
-*   **系統資源監控:** `psutil`
-*   **嵌入式分析資料庫:** DuckDB (主要數據儲存)
-*   **HTTP客戶端庫:** `requests`, `urllib3` (<2.0)
-*   **金融數據獲取:** `yfinance`
-*   **路徑管理:** `pathlib`
-*   **日誌記錄:** Python `logging` 模組
-*   **測試框架:** Pytest
-*   **命令行界面 (輔助腳本):** `argparse`
-*   **依賴管理:** Poetry
+*   **核心程式語言:** Python 3.12+
+*   **依賴管理:** Poetry (v1.8.2 或相容版本)
+*   **數據處理:**
+    *   Pandas (`^2.2.2`): 主要的數據結構與分析工具。
+    *   NumPy (`^1.26.4`): 基礎數值計算。
+*   **API 客戶端與網路請求:**
+    *   Requests (`^2.31.0`): HTTP 請求。
+    *   Requests-Cache (`^1.2.0`): HTTP 請求的持久性快取。
+    *   FredAPI (`^0.5.2`): 官方 FRED API 的 Python 封裝。
+*   **設定檔管理:**
+    *   PyYAML (`^6.0.1`): 解析 YAML 設定檔。
+*   **視覺化:**
+    *   Plotly (`^5.22.0`): 產生互動式圖表。
+*   **Excel 檔案處理:**
+    *   Openpyxl (`^3.1.2`): 讀取 `.xlsx` 格式的 Excel 檔案 (NYFedClient 使用)。
+*   **其他:** (由 Poetry 自動管理的間接依賴)
 
-## **三、 系統核心架構**
-
-系統採用「微服務應用 (Micro-App)」架構理念，將後端管線拆解為獨立的作戰單元。
-
-*   **`apps/` 目錄 - 微應用中心：**
-    *   每個子目錄或獨立腳本是一個「微應用」，專注於特定任務（如因子計算、黃金層構建、回測）。
-*   **`core/` 目錄 - 共享核心模組：**
-    *   存放可被不同微應用共享的核心組件，如配置管理 (`core/config.py`)、日誌記錄器 (`core/logger.py`)、API 客戶端 (`core/clients/`)、數據庫管理器 (`core/db/`) 以及核心數據獲取引擎 (`core/engines/`)。
-*   **標準數據流 (ETL/ELT)：**
-    1.  **數據提取 (Extract)**：由 `core/engines/robust_acquisition_engine.py` 或其他 `downloader` 微應用負責。
-    2.  **數據轉換 (Transform)**：由各類 `transformer` 微應用負責。
-    3.  **數據裝載 (Load)**：由 `core/engines/robust_acquisition_engine.py` 或 `database_loader` 微應用負責，主要載入到 DuckDB。
-
-### **核心數據獲取引擎：`RobustDataAcquisitionEngine`**
-
-位於 `core/engines/robust_acquisition_engine.py`，是系統數據獲取的基石。設計目標是實現高效、穩定且具備自我調節能力的數據獲取。
-
-**核心功能：**
-
-1.  **非同步併發獲取 (Asynchronous & Concurrent Fetching)**：
-    *   利用 `asyncio` 配合 `yf.Ticker().history()` 在獨立線程中執行（透過 `asyncio.to_thread`），實現多個股票代碼數據的併發獲取，提升I/O密集型任務的效率。
-2.  **智慧降級探測 (Intelligent Degradation Probing)**：
-    *   在請求詳細歷史數據（如日線）前，先對目標進行一次輕量級的「探測請求」（如月線數據，使用 `yf.Ticker().history()`）。
-    *   如果探測失敗（如股票代碼無效、無任何數據返回、HTTP錯誤），則跳過對該目標的後續詳細數據請求，避免資源浪費。
-3.  **資源感知儲存 (Resource-Aware Storage)**：
-    *   使用 `psutil` 監控系統記憶體使用率。
-    *   引擎設計上考慮了當記憶體使用超過預設閾值 (70%) 時的處理邏輯。
-    *   在當前 `RobustDataAcquisitionEngine` 的實現中，無論記憶體使用率如何，所有成功獲取的數據均會通過 UPSERT 操作寫入 DuckDB 以確保持久化。數據湖的 Parquet 備份在先前版本的引擎中有提及，但在此版本中未直接整合進 `_process_and_store`。
-4.  **斷路器模式 (Circuit Breaker)**：
-    *   使用 `pybreaker` 函式庫修飾 `fetch_single_ticker` 方法。
-    *   當對某一特定股票的數據獲取連續失敗達到預設次數（5次）後，斷路器會「跳閘」，在指定超時時間（60秒）內阻止對該股票的後續請求，防止系統資源被無效請求拖垮，並給予遠端服務恢復的時間。
-5.  **HTTP請求快取與重試 (Session)**：
-    *   引擎內部通過 `_create_permanent_resilient_session` 方法創建了一個配置了永久快取 (`requests-cache`) 和指數退避重試 (`urllib3.Retry`) 策略的 `requests.Session` 物件。
-    *   **重要限制**：由於 `yfinance` (我們使用的版本 0.2.60) 內部機制變更（可能涉及 `curl_cffi`）並建議不向其傳遞自訂 `session` 物件，因此這個經過強化的 `session` **目前未直接應用於 `yfinance` 的數據下載過程**。`yfinance` 將依賴其自身的請求邏輯和可能的內部快取。
-    *   因此，`requests-cache` 提供的持久性HTTP層級快取和基於狀態碼的重試，對 `yfinance` 的請求影響有限。引擎的 `force_recache` 方法目前實現為清除 `requests-cache` 的全局快取，這對 `yfinance` 的影響也間接。
-6.  **數據持久化 (DuckDB Integration)**：
-    *   所有成功獲取並處理的數據都會通過 UPSERT（插入或更新，基於主鍵 `symbol, interval, date`）操作存入名為 `permanent_financial_data.duckdb` 的 DuckDB 資料庫文件中。
-    *   表結構為 `historical_ohlcv (date TIMESTAMP, symbol VARCHAR, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT, interval VARCHAR, PRIMARY KEY (symbol, interval, date))`。
-
-## **四、 檔案目錄結構**
+## **三、 檔案目錄結構**
 
 ```
 .
 ├── .gitignore
 ├── README.md
-├── _test_run.py
-├── config.yml
-├── mypy.ini
-├── permanent_api_cache.sqlite  # 由 requests-cache 生成
-├── permanent_financial_data.duckdb # 由 DuckDB 生成
-├── poetry.lock
-├── pyproject.toml
-├── pytest.ini
-├── apps/
-│   ├── __init__.py
-│   ├── analysis_pipeline/
-│   │   └── run.py
-│   ├── backtesting_engine/
-│   │   ├── __init__.py
-│   │   └── main.py
-│   ├── factor_engine/
-│   │   ├── engine.py
-│   │   └── run_factor_etl.py
-│   ├── news_client/
-│   │   └── run.py
-│   ├── pipeline_metadata_manager/
-│   │   ├── __init__.py
-│   │   └── manager.py
-│   ├── portfolio_optimizer/
-│   │   ├── __init__.py
-│   │   └── main.py
-│   ├── py.typed
-│   ├── report_generator/
-│   │   ├── __init__.py
-│   │   ├── generator.py
-│   │   └── run.py
-│   ├── run_gold_layer.py
-│   └── run_stress_index.py
+├── config.yml                 # 專案設定檔，包含 API 金鑰
+├── poetry.lock                # Poetry 鎖定檔案
+├── pyproject.toml             # Poetry 專案定義與依賴管理
 ├── core/
 │   ├── __init__.py
-│   ├── analyzers/
+│   ├── analysis/              # 分析引擎與腳本
 │   │   ├── __init__.py
-│   │   └── base_analyzer.py
-│   ├── clients/
+│   │   └── stress_index.py    # 金融壓力指數計算器
+│   ├── clients/               # API 數據客戶端模組
 │   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── finmind.py
-│   │   ├── fmp.py
-│   │   ├── fred.py
-│   │   ├── nyfed.py
-│   │   └── yfinance.py
-│   ├── config.py
-│   ├── constants.py
-│   ├── db/
-│   │   ├── __init__.py
-│   │   └── db_manager.py
-│   ├── engines/
-│   │   ├── __init__.py
-│   │   └── robust_acquisition_engine.py
-│   ├── logger.py
-│   ├── pipelines/
-│   │   ├── __init__.py
-│   │   ├── base_step.py
-│   │   ├── pipeline.py
-│   │   └── steps/
-│   │       ├── __init__.py
-│   │       ├── aggregators.py
-│   │       ├── financial_steps.py
-│   │       └── loaders.py
-│   ├── py.typed
-│   └── utils/
+│   │   ├── base.py            # 基礎 API 客戶端 (含快取)
+│   │   ├── fred.py            # FRED 數據客戶端
+│   │   └── nyfed.py           # 紐約聯儲數據客戶端
+│   ├── config.py              # 設定檔管理器
+│   └── utils/                 # 通用工具模組 (目前主要是快取)
 │       ├── __init__.py
-│       └── path_utils.py
-└── tests/
-    ├── __init__.py               # tests 目錄本身也需要 __init__.py
-    ├── conftest.py
-    ├── integration/
-    │   ├── __init__.py
-    │   ├── apps/
-    │   │   ├── __init__.py
-    │   │   ├── test_analysis_pipeline.py
-    │   │   └── test_refactored_apps.py
-    │   └── pipelines/
-    │       ├── __init__.py
-    │       ├── test_data_pipeline.py
-    │       └── test_example_flow.py
-    └── unit/
-        ├── __init__.py
-        ├── core/
-        │   ├── __init__.py
-        │   ├── analyzers/
-        │   │   ├── __init__.py
-        │   │   └── test_base_analyzer.py
-        │   └── clients/
-        │       ├── __init__.py
-        │       ├── test_finmind.py
-        │       ├── test_fmp.py
-        │       ├── test_fred.py
-        │       ├── test_nyfed.py
-        │       └── test_yfinance.py
-        └── test_feature_analyzer.py
+│       └── caching.py         # 快取相關工具函數
+└── financial_data_cache.sqlite  # 由 requests-cache 生成的快取資料庫
 ```
+*(註：隨著專案發展，可能會加入 `tests/`、`data/`、`notebooks/` 等目錄。)*
 
-## **五、 環境設定與啟動**
+## **四、 環境設定與啟動**
 
-本專案使用 [Poetry](https://python-poetry.org/) 進行依賴管理。
+本專案使用 [Poetry](https://python-poetry.org/) 進行依賴管理和虛擬環境控制。
 
-1.  **安裝 Poetry**：參考 [Poetry 官方文檔](https://python-poetry.org/docs/#installation)。
-2.  **配置 Poetry (推薦)**：`poetry config virtualenvs.in-project true`
-3.  **安裝依賴**：在專案根目錄執行 `poetry install`。
-    *   此操作會安裝 `pyproject.toml` 中定義的所有依賴。
-    *   **主要運行時依賴版本 (截至本次更新時):**
-        *   `python = ">=3.12,<3.14"`
-        *   `pandas = "^2.3.1"` (實際可能因 `numpy` 約束而調整)
-        *   `numpy = "<2.0"` (因 `pandas-ta` 特定版本要求)
-        *   `pandas-ta = "0.3.14b0"`
-        *   `yfinance = "0.2.60"`
-        *   `aiohttp = "^3.12.14"`
-        *   `psutil = "^6.0.0"`
-        *   `pybreaker = "^1.4.0"`
-        *   `duckdb = "^1.3.2"`
-        *   `requests-cache = "^1.2.1"`
-        *   `urllib3 = "<2.0"` (實際為 `1.26.20`)
-        *   `pyarrow = "^20.0.0"`
-        *   (其他間接依賴由 Poetry 解析)
-    *   **主要開發依賴版本:**
-        *   `pytest = "^8.4.1"`
-        *   `types-requests = "2.31.0.6"` (為與 `urllib3<2.0` 相容)
-4.  **啟動虛擬環境**：
-    *   `poetry shell` (推薦)
-    *   或 `poetry run <command>`
+1.  **安裝 Poetry：**
+    *   如果您尚未安裝 Poetry，請參考 [Poetry 官方文檔](https://python-poetry.org/docs/#installation) 進行安裝。建議版本為 1.8.2 或更新。
 
-## **六、 運行核心引擎驗證**
+2.  **克隆專案 (Clone the Project)：**
+    ```bash
+    git clone <your-repository-url>
+    cd <project-directory>
+    ```
 
-提供了一個驗證腳本 `_test_run.py` 用於測試 `RobustDataAcquisitionEngine` 的核心功能。
+3.  **配置 Poetry 虛擬環境 (推薦)：**
+    *   建議將虛擬環境創建在專案目錄內，方便管理：
+        ```bash
+        poetry config virtualenvs.in-project true
+        ```
 
-**執行驗證：**
-確保虛擬環境已激活，然後在專案根目錄運行：
-```bash
-poetry run python _test_run.py
-```
-此腳本將：
-1.  清理舊的資料庫和API快取檔案。
-2.  第一次運行引擎 (數據應從網路獲取並存入 DuckDB)。
-3.  第二次運行引擎 (數據應主要由 `yfinance` 內部機制處理，可能部分命中其快取；數據會再次 UPSERT 至 DuckDB)。
-4.  測試 `requests-cache` 的全局快取清除 (`force_recache`) 並重新獲取單個股票數據。
-5.  從 DuckDB 查詢並打印已儲存數據的摘要。
+4.  **安裝專案依賴：**
+    *   在專案根目錄下執行：
+        ```bash
+        poetry install
+        ```
+    *   此命令會讀取 `pyproject.toml` 檔案，解析並安裝所有必要的運行時和開發依賴項至 Poetry 創建的虛擬環境中。 主要依賴版本請參考第二節「技術棧」。
 
-觀察腳本輸出，確認智慧降級、併發獲取、數據處理、錯誤處理及資料庫寫入是否符合預期。
+5.  **激活虛擬環境：**
+    *   要在此專案的環境中工作，請激活 Poetry shell：
+        ```bash
+        poetry shell
+        ```
+    *   或者，您可以透過 `poetry run <command>` 在虛擬環境中執行單個指令，而無需手動激活 shell。
 
-## **七、 注意事項與已知限制**
+6.  **設定 API 金鑰：**
+    *   將專案根目錄下的 `config.yml` 檔案中的 `YOUR_FRED_API_KEY_HERE` (或其他 API 金鑰的預留位置) 替換成您真實、有效的 API 金鑰。
+        ```yaml
+        # config.yml 範例片段
+        api_keys:
+          fred: "c85a224a0e0d72a7bccb471c0021eb7b" # <- 將此處替換為您的金鑰
+        ```
+    *   **重要：** `config.yml` 預設應被加入 `.gitignore` 中，以避免將您的私密金鑰提交到版本控制系統。如果 `.gitignore` 中沒有，請手動添加。
 
-*   **`requests-cache` 與 `yfinance` 的兼容性**：如前所述，`requests-cache` 的 HTTP 層級快取和重試策略**無法直接應用於** `yfinance` 的數據下載過程，因 `yfinance` (0.2.60) 不建議傳遞自訂 `session`。引擎的快取效果依賴 `yfinance` 自身的快取行為。
-*   **`force_recache` 的影響範圍**：此方法目前清除的是 `requests-cache` 的全局快取。對於 `yfinance` 的請求，其「強制重新獲取」的效果依賴於 `yfinance` 是否會因 `requests-cache` 的快取被清除而重新觸發網路請求（目前看來影響有限）。
+## **五、 主要功能執行與驗證**
 
-## **八、 未來展望**
+### **5.1 計算並視覺化金融壓力指數**
 
-此 `RobustDataAcquisitionEngine` 為後續的數據分析、因子計算、策略回測等高級功能奠定了堅實的數據基礎。未來的開發可以集中在：
-*   擴展更多數據源的客戶端。
-*   完善數據清洗與驗證層。
-*   開發更複雜的因子計算模組。
-*   整合高效的回測與投資組合優化工具。
+這是目前專案的核心功能展示。
 
+*   **腳本位置：** `core/analysis/stress_index.py`
+*   **執行指令 (在已激活 `poetry shell` 的環境中，或使用 `poetry run`)：**
+    ```bash
+    python core/analysis/stress_index.py
+    ```
+    或者
+    ```bash
+    poetry run python core/analysis/stress_index.py
+    ```
+
+*   **預期行為：**
+    1.  腳本將初始化 `StressIndexCalculator`。
+    2.  數據客戶端 (`FredClient`, `NYFedClient`) 會被調用以獲取所需的原始金融數據。
+        *   首次執行時，數據會從遠端 API 下載。
+        *   後續執行時，若數據未過期且未強制刷新，則會從本地快取 (`financial_data_cache.sqlite`) 中讀取，顯著加快執行速度。
+    3.  控制台會輸出詳細的執行日誌，包括數據獲取、預處理、標準化和指數合成的各個階段。
+    4.  計算完成後，腳本會打印出最新的壓力指數數據點和統計摘要。
+    5.  最後，一個互動式的 Plotly 圖表將嘗試在您的預設瀏覽器中打開，展示每日綜合金融壓力指數的時間序列圖。若無法自動打開瀏覽器 (例如在無 GUI 的伺服器環境)，腳本中包含如何將圖表保存為 HTML 檔案的提示。
+
+### **5.2 測試個別數據客戶端 (開發與調試時使用)**
+
+每個客戶端模組 (`core/clients/fred.py`, `core/clients/nyfed.py`, `core/clients/base.py`) 的 `if __name__ == '__main__':` 區塊內都包含了用於測試該客戶端基本功能的範例程式碼。
+
+*   **執行範例 (以 `FredClient` 為例)：**
+    ```bash
+    poetry run python core/clients/fred.py
+    ```
+*   **預期行為：**
+    *   腳本會初始化對應的客戶端。
+    *   執行範例中定義的數據獲取操作 (例如，獲取特定 FRED 指標)。
+    *   測試快取機制 (首次下載，第二次從快取讀取，第三次強制刷新)。
+    *   在控制台打印相關的日誌和獲取的數據摘要。
+
+## **六、 開發者指引**
+
+1.  **程式碼風格：**
+    *   請遵循 PEP 8 Python 風格指南。
+    *   鼓勵撰寫清晰、可讀性高的程式碼和註解 (尤其是公開 API 和複雜邏輯部分)。
+    *   所有程式碼、註解、日誌輸出和使用者介面訊息，在不影響程式運作的前提下，應使用**繁體中文**。
+
+2.  **版本控制：**
+    *   使用 Git 進行版本控制。
+    *   分支策略：建議使用 `feat/` (新功能)、`fix/` (錯誤修復)、`docs/` (文件)、`refactor/` (重構) 等前綴來命名分支。
+    *   提交訊息 (Commit Messages)：請撰寫清晰、描述性的提交訊息。建議遵循 Conventional Commits 規範，例如：
+        *   `feat: 新增壓力指數計算中的 VIX 指標`
+        *   `fix: 修正 FRED Client 金鑰讀取錯誤`
+        *   `docs: 更新 README 環境設定指南`
+
+3.  **依賴管理：**
+    *   所有新的 Python 套件依賴都應透過 Poetry 添加：
+        ```bash
+        poetry add <package-name>
+        poetry add --group dev <dev-package-name> # 開發依賴
+        ```
+    *   添加後，`pyproject.toml` 和 `poetry.lock` 檔案會自動更新。請務必將這兩個檔案提交到版本控制。
+
+4.  **測試：** (未來擴展)
+    *   當加入測試框架 (如 Pytest) 後，所有新功能和錯誤修復都應伴隨相應的單元測試或整合測試。
+    *   測試檔案應放置在 `tests/` 目錄下，並遵循相應的結構。
+
+5.  **金鑰與敏感資訊：**
+    *   **嚴禁**將任何 API 金鑰、密碼或其他敏感資訊直接硬編碼到 Python 程式碼中。
+    *   所有這類資訊必須透過 `config.yml` 管理，並確保 `config.yml` 被正確地加入到 `.gitignore` 中。
+
+## **七、 目前狀況、已知限制與未來展望**
+
+### **7.1 目前狀況 (v0.2.0)**
+
+*   已建立穩健的 API 客戶端基礎 (`BaseAPIClient`)，具備可配置的永久快取與強制刷新功能。
+*   已實現 `FredClient` 和 `NYFedClient`，能夠獲取計算壓力指數所需的特定數據系列。
+*   已建立安全的 API 金鑰管理機制，透過 `config.yml` 和 `ConfigManager` 實現。
+*   核心的 `StressIndexCalculator` 已能成功計算並視覺化一個包含五項指標 (VIX, 殖利率曲線利差, 聯邦準備金, SOFR, 一級交易商持倉) 的綜合金融壓力指數。
+*   初步的日誌記錄已整合到各模組中，提供執行過程的追蹤。
+
+### **7.2 已知限制與待改進**
+
+*   **錯誤處理與日誌記錄：** 雖然已有初步日誌，但可以進一步完善錯誤處理機制，提供更細緻的錯誤分類和更豐富的日誌上下文。
+*   **`fredapi` 快取：** `StressIndexCalculator` 中對 `FredClient` 的 `force_refresh` 主要是概念上的一致性和日誌標記。由於 `fredapi` 函式庫自身不直接使用我們注入的 `requests-cache` 會話，其快取行為獨立。若要精確控制 `fredapi` 的快取或實現更細緻的快取策略，可能需要更深入的研究或對 `fredapi` 的請求進行更底層的攔截。
+*   **測試覆蓋：** 目前專案缺乏自動化的單元測試和整合測試。這是後續版本需要優先補強的部分。
+*   **數據回填與完整性檢查：** 尚未實現對歷史數據缺口的主動回填和數據完整性驗證機制。
+*   **Plotly 在無 GUI 環境：** `fig.show()` 在沒有圖形介面的環境中可能無法直接顯示圖表。雖然腳本中有提示可以保存為 HTML，但可以考慮加入自動保存 HTML 的選項或更優雅的處理方式。
+
+### **7.3 未來展望**
+
+*   **擴展數據源：** 加入更多金融數據 API (如 FMP, FinMind, 自建數據庫等) 的客戶端。
+*   **豐富指標庫：** 在 `StressIndexCalculator` 或新增的分析模組中加入更多種類的金融指標計算。
+*   **因子工程引擎：** 開發一個獨立的因子計算引擎，用於從原始數據中挖掘有效的 Alpha 因子。
+*   **回測框架整合：** 整合或開發一個事件驅動或向量化的回測框架。
+*   **投資組合優化：** 加入現代投資組合理論 (MPT)、風險平價等優化算法模組。
+*   **任務調度與自動化：** 考慮使用如 Airflow, Prefect 或簡單的 cron jobs 來自動化數據更新和分析流程。
+*   **資料庫強化：** 考慮引入更專業的時序資料庫 (如 InfluxDB, TimescaleDB) 或對 DuckDB 的使用進行更深入的優化。
+*   **使用者介面/API 層：** 長遠來看，可以開發一個簡單的 Web UI (使用 Streamlit 或 Flask/Django) 或 REST API 來方便與框架互動。
+
+歡迎開發者們一同參與【普羅米修斯之火】的建設，共同打造強大的量化分析工具！
 ```
