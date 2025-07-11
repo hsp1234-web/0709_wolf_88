@@ -231,47 +231,53 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
     def fetch_data(self, symbol: str = "", **kwargs) -> pd.DataFrame:
         """
         從 NY Fed API 獲取所有設定的一級交易商持有量數據，並進行合併和處理。
-        `symbol` 和 `kwargs` 在此客戶端的當前實現中被忽略，因為它總是獲取所有配置的數據。
+        `symbol` 在此客戶端的當前實現中被忽略，因為它總是獲取所有配置的數據。
+        `force_refresh` 參數可控制是否繞過快取。
 
         Args:
             symbol (str): 此參數當前被忽略。
-            **kwargs: 此參數當前被忽略。
+            **kwargs: 可接受 `force_refresh: bool` 以控制快取行為。
 
         Returns:
             pd.DataFrame: 包含 'Date' 和 'Total_Positions' (單位：實際數值) 的時間序列數據。
                           如果未能從任何來源獲取數據，則返回空的 DataFrame。
         """
-        # 忽略 symbol 和 kwargs，因為此客戶端總是獲取所有配置的數據
+        force_refresh = kwargs.get('force_refresh', False)
+
+        # 忽略 symbol，因為此客戶端總是獲取所有配置的數據
         if symbol:  # 只是為了避免 linter 報未使用參數的警告
             print(
                 f"資訊：NYFedClient.fetch_data 接收到 symbol='{symbol}'，但此參數當前被忽略。"
             )
-        if kwargs:
-            print(
-                f"資訊：NYFedClient.fetch_data 接收到 kwargs='{kwargs}'，但此參數當前被忽略。"
-            )
 
         all_data_frames: List[pd.DataFrame] = []
-        print("資訊：NYFedClient 開始獲取所有一級交易商數據...")
+        print(f"資訊：NYFedClient 開始獲取所有一級交易商數據 (強制刷新={force_refresh})...")
 
-        for config in self.data_configs:
-            print(f"\n資訊：NYFedClient 處理配置: {config.get('notes', config['url'])}")
-            df_raw = self._download_excel_to_dataframe(config)  # 使用 self._session
-            if df_raw is not None and not df_raw.empty:
-                df_parsed = self._parse_dealer_positions(df_raw, config)
-                if not df_parsed.empty:
-                    all_data_frames.append(df_parsed)
-                    print(
-                        f"資訊：NYFedClient 成功解析來自 {config['url']} 的 {len(df_parsed)} 筆有效數據。"
-                    )
+        # 使用 _get_request_context 控制整個 fetch_data 過程的快取行為
+        # 注意：對於 NYFedClient，它下載多個檔案。
+        # 如果 force_refresh=True，則所有檔案都會重新下載。
+        # 如果 force_refresh=False，則每個檔案都會獨立判斷是否使用快取。
+        with self._get_request_context(force_refresh=force_refresh):
+            for config in self.data_configs:
+                print(f"\n資訊：NYFedClient 處理配置: {config.get('notes', config['url'])}")
+                # _download_excel_to_dataframe 內部使用 self._session，
+                # 其快取行為已由外層的 _get_request_context 控制
+                df_raw = self._download_excel_to_dataframe(config)
+                if df_raw is not None and not df_raw.empty:
+                    df_parsed = self._parse_dealer_positions(df_raw, config)
+                    if not df_parsed.empty:
+                        all_data_frames.append(df_parsed)
+                        print(
+                            f"資訊：NYFedClient 成功解析來自 {config['url']} 的 {len(df_parsed)} 筆有效數據。"
+                        )
+                    else:
+                        print(
+                            f"警告：NYFedClient 解析來自 {config['url']} 的數據後無有效記錄。"
+                        )
                 else:
                     print(
-                        f"警告：NYFedClient 解析來自 {config['url']} 的數據後無有效記錄。"
+                        f"警告：NYFedClient 下載或讀取來自 {config['url']} 的數據失敗或原始數據為空。"
                     )
-            else:
-                print(
-                    f"警告：NYFedClient 下載或讀取來自 {config['url']} 的數據失敗或原始數據為空。"
-                )
 
         if not all_data_frames:
             print(
@@ -292,26 +298,53 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
 
 # 範例使用 (主要用於開發時測試)
 if __name__ == "__main__":
-    print("--- NYFedClient 重構後測試 (直接執行 core/clients/nyfed.py) ---")
+    print("--- NYFedClient 快取整合後測試 (直接執行 core/clients/nyfed.py) ---")
+    client = NYFedClient()
     try:
-        client = NYFedClient()  # 使用預設配置
+        print("\n--- 執行第一次 (應會下載所有檔案) ---")
+        data_first_run = client.fetch_data()
+        if not data_first_run.empty:
+            print(f"第一次執行成功，獲取 {len(data_first_run)} 筆數據。")
+            # 檢查是否有快取相關的日誌 (在 _download_excel_to_dataframe 或 BaseAPIClient 中)
+            # 注意：由於 NYFedClient 下載多個檔案，此處的 from_cache 可能不明顯
+            # 真正的快取效果體現在第二次運行時，請求不應實際發出
 
-        # fetch_data 不再需要特定參數來觸發原始的 fetch_all_primary_dealer_positions 邏輯
-        dealer_positions_data = client.fetch_data()
+        print("\n--- 執行第二次 (應從快取讀取所有檔案) ---")
+        data_second_run = client.fetch_data()
+        if not data_second_run.empty:
+            print(f"第二次執行成功，獲取 {len(data_second_run)} 筆數據。")
+            # 這裡需要依賴 BaseAPIClient 中 get_cached_session 的日誌
+            # 或 _download_excel_to_dataframe 中 response.from_cache (如果適用)
+            # 來確認是否從快取讀取。
 
-        if not dealer_positions_data.empty:
+        print("\n--- 執行第三次 (強制刷新，應重新下載所有檔案) ---")
+        data_third_run = client.fetch_data(force_refresh=True)
+        if not data_third_run.empty:
+            print(f"第三次執行 (強制刷新) 成功，獲取 {len(data_third_run)} 筆數據。")
+
+        # 基本的健全性檢查
+        if not (data_first_run.equals(data_second_run) and data_first_run.equals(data_third_run)):
+            print("\n警告：不同執行之間的數據不一致，請檢查！")
+            print(f"第一次 vs 第二次是否相等: {data_first_run.equals(data_second_run)}")
+            print(f"第一次 vs 第三次是否相等: {data_first_run.equals(data_third_run)}")
+        else:
+            print("\n數據一致性檢查通過。")
+
+        if not data_first_run.empty:
             print(
-                f"\n最終合併的一級交易商持有量數據範例 (共 {len(dealer_positions_data)} 筆):"
+                f"\n最終合併的一級交易商持有量數據範例 (共 {len(data_first_run)} 筆):"
             )
             print("最早的 5 筆數據:")
-            print(dealer_positions_data.head())
+            print(data_first_run.head())
             print("\n最新的 5 筆數據:")
-            print(dealer_positions_data.tail())
+            print(data_first_run.tail())
         else:
             print("錯誤：未能獲取任何一級交易商持有量數據。")
 
     except Exception as e:
         print(f"執行 NYFedClient 測試期間發生未預期錯誤: {e}")
         traceback.print_exc()
+    finally:
+        client.close_session() # 確保關閉 session
 
-    print("--- NYFedClient 重構後測試結束 ---")
+    print("\n--- NYFedClient 快取整合後測試結束 ---")

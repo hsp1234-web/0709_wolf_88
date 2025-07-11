@@ -1,66 +1,115 @@
-# core/clients/base.py
+# -*- coding: utf-8 -*-
+"""
+核心客戶端模組：基礎 API 客戶端 (v2.0 - 快取注入版)
+
+功能：
+- 作為所有特定 API 客戶端 (如 FRED, NYFed) 的父類別。
+- **關鍵升級**: 內建並整合了來自 core.utils.caching 的中央快取引擎。
+- 為所有子類別提供統一的、具備永久快取和手動刷新能力的 requests Session。
+"""
 import requests
-import pandas as pd
-from abc import ABC, abstractmethod
+from contextlib import contextmanager
+from typing import Iterator
 
+# 從我們的通用工具模組導入快取工具
+# 這裡我們使用之前建立的同步版本
+from core.utils.caching import get_cached_session, temporary_disabled_cache
 
-class BaseAPIClient(ABC):
+class BaseAPIClient:
     """
-    所有 API 客戶端的抽象基礎類，封裝了通用的請求、認證和錯誤處理 logique。
+    所有 API 客戶端的基礎類別，內建了基於 requests-cache 的同步快取機制。
     """
 
-    def __init__(self, api_key: str | None, base_url: str | None): # Changed to Optional[str]
-        self.api_key = api_key
-        self.base_url = base_url
-        self._session = requests.Session()
-        self._session.headers.update({"Accept": "application/json"})
-
-    def _request(self, endpoint: str, params: dict | None = None) -> dict:
+    def __init__(self, api_key: str = None, base_url: str = None):
         """
-        執行動態請求的核心方法。
+        初始化基礎客戶端。
 
         Args:
-            endpoint: API 的端點路徑。
-            params: 請求的查詢參數。
+            api_key (str, optional): API 金鑰 (如果需要)。
+            base_url (str, optional): API 的基礎 URL。
+        """
+        self.api_key = api_key
+        self.base_url = base_url
+        # **關鍵升級**: Session 現在直接從我們的中央快取引擎獲取
+        # 這意味著所有使用 self._session 的請求都將自動被快取
+        self._session: requests.Session = get_cached_session()
+        print(f"資訊：{self.__class__.__name__} 已初始化，並注入了永久快取 Session。")
 
-        Returns:
-            API 返回的 JSON 數據。
+    @contextmanager
+    def _get_request_context(self, force_refresh: bool = False) -> Iterator[None]:
+        """
+        一個上下文管理器，根據 force_refresh 參數決定是否要暫時禁用快取。
+        這是實現「手動刷新」的統一入口點。
+
+        Args:
+            force_refresh (bool): 是否強制刷新。
+        """
+        if force_refresh:
+            # 如果需要強制刷新，則使用 temporary_disabled_cache 上下文管理器
+            print(f"🔄 {self.__class__.__name__} 偵測到強制刷新指令。")
+            with temporary_disabled_cache(self._session):
+                yield
+        else:
+            # 否則，不執行任何操作，讓快取正常運作
+            yield
+
+    def close_session(self):
+        """
+        關閉 requests session。
+        """
+        if self._session:
+            self._session.close()
+            print(f"資訊：{self.__class__.__name__} 的 Session 已關閉。")
+
+    def fetch_data(self, symbol: str, **kwargs):
+        """
+        獲取數據的抽象方法，應由子類別實現。
+        這確保了所有子類別都有一個統一的數據獲取入口點。
+
+        Args:
+            symbol (str): 要獲取的數據標的 (例如股票代碼、指標代碼)。
+            **kwargs: 其他特定於該次請求的參數，例如 `force_refresh`。
 
         Raises:
-            requests.exceptions.HTTPError: 如果 API 返回錯誤狀態碼。
+            NotImplementedError: 如果子類別沒有實現此方法。
         """
-        if params is None:
-            params = {}
-        # 統一處理 API Key，子類無需關心
-        # 注意：這裡的 'apikey' 是通用名稱，部分 API 可能使用不同名稱，例如 'api_token', 'token'
-        # 或甚至根本不在 params 中，而是在 headers。
-        # 實際子類化時，如果 API Key 的參數名或傳遞方式不同，
-        # 子類可能需要覆寫此 _request 方法，或在調用 super()._request() 前後調整 params/headers。
-        # FinMind 使用 'token'，FRED 使用 'api_key'，FMP 使用 'apikey'。
-        # NYFed 和 YFinance 不直接在 params 中使用 key。
-        # 為了通用性，這裡暫定為 'apikey'，但後續重構各客戶端時需要特別注意。
-        # 一個更彈性的做法可能是在 __init__ 中允許指定 API key 的參數名。
-        # 或者，讓子類負責將 API key 加入到 params。
-        # 根據計畫書，父類處理 'apikey'，這意味著 FMPClient 的 API Key 參數名是 'apikey'。
-        # FinMind 和 FRED 需要調整。
+        raise NotImplementedError("子類別必須實現 fetch_data 方法")
 
-        # 子類應負責準備包含其特定認證信息的 params。
-        # BaseAPIClient._request 只負責執行請求。
+# 範例使用 (主要用於開發時測試)
+if __name__ == "__main__":
+    print("--- BaseAPIClient 升級後測試 (直接執行 core/clients/base.py) ---")
 
-        if not self.base_url:
-            raise ValueError("BaseAPIClient: base_url is not set, cannot make a request.")
+    class MockClient(BaseAPIClient):
+        def __init__(self):
+            super().__init__(base_url="https://httpbin.org")
 
-        url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
-        response = self._session.get(url, params=params)
-        response.raise_for_status()  # type: ignore[no-untyped-call] # 如果狀態碼不是 2xx，則拋出異常
-        return response.json()  # type: ignore[no-any-return]
+        def fetch_data(self, symbol: str, **kwargs):
+            endpoint = f"/delay/{symbol}"
+            url = self.base_url + endpoint
 
-    @abstractmethod
-    def fetch_data(
-        self, symbol: str, **kwargs
-    ) -> pd.DataFrame:  # 增加 **kwargs 以適應不同客戶端的需求
-        """
-        子類必須實現此方法，定義如何獲取特定數據並轉換為 DataFrame。
-        增加 **kwargs 以允許子類傳遞額外參數，例如日期範圍。
-        """
-        pass
+            # 從 kwargs 中提取 force_refresh 參數
+            force_refresh = kwargs.get('force_refresh', False)
+
+            # 使用 _get_request_context 來控制快取
+            with self._get_request_context(force_refresh=force_refresh):
+                response = self._session.get(url)
+
+            print(f"請求 URL: {url}, 是否來自快取: {response.from_cache}")
+            response.raise_for_status()
+            return response.json()
+
+    client = MockClient()
+    try:
+        print("\n--- 執行第一次 (應會下載) ---")
+        client.fetch_data("2") # 延遲 2 秒
+
+        print("\n--- 執行第二次 (應從快取讀取) ---")
+        client.fetch_data("2")
+
+        print("\n--- 執行第三次 (強制刷新) ---")
+        client.fetch_data("2", force_refresh=True)
+
+    finally:
+        client.close_session()
+
+    print("\n--- BaseAPIClient 升級後測試結束 ---")
