@@ -32,19 +32,20 @@
 經過【奧林匹斯計畫】的重構，系統現採用「**微服務應用 (Micro-App)**」架構理念。此架構的核心是將原先龐大、單體的後端管線，拆解為一系列獨立、自足、職責單一的作戰單元。這種設計大幅提升了系統的模組化程度、可維護性及擴展性。
 
 *   **`apps/` 目錄 - 微應用中心：**
-    *   此目錄是整個系統的心臟。每一個位於 `apps/` 下的子目錄都是一個獨立的「微應用」。
-    *   每個微應用專注於執行一項具體的任務。例如：
-        *   `apps/yfinance_downloader`：專責從 Yahoo Finance 下載金融數據。
-        *   `apps/taifex_data_transformer`：專責轉換台指期貨相關數據格式。
-        *   `apps/database_loader`：專責將標準化後的數據（通常為 Parquet 格式）載入中央資料庫（例如 DuckDB）。
-    *   這種劃分使得各應用可以獨立開發、測試、部署和擴展。
+    *   此目錄是整個系統的心臟。每一個位於 `apps/` 下的子目錄（例如 `apps/factor_engine/`）或獨立腳本（例如 `apps/run_gold_layer.py`）都可以被視為一個「微應用」或一個獨立的執行單元。
+    *   每個單元專注於執行一項具體的任務。例如：
+        *   `apps/factor_engine/run_factor_etl.py`：可能負責運行特定的因子計算和ETL流程。
+        *   `apps/run_gold_layer.py`：負責構建黃金層數據。
+        *   更複雜的應用如 `apps/backtesting_engine/` 可能包含完整的回測邏輯。
+    *   這種劃分使得各功能單元可以獨立開發、測試、部署和擴展。
 
-*   **`core/` 目錄 -共享核心模組：**
+*   **`core/` 目錄 - 共享核心模組：**
     *   此目錄存放所有可被不同「微應用」共享的核心組件和工具函式。
     *   例如：
         *   `core/config.py`：提供統一的專案級配置讀取功能。
+        *   `core/logger.py`：提供標準化的日誌記錄器 (`get_logger`)，方便各模組和應用統一日誌格式與輸出。
         *   `core/constants.py`：定義專案範圍內的共通常數。
-        *   `core/utils.py`：包含通用的輔助函式。
+        *   `core/utils.py`（及 `core/utils/` 目錄）：包含通用的輔助函式和工具。
         *   未來可能加入 `core/secrets.py` 用於管理敏感憑證。
 
 *   **標準數據流 (Standard Data Flow)：**
@@ -57,144 +58,157 @@
 
 ## **四、 檔案目錄結構**
 
-以下是經過【奧林匹斯計畫】重構後，我們全新的、潔淨的檔案目錄結構：
+以下是反映當前專案狀態的檔案目錄結構：
 
 ```
 .
 ├── .gitignore
 ├── README.md
+├── poetry.lock  # Poetry 依賴鎖定檔案
+├── pyproject.toml # Poetry 專案設定與依賴文件
 ├── apps
 │   ├── __init__.py
-│   ├── backtesting_engine
+│   ├── analysis_pipeline # 分析管線應用
+│   │   └── run.py
+│   ├── backtesting_engine # 回測引擎
 │   │   ├── __init__.py
 │   │   └── main.py
-│   ├── daily_market_analyzer
-│   │   ├── __init__.py
-│   │   ├── analysis_engine.py
-│   │   ├── db_manager.py
-│   │   ├── report_generator.py
-│   │   ├── run.py
-│   │   └── yfinance_client.py
-│   ├── database_loader
-│   │   ├── __init__.py
-│   │   └── loader.py
-│   ├── dossier_generator
+│   ├── factor_engine # 因子引擎
+│   │   ├── engine.py
+│   │   └── run_factor_etl.py
+│   ├── news_client # 新聞客戶端應用
+│   │   ├── config.py # (此應用特定配置，待評估是否整合至 core.config)
 │   │   └── run.py
-│   ├── feature_analyzer
+│   ├── pipeline_metadata_manager # 管線元數據管理器
 │   │   ├── __init__.py
-│   │   ├── analyzer.py
-│   │   ├── cross_market_analyzer.py
-│   │   ├── dealer_position_analyzer.py
-│   │   └── run.py
-│   ├── finmind_client
-│   │   ├── __init__.py
-│   │   ├── client.py
-│   │   ├── config.py
-│   │   └── run.py
-│   ├── fmp_client
-│   │   ├── __init__.py
-│   │   ├── client.py
-│   │   ├── config.py
-│   │   └── run.py
-│   ├── institutional_analyzer
-│   │   ├── __init__.py
-│   │   ├── analyzer.py
-│   │   └── run.py
-│   ├── news_client
-│   │   ├── __init__.py
-│   │   ├── client.py
-│   │   ├── config.py
-│   │   └── run.py
-│   ├── nyfed_client
-│   │   ├── __init__.py
-│   │   ├── client.py
-│   │   └── run.py
-│   ├── pipeline_metadata_manager
-│   │   ├── __init__.py
-│   │   ├── config.py
+│   │   ├── config.py # (此應用特定配置，待評估是否整合至 core.config)
 │   │   └── manager.py
-│   ├── portfolio_optimizer
+│   ├── portfolio_optimizer # 投資組合優化器
 │   │   ├── __init__.py
 │   │   └── main.py
-│   ├── report_generator
+│   ├── py.typed # PEP 561 類型標記檔案
+│   ├── report_generator # 報告生成器
 │   │   ├── __init__.py
 │   │   ├── generator.py
 │   │   └── run.py
-│   ├── taifex_data_pipeline
-│   │   ├── run.py
-│   │   └── stream_unzipper.py
-│   ├── taifex_data_transformer
-│   │   ├── __init__.py
-│   │   ├── run.py
-│   │   └── transformer.py
-│   ├── time_aggregator
-│   │   ├── __init__.py
-│   │   └── run.py
-│   ├── yfinance_client
-│   │   ├── __init__.py
-│   │   ├── client.py
-│   │   └── run.py
-│   └── yfinance_downloader
-│       └── downloader.py
+│   ├── run_gold_layer.py # 黃金層數據建構腳本 (已使用 core.logger)
+│   └── run_stress_index.py # 壓力指數計算腳本
 ├── core
 │   ├── __init__.py
-│   ├── config.py
-│   ├── constants.py
-│   └── utils.py
-├── pytest.ini
-└── tests
+│   ├── analyzers # 分析器模組
+│   │   ├── __init__.py
+│   │   └── base_analyzer.py
+│   ├── clients # API 客戶端模組
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── finmind.py
+│   │   ├── fmp.py
+│   │   ├── fred.py
+│   │   ├── nyfed.py
+│   │   └── yfinance.py
+│   ├── config.py # 核心配置模組
+│   ├── constants.py # 核心常數定義
+│   ├── db # 資料庫相關模組
+│   │   ├── __init__.py
+│   │   └── db_manager.py
+│   ├── logger.py  # 標準化核心日誌模組
+│   ├── pipelines # 數據管線框架
+│   │   ├── __init__.py
+│   │   ├── base_step.py
+│   │   ├── pipeline.py
+│   │   └── steps # 管線步驟實現
+│   │       ├── __init__.py
+│   │       ├── aggregators.py
+│   │       ├── financial_steps.py
+│   │       └── loaders.py
+│   ├── py.typed # PEP 561 類型標記檔案
+│   ├── utils # 通用工具包 (目錄形式)
+│   │   ├── __init__.py
+│   │   └── path_utils.py
+│   └── utils.py # 通用工具函數 (獨立檔案，與 core/utils/ 並存)
+├── pytest.ini # Pytest 設定檔
+└── tests # 測試代碼
     ├── __init__.py
-    ├── _test_harness_api_failures.py
-    ├── _test_harness_config_missing.py
-    ├── _test_harness_data_corruption.py
-    ├── _test_harness_database_loader.py
-    ├── _test_harness_dependency_issues.py
-    ├── _test_harness_taifex_live_download.py
-    ├── _test_harness_taifex_transformer.py
-    ├── _test_harness_yfinance_live.py
-    └── unit
+    ├── conftest.py # Pytest 的共用 fixtures 和 hooks
+    ├── integration # 整合測試
+    │   ├── __init__.py
+    │   ├── apps
+    │   │   ├── __init__.py
+    │   │   ├── test_analysis_pipeline.py
+    │   │   └── test_refactored_apps.py # 包含對 apps 腳本的測試
+    │   └── pipelines
+    │       ├── __init__.py
+    │       ├── test_data_pipeline.py
+    │       └── test_example_flow.py
+    └── unit # 單元測試
         ├── __init__.py
-        └── test_feature_analyzer.py
+        ├── core
+        │   ├── __init__.py
+        │   ├── analyzers
+        │   │   ├── __init__.py
+        │   │   └── test_base_analyzer.py
+        │   └── clients
+        │       ├── __init__.py
+        │       ├── test_finmind.py
+        │       ├── test_fmp.py
+        │       ├── test_fred.py
+        │       ├── test_nyfed.py
+        │       └── test_yfinance.py
+        └── test_feature_analyzer.py # (此檔案的具體位置和內容可能需進一步確認)
 ```
 
 ## **五、 環境設定與啟動**
 
-為了確保【普羅米修斯之火】計畫的順利運行，請遵循以下步驟設定您的作戰環境：
+本專案使用 [Poetry](https://python-poetry.org/) 進行依賴管理和環境設定。請遵循以下步驟設定您的作戰環境：
 
-1.  **建立並啟動 Python 虛擬環境 (建議)**：
-    為了維持專案依賴的純淨性，強烈建議您使用虛擬環境。您可以選擇 `venv` 或 `conda`。
+1.  **安裝 Poetry (如果尚未安裝)**：
+    請參考 Poetry 官方文檔進行安裝：[Installation - Poetry Documentation](https://python-poetry.org/docs/#installation)
 
-    *   使用 `venv`:
-        ```bash
-        python -m venv .venv
-        source .venv/bin/activate  # Linux/macOS
-        # 或者
-        # .venv\Scripts\activate    # Windows
-        ```
-
-    *   使用 `conda`:
-        ```bash
-        conda create -n prometheus_fire python=3.9  # 可指定 Python 版本
-        conda activate prometheus_fire
-        ```
-
-2.  **安裝專案依賴 (環境初始化)**：
-    在啟動虛擬環境後，進入專案的根目錄，執行以下指令來安裝所有必要的作戰套件：
+2.  **配置 Poetry 以在專案內創建虛擬環境 (推薦)**：
+    執行一次以下指令，讓 Poetry 將虛擬環境創建在專案目錄下的 `.venv` 資料夾中：
     ```bash
-    pip install .
+    poetry config virtualenvs.in-project true
     ```
-    如果專案未來提供 `requirements.txt` 檔案，也可以使用 `pip install -r requirements.txt`。
 
-完成上述步驟後，您的本地環境即已準備就緒，可以開始執行各個微應用或進行測試。由於系統已模組化為微服務應用，通常沒有單一的「服務啟動」指令，而是根據需求直接運行位於 `apps/` 目錄下的特定應用腳本 (例如 `python apps/yfinance_downloader/downloader.py --help`)。
+3.  **安裝專案依賴與初始化環境**：
+    進入專案的根目錄 (包含 `pyproject.toml` 檔案)，執行以下指令來安裝所有必要的作戰套件並建立虛擬環境：
+    ```bash
+    poetry install
+    ```
+    此指令會讀取 `pyproject.toml` 和 `poetry.lock` 檔案，解析並安裝所有主要依賴和開發依賴。
+
+4.  **啟動 Poetry 虛擬環境**：
+    有兩種主要方式可以啟動並在虛擬環境中工作：
+
+    *   **啟動一個新的 shell 會話 (常用)**：
+        ```bash
+        poetry shell
+        ```
+        此指令會啟動一個新的 shell，其中虛擬環境已自動激活。之後在此 shell 中執行的所有 Python 或 pip 指令都將作用於此虛擬環境。
+
+    *   **在現有 shell 中運行單個指令**：
+        ```bash
+        poetry run <your_command>
+        ```
+        例如，運行一個 Python 腳本：
+        ```bash
+        poetry run python apps/run_gold_layer.py
+        ```
+        或運行 Pytest (詳見下一節)：
+        ```bash
+        poetry run pytest -v
+        ```
+
+完成上述步驟後，您的本地環境即已準備就緒。由於系統已模組化為微服務應用，通常沒有單一的「服務啟動」指令，而是根據需求，使用 `poetry run python <script_path.py>` 的方式直接運行位於 `apps/` 目錄下的特定應用腳本。
 
 ## **六、 戰術校準：執行測試**
 
 在成功的環境初始化之後，執行全面的自動化測試是確保所有作戰單元正常運作的關鍵步驟。我們的系統已建立完善的測試框架。
 
-請在專案根目錄下執行以下指令，以運行所有的核心單元測試並檢視詳細輸出：
+請在專案根目錄下，並確保您的 Poetry 虛擬環境已激活（例如，通過 `poetry shell` 進入新的 shell，或者直接使用 `poetry run`），執行以下指令以運行所有的核心單元測試並檢視詳細輸出：
 
 ```bash
-python -m pytest -v
+poetry run pytest -v
 ```
 
 所有測試均應通過，以確認系統處於穩定的戰備狀態。
