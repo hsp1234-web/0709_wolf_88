@@ -13,20 +13,21 @@
 
 ## **二、 技術棧 (Technology Stack)**
 
-*   **核心數據處理:** Pandas, NumPy
-*   **數據持久化格式:** Apache Parquet
+*   **核心數據處理:** Pandas, NumPy, PyArrow
+*   **數據持久化格式:** Apache Parquet (用於數據湖備份，引擎中暫未直接使用)
 *   **技術指標計算:** `pandas-ta`
 *   **非同步網路請求:** `aiohttp`
 *   **HTTP請求快取:** `requests-cache`
 *   **斷路器模式實現:** `pybreaker`
 *   **系統資源監控:** `psutil`
-*   **嵌入式分析資料庫:** DuckDB
+*   **嵌入式分析資料庫:** DuckDB (主要數據儲存)
 *   **HTTP客戶端庫:** `requests`, `urllib3` (<2.0)
 *   **金融數據獲取:** `yfinance`
 *   **路徑管理:** `pathlib`
 *   **日誌記錄:** Python `logging` 模組
 *   **測試框架:** Pytest
 *   **命令行界面 (輔助腳本):** `argparse`
+*   **依賴管理:** Poetry
 
 ## **三、 系統核心架構**
 
@@ -37,9 +38,9 @@
 *   **`core/` 目錄 - 共享核心模組：**
     *   存放可被不同微應用共享的核心組件，如配置管理 (`core/config.py`)、日誌記錄器 (`core/logger.py`)、API 客戶端 (`core/clients/`)、數據庫管理器 (`core/db/`) 以及核心數據獲取引擎 (`core/engines/`)。
 *   **標準數據流 (ETL/ELT)：**
-    1.  **數據提取 (Extract)**：由 `downloader` 微應用或核心引擎負責。
-    2.  **數據轉換 (Transform)**：由 `transformer` 微應用負責。
-    3.  **數據裝載 (Load)**：由 `database_loader` 微應用或核心引擎負責，載入到 DuckDB。
+    1.  **數據提取 (Extract)**：由 `core/engines/robust_acquisition_engine.py` 或其他 `downloader` 微應用負責。
+    2.  **數據轉換 (Transform)**：由各類 `transformer` 微應用負責。
+    3.  **數據裝載 (Load)**：由 `core/engines/robust_acquisition_engine.py` 或 `database_loader` 微應用負責，主要載入到 DuckDB。
 
 ### **核心數據獲取引擎：`RobustDataAcquisitionEngine`**
 
@@ -48,23 +49,23 @@
 **核心功能：**
 
 1.  **非同步併發獲取 (Asynchronous & Concurrent Fetching)**：
-    *   利用 `asyncio` 配合 `yf.Ticker().history()` 在獨立線程中執行，實現多個股票代碼數據的併發獲取，提升I/O密集型任務的效率。
+    *   利用 `asyncio` 配合 `yf.Ticker().history()` 在獨立線程中執行（透過 `asyncio.to_thread`），實現多個股票代碼數據的併發獲取，提升I/O密集型任務的效率。
 2.  **智慧降級探測 (Intelligent Degradation Probing)**：
-    *   在請求詳細歷史數據（如日線）前，先對目標進行一次輕量級的「探測請求」（如月線數據）。
-    *   如果探測失敗（如股票代碼無效、無任何數據返回），則跳過對該目標的後續詳細數據請求，避免資源浪費。
+    *   在請求詳細歷史數據（如日線）前，先對目標進行一次輕量級的「探測請求」（如月線數據，使用 `yf.Ticker().history()`）。
+    *   如果探測失敗（如股票代碼無效、無任何數據返回、HTTP錯誤），則跳過對該目標的後續詳細數據請求，避免資源浪費。
 3.  **資源感知儲存 (Resource-Aware Storage)**：
     *   使用 `psutil` 監控系統記憶體使用率。
-    *   當記憶體使用超過預設閾值 (70%) 時，引擎會將獲取的數據優先寫入永久儲存（DuckDB），而非僅保留在記憶體中。
-    *   在當前實現中，無論記憶體使用率如何，數據均會通過 UPSERT 操作寫入 DuckDB 以確保持久化。
+    *   引擎設計上考慮了當記憶體使用超過預設閾值 (70%) 時的處理邏輯。
+    *   在當前 `RobustDataAcquisitionEngine` 的實現中，無論記憶體使用率如何，所有成功獲取的數據均會通過 UPSERT 操作寫入 DuckDB 以確保持久化。數據湖的 Parquet 備份在先前版本的引擎中有提及，但在此版本中未直接整合進 `_process_and_store`。
 4.  **斷路器模式 (Circuit Breaker)**：
-    *   使用 `pybreaker` 函式庫包裹單個股票數據的獲取邏輯 (`fetch_single_ticker` 方法)。
-    *   當對某一特定股票的請求連續失敗達到預設次數（5次）後，斷路器會「跳閘」，在指定超時時間（60秒）內阻止對該股票的後續請求，防止系統資源被無效請求拖垮，並給予遠端服務恢復的時間。
-5.  **HTTP請求快取與重試 (via `requests-cache` & `urllib3.Retry`)**：
-    *   引擎內部創建了一個配置了永久快取 (`requests-cache`) 和指數退避重試 (`urllib3.Retry`) 策略的 `requests.Session` 物件。
-    *   **重要限制**：由於 `yfinance` (版本 0.2.60 及後續) 內部可能強制使用 `curl_cffi` 並建議不向其傳遞自訂 `session` 物件，因此這個經過強化的 `session` **目前未直接應用於 `yfinance` 的數據下載過程**。`yfinance` 將依賴其自身的請求邏輯和可能的內部快取。
-    *   因此，`requests-cache` 提供的持久性HTTP層級快取和基於狀態碼的重試，對 `yfinance` 的請求影響有限。引擎的 `force_recache` 方法目前實現為清除 `requests-cache` 的全局快取。
+    *   使用 `pybreaker` 函式庫修飾 `fetch_single_ticker` 方法。
+    *   當對某一特定股票的數據獲取連續失敗達到預設次數（5次）後，斷路器會「跳閘」，在指定超時時間（60秒）內阻止對該股票的後續請求，防止系統資源被無效請求拖垮，並給予遠端服務恢復的時間。
+5.  **HTTP請求快取與重試 (Session)**：
+    *   引擎內部通過 `_create_permanent_resilient_session` 方法創建了一個配置了永久快取 (`requests-cache`) 和指數退避重試 (`urllib3.Retry`) 策略的 `requests.Session` 物件。
+    *   **重要限制**：由於 `yfinance` (我們使用的版本 0.2.60) 內部機制變更（可能涉及 `curl_cffi`）並建議不向其傳遞自訂 `session` 物件，因此這個經過強化的 `session` **目前未直接應用於 `yfinance` 的數據下載過程**。`yfinance` 將依賴其自身的請求邏輯和可能的內部快取。
+    *   因此，`requests-cache` 提供的持久性HTTP層級快取和基於狀態碼的重試，對 `yfinance` 的請求影響有限。引擎的 `force_recache` 方法目前實現為清除 `requests-cache` 的全局快取，這對 `yfinance` 的影響也間接。
 6.  **數據持久化 (DuckDB Integration)**：
-    *   所有成功獲取並處理的數據都會通過 UPSERT（插入或更新）操作存入名為 `permanent_financial_data.duckdb` 的 DuckDB 資料庫文件中。
+    *   所有成功獲取並處理的數據都會通過 UPSERT（插入或更新，基於主鍵 `symbol, interval, date`）操作存入名為 `permanent_financial_data.duckdb` 的 DuckDB 資料庫文件中。
     *   表結構為 `historical_ohlcv (date TIMESTAMP, symbol VARCHAR, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT, interval VARCHAR, PRIMARY KEY (symbol, interval, date))`。
 
 ## **四、 檔案目錄結構**
@@ -73,35 +74,102 @@
 .
 ├── .gitignore
 ├── README.md
+├── _test_run.py
 ├── config.yml
+├── mypy.ini
+├── permanent_api_cache.sqlite  # 由 requests-cache 生成
+├── permanent_financial_data.duckdb # 由 DuckDB 生成
 ├── poetry.lock
 ├── pyproject.toml
-├── _test_run.py # 核心功能與引擎驗證腳本
-├── permanent_api_cache.sqlite # requests-cache 快取檔案 (如果運行過引擎)
-├── permanent_financial_data.duckdb # DuckDB 資料庫檔案 (如果運行過引擎)
-├── apps
-│   ├── ... (其他微應用)
-├── core
+├── pytest.ini
+├── apps/
 │   ├── __init__.py
-│   ├── clients
+│   ├── analysis_pipeline/
+│   │   └── run.py
+│   ├── backtesting_engine/
+│   │   ├── __init__.py
+│   │   └── main.py
+│   ├── factor_engine/
+│   │   ├── engine.py
+│   │   └── run_factor_etl.py
+│   ├── news_client/
+│   │   └── run.py
+│   ├── pipeline_metadata_manager/
+│   │   ├── __init__.py
+│   │   └── manager.py
+│   ├── portfolio_optimizer/
+│   │   ├── __init__.py
+│   │   └── main.py
+│   ├── py.typed
+│   ├── report_generator/
+│   │   ├── __init__.py
+│   │   ├── generator.py
+│   │   └── run.py
+│   ├── run_gold_layer.py
+│   └── run_stress_index.py
+├── core/
+│   ├── __init__.py
+│   ├── analyzers/
+│   │   ├── __init__.py
+│   │   └── base_analyzer.py
+│   ├── clients/
 │   │   ├── __init__.py
 │   │   ├── base.py
-│   │   └── yfinance.py # (及其他特定API客戶端)
+│   │   ├── finmind.py
+│   │   ├── fmp.py
+│   │   ├── fred.py
+│   │   ├── nyfed.py
+│   │   └── yfinance.py
 │   ├── config.py
 │   ├── constants.py
-│   ├── db
+│   ├── db/
 │   │   ├── __init__.py
 │   │   └── db_manager.py
-│   ├── engines # <--- 新增引擎目錄
+│   ├── engines/
 │   │   ├── __init__.py
-│   │   └── robust_acquisition_engine.py # <--- 核心數據獲取引擎
+│   │   └── robust_acquisition_engine.py
 │   ├── logger.py
-│   └── utils
+│   ├── pipelines/
+│   │   ├── __init__.py
+│   │   ├── base_step.py
+│   │   ├── pipeline.py
+│   │   └── steps/
+│   │       ├── __init__.py
+│   │       ├── aggregators.py
+│   │       ├── financial_steps.py
+│   │       └── loaders.py
+│   ├── py.typed
+│   └── utils/
 │       ├── __init__.py
 │       └── path_utils.py
-├── pytest.ini
-└── tests
-    ├── ... (測試目錄結構)
+└── tests/
+    ├── __init__.py               # tests 目錄本身也需要 __init__.py
+    ├── conftest.py
+    ├── integration/
+    │   ├── __init__.py
+    │   ├── apps/
+    │   │   ├── __init__.py
+    │   │   ├── test_analysis_pipeline.py
+    │   │   └── test_refactored_apps.py
+    │   └── pipelines/
+    │       ├── __init__.py
+    │       ├── test_data_pipeline.py
+    │       └── test_example_flow.py
+    └── unit/
+        ├── __init__.py
+        ├── core/
+        │   ├── __init__.py
+        │   ├── analyzers/
+        │   │   ├── __init__.py
+        │   │   └── test_base_analyzer.py
+        │   └── clients/
+        │       ├── __init__.py
+        │       ├── test_finmind.py
+        │       ├── test_fmp.py
+        │       ├── test_fred.py
+        │       ├── test_nyfed.py
+        │       └── test_yfinance.py
+        └── test_feature_analyzer.py
 ```
 
 ## **五、 環境設定與啟動**
@@ -111,11 +179,27 @@
 1.  **安裝 Poetry**：參考 [Poetry 官方文檔](https://python-poetry.org/docs/#installation)。
 2.  **配置 Poetry (推薦)**：`poetry config virtualenvs.in-project true`
 3.  **安裝依賴**：在專案根目錄執行 `poetry install`。
-    *   此操作會安裝 `pyproject.toml` 中定義的所有依賴，包括主依賴和開發依賴。
-    *   核心運行時依賴包括：`pandas`, `numpy`, `pandas-ta`, `yfinance=="0.2.60"`, `aiohttp`, `psutil`, `pybreaker`, `duckdb`, `requests-cache`, `urllib3<2.0`, `pyarrow` 等。
+    *   此操作會安裝 `pyproject.toml` 中定義的所有依賴。
+    *   **主要運行時依賴版本 (截至本次更新時):**
+        *   `python = ">=3.12,<3.14"`
+        *   `pandas = "^2.3.1"` (實際可能因 `numpy` 約束而調整)
+        *   `numpy = "<2.0"` (因 `pandas-ta` 特定版本要求)
+        *   `pandas-ta = "0.3.14b0"`
+        *   `yfinance = "0.2.60"`
+        *   `aiohttp = "^3.12.14"`
+        *   `psutil = "^6.0.0"`
+        *   `pybreaker = "^1.4.0"`
+        *   `duckdb = "^1.3.2"`
+        *   `requests-cache = "^1.2.1"`
+        *   `urllib3 = "<2.0"` (實際為 `1.26.20`)
+        *   `pyarrow = "^20.0.0"`
+        *   (其他間接依賴由 Poetry 解析)
+    *   **主要開發依賴版本:**
+        *   `pytest = "^8.4.1"`
+        *   `types-requests = "2.31.0.6"` (為與 `urllib3<2.0` 相容)
 4.  **啟動虛擬環境**：
-    *   `poetry shell` (推薦，啟動一個已激活虛擬環境的新 shell)
-    *   或 `poetry run <command>` (在現有 shell 中運行單個指令)
+    *   `poetry shell` (推薦)
+    *   或 `poetry run <command>`
 
 ## **六、 運行核心引擎驗證**
 
@@ -126,20 +210,19 @@
 ```bash
 poetry run python _test_run.py
 ```
-
-此腳本將執行以下操作：
-1.  清理舊的資料庫和API快取檔案（如果存在）。
-2.  初始化 `RobustDataAcquisitionEngine` 並執行第一次數據獲取（應從網路）。
-3.  再次執行數據獲取（理論上應測試快取，但受限於 `yfinance` 與自訂 `session` 的兼容性，快取效果依賴 `yfinance` 內部機制）。
-4.  測試手動清除 `requests-cache` 快取並重新獲取單個股票數據。
-5.  從 DuckDB 資料庫中查詢並打印已儲存數據的摘要。
+此腳本將：
+1.  清理舊的資料庫和API快取檔案。
+2.  第一次運行引擎 (數據應從網路獲取並存入 DuckDB)。
+3.  第二次運行引擎 (數據應主要由 `yfinance` 內部機制處理，可能部分命中其快取；數據會再次 UPSERT 至 DuckDB)。
+4.  測試 `requests-cache` 的全局快取清除 (`force_recache`) 並重新獲取單個股票數據。
+5.  從 DuckDB 查詢並打印已儲存數據的摘要。
 
 觀察腳本輸出，確認智慧降級、併發獲取、數據處理、錯誤處理及資料庫寫入是否符合預期。
 
 ## **七、 注意事項與已知限制**
 
-*   **`requests-cache` 與 `yfinance` 的兼容性**：如前所述，由於 `yfinance` 目前版本 (0.2.60) 的內部改動（可能涉及 `curl_cffi` 的使用）並建議不傳遞自訂 `session`，`requests-cache` 的 HTTP 層級快取和重試策略無法直接應用於 `yfinance` 的數據下載。引擎的快取效果依賴 `yfinance` 自身的（如果存在且啟用）快取行為。
-*   **`force_recache` 的實現**：由於上述原因，`force_recache` 方法目前是通過清除 `requests-cache` 的全局快取來實現的。這對於不使用該 `session` 的 `yfinance` 請求，其強制重新獲取的效果有限。
+*   **`requests-cache` 與 `yfinance` 的兼容性**：如前所述，`requests-cache` 的 HTTP 層級快取和重試策略**無法直接應用於** `yfinance` 的數據下載過程，因 `yfinance` (0.2.60) 不建議傳遞自訂 `session`。引擎的快取效果依賴 `yfinance` 自身的快取行為。
+*   **`force_recache` 的影響範圍**：此方法目前清除的是 `requests-cache` 的全局快取。對於 `yfinance` 的請求，其「強制重新獲取」的效果依賴於 `yfinance` 是否會因 `requests-cache` 的快取被清除而重新觸發網路請求（目前看來影響有限）。
 
 ## **八、 未來展望**
 
