@@ -22,6 +22,7 @@ ENV/
 *.parquet
 *.txt
 *.json
+data/
 data_workspace/
 workspace/
 reports/
