@@ -5,25 +5,43 @@ import os
 from pathlib import Path
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
+# 注意：這部分的路徑校正邏輯現在將使用 logger
 try:
     current_script_path = Path(__file__).resolve()
     project_root = current_script_path.parent.parent.parent
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    print(f"INFO (analysis_pipeline/run.py): 已將專案根目錄 {project_root} 添加到 sys.path")
+    # 核心日誌模組應在 sys.path 更新後導入，以確保能找到 core.logger
+    # 但為了記錄路徑校正本身，我們暫時在這裡實例化一個臨時的 logger 或延遲 logger 的使用
 except NameError:
     project_root = Path(os.getcwd()).resolve()
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    print(
-        f"警告 (analysis_pipeline/run.py): __file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。",
-        file=sys.stderr,
-    )
 except Exception as e:
+    # 如果連 project_root 都無法確定，日誌記錄會比較困難
     print(
-        f"專案路徑校正時發生錯誤 (apps/analysis_pipeline/run.py): {e}", file=sys.stderr
+        f"緊急錯誤: 在確定專案根目錄時發生初始錯誤 (apps/analysis_pipeline/run.py): {e}", file=sys.stderr
     )
+    project_root = Path(".").resolve() # 備用，可能不準確
+
+# 在 sys.path 更新後導入核心 logger
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from core.logger import get_logger
+logger = get_logger(__name__)
+
+# 現在記錄路徑校正的結果
+try:
+    # 重新獲取（或確認）路徑，這次是為了日誌記錄
+    current_script_path_for_log = Path(__file__).resolve()
+    project_root_for_log = current_script_path_for_log.parent.parent.parent
+    if project_root_for_log != project_root : # 校驗一下之前的確定是否一致
+         logger.warning(f"路徑校正過程中，project_root 的前後確定值不一致。初始: {project_root}, 日誌階段: {project_root_for_log}")
+    logger.info(f"已將專案根目錄 {project_root_for_log} 添加到 sys.path (如果尚未存在)")
+except NameError:
+    # project_root 在上面 NameError 時已設定
+    logger.warning(f"__file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。")
+except Exception as e:
+    logger.error(f"專案路徑校正時發生錯誤: {e}")
 # --- 標準化「路徑自我校正」樣板碼 END ---
+
 
 # 統一的 DBManager 和分析器導入
 # from apps.daily_market_analyzer.db_manager import DBManager # 暫時註解，模組不存在
@@ -79,9 +97,9 @@ def main():
 
     # args = parser.parse_args() # 暫時註解掉，因為 analyzer 相關邏輯已移除
 
-    # print(f"INFO: 請求執行的分析器: {args.analyzer}")
-    # print(f"INFO: 主資料庫路徑: {args.db_path}")
-    # print(f"INFO: 分析超市資料庫路徑: {args.analytics_mart_db}")
+    # logger.info(f"請求執行的分析器: {args.analyzer}")
+    # logger.info(f"主資料庫路徑: {args.db_path}")
+    # logger.info(f"分析超市資料庫路徑: {args.analytics_mart_db}")
 
 
     # # 初始化 DBManager (大多數分析器需要它)
@@ -109,7 +127,7 @@ def main():
             # # 一個可能的方案是 pipeline 接受日期範圍和 tickers 列表，然後循環調用。
             # # 但 BaseAnalyzer 本身是為單次運行設計的。
             # # first_ticker = args.tickers.split(',')[0].strip()
-            # # print(f"警告: Daily Market Analyzer 當前在 pipeline 中僅處理第一個 ticker ({first_ticker}) 和 start_date ({args.start_date})。完整功能遷移需要進一步設計。")
+            # # logger.warning(f"Daily Market Analyzer 當前在 pipeline 中僅處理第一個 ticker ({first_ticker}) 和 start_date ({args.start_date})。完整功能遷移需要進一步設計。")
             # # analyzer_instance = DailyMarketAnalysisEngine(
                 # # db_manager_instance=db_manager_main,
                 # # ticker=first_ticker, # 示例：取第一個 ticker
@@ -136,11 +154,11 @@ def main():
             # # )
 
         # # elif args.analyzer == "legacy_quadrant": # 相關模組暫時移除
-            # # print(f"INFO: 準備執行 Legacy Quadrant 分析。將為每個時間週期分別運行。")
+            # # logger.info(f"準備執行 Legacy Quadrant 分析。將為每個時間週期分別運行。")
             # # LegacyQuadrantAnalyzer 需要針對每個時間週期運行
             # # all_periods_succeeded = True
             # # for period in TIME_PERIODS_FOR_LEGACY_QUADRANT.keys():
-                # # print(f"  - 執行 Legacy Quadrant 分析: {period}...")
+                # # logger.info(f"  - 執行 Legacy Quadrant 分析: {period}...")
                 # # try:
                     # # quadrant_analyzer = LegacyQuadrantAnalyzer(
                         # # db_path=args.legacy_quadrant_db, # 使用其特定的 DB 路徑
@@ -148,12 +166,12 @@ def main():
                     # # )
                     # # quadrant_analyzer.run()
                 # # except Exception as e_quad:
-                    # # print(f"錯誤: Legacy Quadrant 分析 ({period}) 失敗: {e_quad}", file=sys.stderr)
+                    # # logger.error(f"Legacy Quadrant 分析 ({period}) 失敗: {e_quad}")
                     # # all_periods_succeeded = False
             # # if all_periods_succeeded:
-                # # print("INFO: 所有 Legacy Quadrant 分析週期已完成。")
+                # # logger.info("所有 Legacy Quadrant 分析週期已完成。")
             # # else:
-                # # print("警告: 部分 Legacy Quadrant 分析週期執行失敗。", file=sys.stderr)
+                # # logger.warning("部分 Legacy Quadrant 分析週期執行失敗。")
             # # return # Legacy Quadrant 的循環執行在此處結束
 
         # if args.analyzer == "institutional": # 注意：由於其他 analyzer 被註解，這裡變成 if # 相關模組暫時移除
@@ -163,7 +181,7 @@ def main():
             # # 如果提供了多個 stock_ids，我們需要循環或讓分析器內部處理
             # # 目前，我們也只取第一個 stock_id 作為示例
             # first_stock_id_inst = args.stock_ids[0]
-            # print(f"警告: Institutional Analyzer 當前在 pipeline 中僅處理第一個 stock_id ({first_stock_id_inst})。")
+            # logger.warning(f"Institutional Analyzer 當前在 pipeline 中僅處理第一個 stock_id ({first_stock_id_inst})。")
             # analyzer_instance = InstitutionalAnalyzer(
                 # stock_id=first_stock_id_inst,
                 # start_date=args.start_date,
@@ -180,24 +198,24 @@ def main():
 
         # else:
             # # 此處不應到達，因為 choices 已經限制了 analyzer 參數
-            # print(f"錯誤: 未知的分析器名稱 '{args.analyzer}'", file=sys.stderr) # args.analyzer 將未定義
+            # logger.error(f"未知的分析器名稱 '{args.analyzer}'") # args.analyzer 將未定義
             # sys.exit(1)
 
         # if analyzer_instance:
-            # print(f"INFO: 實例化分析器 {args.analyzer} 成功。準備執行 run()...") # args.analyzer 將未定義
+            # logger.info(f"實例化分析器 {args.analyzer} 成功。準備執行 run()...") # args.analyzer 將未定義
             # analyzer_instance.run()
-            # print(f"INFO: 分析器 {args.analyzer} 執行完畢。") # args.analyzer 將未定義
+            # logger.info(f"分析器 {args.analyzer} 執行完畢。") # args.analyzer 將未定義
         # else:
             # # 這種情況只應該在 legacy_quadrant 之後發生，或者如果上面有邏輯錯誤
              # if args.analyzer != "legacy_quadrant": # args.analyzer 將未定義
-                # print(f"錯誤: 未能實例化分析器 {args.analyzer}", file=sys.stderr) # args.analyzer 將未定義
+                # logger.error(f"未能實例化分析器 {args.analyzer}")
 
     # except Exception as e:
-        # print(f"執行分析器 {args.analyzer} 時發生嚴重錯誤: {e}", file=sys.stderr) # args.analyzer 將未定義
-        # import traceback
-        # traceback.print_exc()
+        # logger.error(f"執行分析器 {args.analyzer} 時發生嚴重錯誤: {e}", exc_info=True) # args.analyzer 將未定義
+        # # import traceback # traceback.print_exc() 可由 logger 的 exc_info=True 替代
+        # # traceback.print_exc()
         # sys.exit(1)
-    print("INFO: (apps/analysis_pipeline/run.py) main() 執行被跳過，因為所有分析器模組均缺失。")
+    logger.info("(apps/analysis_pipeline/run.py) main() 執行被跳過，因為所有分析器模組的相關邏輯均已被註解。")
 
 if __name__ == "__main__":
     main()

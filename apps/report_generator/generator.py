@@ -6,6 +6,9 @@ from datetime import datetime
 import pytz  # 確保導入 pytz 以便在 __main__ 中使用
 from typing import Any # For type hints
 
+from core.logger import get_logger # 移到頂部
+logger = get_logger(__name__)
+
 # 導入 Plotly - 直接導入，如果失敗則讓 ImportError 自然拋出
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -14,22 +17,26 @@ from plotly.subplots import make_subplots
 class ReportGenerator:
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
+        logger.info(f"ReportGenerator 初始化，使用資料庫路徑: {self.db_path}")
 
     def _connect_db(self):
         try:
             con = duckdb.connect(database=self.db_path, read_only=True)
-            print(f"成功連接到資料庫 (唯讀): {self.db_path}")
+            logger.info(f"成功連接到資料庫 (唯讀): {self.db_path}")
             return con
         except Exception as e:
-            print(f"連接資料庫 {self.db_path} 時發生錯誤: {e}")
+            logger.error(f"連接資料庫 {self.db_path} 時發生錯誤: {e}", exc_info=True)
             raise
 
     def _validate_timeframe(self, timeframe: str) -> str:
         cleaned_timeframe = timeframe.lower().strip()
         if not cleaned_timeframe:
+            logger.error("Timeframe 驗證失敗: 不能為空。")
             raise ValueError("Timeframe 不能為空。")
         if not all(c.isalnum() or c == "_" for c in cleaned_timeframe):
+            logger.error(f"Timeframe 驗證失敗: '{timeframe}' 包含無效字符。")
             raise ValueError(f"Timeframe '{timeframe}' 包含無效字符。")
+        logger.debug(f"Timeframe '{timeframe}' 驗證通過，清理後為 '{cleaned_timeframe}'.")
         return cleaned_timeframe
 
     def _fetch_data(
@@ -49,14 +56,14 @@ class ReportGenerator:
             if isinstance(stock_id, str) and ".TW" in stock_id
             else stock_id
         )
-        print(
+        logger.info(
             f"原始 stock_id (用於報告和 Chimera): '{stock_id}', 內部查詢 ohlcv 使用的 product_id: '{internal_stock_id_for_ohlcv}'"
         )
 
         try:
             valid_timeframe = self._validate_timeframe(timeframe)
             ohlcv_table_name = f"ohlcv_{valid_timeframe}"
-            print(
+            logger.info(
                 f"正在從資料表 '{ohlcv_table_name}' 讀取 {timeframe} OHLCV 數據 (product_id: {internal_stock_id_for_ohlcv})..."
             )
 
@@ -76,25 +83,25 @@ class ReportGenerator:
             ohlcv_df = con.execute(query_ohlcv, params_ohlcv).fetchdf()
 
             if ohlcv_df.empty:
-                print(
+                logger.warning(
                     f"未找到 {internal_stock_id_for_ohlcv} (原始 {stock_id}) 在 {start_date_str} 至 {end_date_str} ({timeframe} 週期) 的 OHLCV 數據。"
                 )
                 return None, None, None
-            print(
+            logger.info(
                 f"成功讀取 {len(ohlcv_df)} 筆 {internal_stock_id_for_ohlcv} (原始 {stock_id}) 的 {timeframe} OHLCV 數據。"
             )
             if "timestamp" in ohlcv_df.columns:  # 確保 timestamp 是 datetime 對象
                 ohlcv_df["timestamp"] = pd.to_datetime(ohlcv_df["timestamp"])
-        except duckdb.CatalogException:
-            print(
-                f"錯誤：OHLCV 資料表 '{ohlcv_table_name}' (用於 timeframe '{timeframe}') 不存在於資料庫 {self.db_path} 中。"
+        except duckdb.CatalogException as ce:
+            logger.error(
+                f"OHLCV 資料表 '{ohlcv_table_name}' (用於 timeframe '{timeframe}') 不存在於資料庫 {self.db_path} 中: {ce}", exc_info=True
             )
             return None, None, None
         except ValueError as ve:
-            print(f"錯誤: {ve}")
+            logger.error(f"Timeframe 相關錯誤: {ve}", exc_info=True)
             return None, None, None
         except Exception as e:
-            print(f"讀取 {timeframe} OHLCV 數據時發生錯誤: {e}")
+            logger.error(f"讀取 {timeframe} OHLCV 數據時發生錯誤: {e}", exc_info=True)
             return None, None, None
 
         try:
@@ -114,15 +121,15 @@ class ReportGenerator:
                 chimera_df["date"] = pd.to_datetime(
                     chimera_df["date"]
                 ).dt.date  # 確保是 date 類型
-                print(
+                logger.info(
                     f"成功讀取 {len(chimera_df)} 筆 {stock_id} 的 Chimera 日信號數據。"
                 )
             else:
-                print(
+                logger.info(
                     f"未找到 {stock_id} 在 {start_date_str} 至 {end_date_str} 的 Chimera 日信號數據 (將不顯示信號)。"
                 )
         except Exception as e:
-            print(f"讀取 Chimera 日信號數據時發生錯誤: {e} (將不顯示信號)。")
+            logger.warning(f"讀取 Chimera 日信號數據時發生錯誤: {e} (將不顯示信號)。", exc_info=True)
             chimera_df = None
 
         pc_ratio_product_to_fetch = None
@@ -149,17 +156,17 @@ class ReportGenerator:
                     pc_ratio_df["trading_date"] = pd.to_datetime(
                         pc_ratio_df["trading_date"]
                     ).dt.date
-                    print(
+                    logger.info(
                         f"成功讀取 {len(pc_ratio_df)} 筆 {pc_ratio_product_to_fetch} 的 P/C Ratio 數據。"
                     )
                 else:
-                    print(
+                    logger.info(
                         f"未找到 {pc_ratio_product_to_fetch} 在 {start_date_str} 至 {end_date_str} 的 P/C Ratio 數據。"
                     )
-                    pc_ratio_df = None
+                    pc_ratio_df = None # 確保即使查詢成功但無數據時也設為 None
             except Exception as e:
-                print(
-                    f"讀取 P/C Ratio ({pc_ratio_product_to_fetch}) 數據時發生錯誤: {e}"
+                logger.warning(
+                    f"讀取 P/C Ratio ({pc_ratio_product_to_fetch}) 數據時發生錯誤: {e}", exc_info=True
                 )
                 pc_ratio_df = None
 
@@ -174,10 +181,10 @@ class ReportGenerator:
         timeframe: str,
     ) -> go.Figure | None:
         if ohlcv_df.empty:
-            print(f"({timeframe}) 沒有 OHLCV 數據可供繪製。")
+            logger.warning(f"({timeframe}) 沒有 OHLCV 數據可供繪製。")
             return None
 
-        print(f"開始使用 Plotly 繪製 {timeframe} 報告圖表...")
+        logger.info(f"開始使用 Plotly 繪製 {timeframe} 報告圖表...")
         x_axis_data = ohlcv_df["timestamp"]
 
         has_pc_ratio_data = pc_ratio_df is not None and not pc_ratio_df.empty
@@ -186,7 +193,7 @@ class ReportGenerator:
 
         subplot_titles = ["K線與信號", "成交量"]
         pc_product_id_for_title = "Market" # Default value
-        if has_pc_ratio_data and pc_ratio_df is not None: # Explicit None check for pc_ratio_df
+        if has_pc_ratio_data and pc_ratio_df is not None:
             if "product_id" in pc_ratio_df.columns and not pc_ratio_df.empty:
                  pc_product_id_for_title = pc_ratio_df["product_id"].iloc[0]
             subplot_titles.append(f"Put/Call Ratio ({pc_product_id_for_title})")
@@ -337,7 +344,7 @@ class ReportGenerator:
                         col=1,
                     )
 
-        if has_pc_ratio_data and pc_ratio_df is not None: # Added explicit pc_ratio_df is not None
+        if has_pc_ratio_data and pc_ratio_df is not None:
             pc_x_axis = pc_ratio_df["trading_date"]
             if "pc_volume_ratio" in pc_ratio_df.columns:
                 fig.add_trace(
@@ -385,16 +392,15 @@ class ReportGenerator:
         )
         fig.update_yaxes(title_text="股價", row=1, col=1)
         fig.update_yaxes(title_text="成交量", row=2, col=1)
-        if has_pc_ratio_data and pc_ratio_df is not None: # Added explicit pc_ratio_df is not None
+        if has_pc_ratio_data and pc_ratio_df is not None:
             pc_product_id_for_y_title = "Market" # Default
             if "product_id" in pc_ratio_df.columns and not pc_ratio_df.empty:
                 pc_product_id_for_y_title = pc_ratio_df["product_id"].iloc[0]
             fig.update_yaxes(
                 title_text=f"P/C Ratio ({pc_product_id_for_y_title})", row=3, col=1
             )
-            # Subplot titles are set in make_subplots
 
-        print(f"Plotly {timeframe} 圖表繪製完成。")
+        logger.info(f"Plotly {timeframe} 圖表繪製完成。")
         return fig
 
     def generate_report(
@@ -406,14 +412,15 @@ class ReportGenerator:
         output_dir: Path,
     ) -> Path | None:
         report_file_path = None
+        con = None # Initialize con to None for finally block
         try:
-            with self._connect_db() as con:
-                ohlcv_df, chimera_df, pc_ratio_df = self._fetch_data(
-                    con, stock_id, start_date_str, end_date_str, timeframe
-                )
+            con = self._connect_db() # _connect_db now raises on failure
+            ohlcv_df, chimera_df, pc_ratio_df = self._fetch_data(
+                con, stock_id, start_date_str, end_date_str, timeframe
+            )
 
             if ohlcv_df is None or ohlcv_df.empty:
-                print(
+                logger.warning(
                     f"股票 {stock_id} ({timeframe}) 在指定日期範圍內無 OHLCV 數據，無法生成報告。"
                 )
                 return None
@@ -427,39 +434,57 @@ class ReportGenerator:
                 filename = f"{stock_id}_{timeframe}_{start_date_str.replace('-', '')}_{end_date_str.replace('-', '')}_report.html"
                 report_file_path = output_dir / filename
                 fig.write_html(str(report_file_path))
-                print(f"報告已儲存至: {report_file_path} (HTML 格式)")
+                logger.info(f"報告已儲存至: {report_file_path} (HTML 格式)")
             else:
-                print(f"Plotly 圖表物件 ({timeframe}) 未成功創建，無法儲存報告。")
+                logger.warning(f"Plotly 圖表物件 ({timeframe}) 未成功創建，無法儲存報告。")
 
             return report_file_path
         except Exception as e:
-            print(f"生成報告 {stock_id} ({timeframe}) 時發生錯誤: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error(f"生成報告 {stock_id} ({timeframe}) 時發生錯誤: {e}", exc_info=True)
             return None
+        finally:
+            if con:
+                try:
+                    con.close()
+                    logger.debug(f"資料庫連接已在 generate_report (stock: {stock_id}) 中關閉。")
+                except Exception as e_close:
+                    logger.error(f"關閉資料庫連接時發生錯誤: {e_close}", exc_info=True)
 
 
 if __name__ == "__main__":
-    print("執行 ReportGenerator (Plotly 版本) 初步測試...")
+    logger.info("執行 ReportGenerator (Plotly 版本) 初步測試...")
     test_db_name = "temp_plotly_report_test.duckdb"
     test_output_dir_name = "test_generator_reports_output"
 
     test_db_file = Path(test_db_name)
     if test_db_file.exists():
-        print(f"正在刪除舊的測試資料庫: {test_db_file}")
-        test_db_file.unlink()
+        logger.info(f"正在刪除舊的測試資料庫: {test_db_file}")
+        try:
+            test_db_file.unlink()
+        except OSError as e:
+            logger.warning(f"刪除舊測試資料庫失敗: {e}")
+
 
     test_output_dir = Path(test_output_dir_name)
     if test_output_dir.exists():
         import shutil
-
-        print(f"正在刪除舊的測試輸出目錄: {test_output_dir}")
-        shutil.rmtree(test_output_dir)
-    test_output_dir.mkdir(parents=True, exist_ok=True)
-
+        logger.info(f"正在刪除舊的測試輸出目錄: {test_output_dir}")
+        try:
+            shutil.rmtree(test_output_dir)
+        except OSError as e:
+            logger.warning(f"刪除舊測試輸出目錄失敗: {e}")
     try:
-        with duckdb.connect(str(test_db_file)) as con:
+        test_output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.error(f"創建測試輸出目錄失敗: {e}", exc_info=True)
+        # Test cannot proceed if output dir cannot be created
+        sys.exit(1)
+
+
+    db_connection_main_test = None
+    try:
+        db_connection_main_test = duckdb.connect(str(test_db_file))
+        with db_connection_main_test as con: # Use context manager for connection
             con.execute(
                 """
             CREATE TABLE IF NOT EXISTS ohlcv_1d (
@@ -473,19 +498,19 @@ if __name__ == "__main__":
                 (datetime(2023, 1, 3), "TEST_STOCK_D", 12.5, 12.5, 11, 11.5, 800),
                 (
                     datetime(2023, 1, 1),
-                    "0050",
+                    "0050", # Storing as "0050" for ohlcv, ReportGenerator handles .TW mapping
                     120.0,
                     122.0,
                     119.0,
                     121.0,
                     5000,
-                ),  # For 0050.TW test
+                ),
                 (datetime(2023, 1, 2), "0050", 121.0, 123.0, 120.0, 122.0, 6000),
             ]
             con.executemany(
                 "INSERT INTO ohlcv_1d VALUES (?,?,?,?,?,?,?)", ohlcv_1d_data
             )
-            print(f"已創建並填充 ohlcv_1d 測試數據到 {test_db_file}")
+            logger.info(f"已創建並填充 ohlcv_1d 測試數據到 {test_db_file}")
 
             con.execute(
                 """
@@ -512,7 +537,7 @@ if __name__ == "__main__":
                 ),
                 (
                     datetime(2023, 1, 1).date(),
-                    "0050.TW",
+                    "0050.TW", # stock_id in chimera should match the requested one
                     "價漲量增",
                     "法人買超",
                     "價漲量增_法人買超",
@@ -522,7 +547,7 @@ if __name__ == "__main__":
                 "INSERT INTO chimera_daily_signals VALUES (?,?,?,?,?)",
                 chimera_test_data,
             )
-            print(f"已創建並填充 chimera_daily_signals 測試數據到 {test_db_file}")
+            logger.info(f"已創建並填充 chimera_daily_signals 測試數據到 {test_db_file}")
 
             con.execute(
                 """
@@ -570,11 +595,11 @@ if __name__ == "__main__":
             con.executemany(
                 "INSERT INTO taifex_pc_ratios VALUES (?,?,?,?,?,?,?,?,?)", pc_ratio_data
             )
-            print(f"已創建並填充 taifex_pc_ratios 測試數據到 {test_db_file}")
+            logger.info(f"已創建並填充 taifex_pc_ratios 測試數據到 {test_db_file}")
 
         generator = ReportGenerator(db_path=str(test_db_file))
 
-        print("\n--- 測試生成 TEST_STOCK_D 日線 (1d) 報告 (無P/C Ratio) ---")
+        logger.info("--- 測試生成 TEST_STOCK_D 日線 (1d) 報告 (無P/C Ratio) ---")
         report_1d = generator.generate_report(
             stock_id="TEST_STOCK_D",
             start_date_str="2023-01-01",
@@ -583,31 +608,35 @@ if __name__ == "__main__":
             output_dir=test_output_dir,
         )
         if report_1d and report_1d.exists():
-            print(f"TEST_STOCK_D 日線 (1d) 報告生成成功: {report_1d}")
+            logger.info(f"TEST_STOCK_D 日線 (1d) 報告生成成功: {report_1d}")
         else:
-            print("TEST_STOCK_D 日線 (1d) 報告生成失敗。")
+            logger.error("TEST_STOCK_D 日線 (1d) 報告生成失敗。")
 
-        print("\n--- 測試生成 0050.TW 日線 (1d) 報告 (應包含 TXO P/C Ratio) ---")
+        logger.info("--- 測試生成 0050.TW 日線 (1d) 報告 (應包含 TXO P/C Ratio) ---")
         report_0050 = generator.generate_report(
             stock_id="0050.TW",
             start_date_str="2023-01-01",
-            end_date_str="2023-01-03",  # Adjusted end_date for more data points
+            end_date_str="2023-01-03",
             timeframe="1d",
             output_dir=test_output_dir,
         )
         if report_0050 and report_0050.exists():
-            print(f"0050.TW 日線 (1d) 報告生成成功: {report_0050}")
+            logger.info(f"0050.TW 日線 (1d) 報告生成成功: {report_0050}")
         else:
-            print("0050.TW 日線 (1d) 報告生成失敗。")
+            logger.error("0050.TW 日線 (1d) 報告生成失敗。")
 
     except Exception as e:
-        print(f"ReportGenerator (Plotly 版本) __main__ 測試時發生錯誤: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(f"ReportGenerator (Plotly 版本) __main__ 測試時發生錯誤: {e}", exc_info=True)
     finally:
-        print(
-            f"\n測試完畢。如果需要，請手動檢查或刪除測試資料庫 '{test_db_file}' 和輸出目錄 '{test_output_dir_name}'。"
+        if db_connection_main_test:
+            try:
+                db_connection_main_test.close()
+                logger.debug("主測試資料庫連接已關閉。")
+            except Exception as e_close_main:
+                logger.error(f"關閉主測試資料庫連接時發生錯誤: {e_close_main}", exc_info=True)
+
+        logger.info(
+            f"測試完畢。如果需要，請手動檢查或刪除測試資料庫 '{test_db_file}' 和輸出目錄 '{test_output_dir_name}'。"
         )
 
-    print("\nReportGenerator (Plotly 版本) 初步測試完畢。")
+    logger.info("ReportGenerator (Plotly 版本) 初步測試完畢。")

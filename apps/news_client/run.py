@@ -8,25 +8,27 @@ from pathlib import Path  # 標準樣板碼需要 Path
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
 try:
-    # 獲取目前腳本的絕對路徑
     current_script_path = Path(__file__).resolve()
-    # 假設此腳本位於 apps/[app_name] 目錄下，專案根目錄是其再上兩層
     project_root = current_script_path.parent.parent.parent
-    # 將專案根目錄加入 sys.path
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-except (
-    NameError
-):  # __file__ is not defined, common in interactive shells or certain execution contexts
+except (NameError):
     project_root = Path(os.getcwd())
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
+    # 此處的 print 暫時保留，因為 logger 可能尚未初始化或 sys.path 未設定
     print(
-        f"警告：__file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。",
+        f"警告 (apps/news_client/run.py __file__): __file__ 未定義，專案路徑校正可能不準確。已將 {project_root} 加入 sys.path。",
         file=sys.stderr,
     )
 except Exception as e:
     print(f"專案路徑校正時發生錯誤 (apps/news_client/run.py): {e}", file=sys.stderr)
+
+from core.logger import get_logger
+logger = get_logger(__name__) # 在 sys.path 更新後初始化 logger
+
+# 現在可以記錄路徑校正的結果 (如果需要更詳細的日誌)
+# logger.debug(f"專案根目錄設定為: {project_root}")
 # --- 標準化「路徑自我校正」樣板碼 END ---
 
 from apps.news_client.client import NewsClient, VADER_AVAILABLE
@@ -43,10 +45,15 @@ def save_dataframe(df: pd.DataFrame, output_path: str, data_type: str, keywords:
         keywords (str): 搜尋的關鍵字 (用於檔案命名，會做一些清理)。
     """
     if df is None or df.empty:
-        print(f"沒有獲取到 '{data_type}' 數據 (關鍵字: {keywords})，不進行儲存。")
+        logger.info(f"沒有獲取到 '{data_type}' 數據 (關鍵字: {keywords})，不進行儲存。")
         return
 
-    os.makedirs(output_path, exist_ok=True)
+    try:
+        os.makedirs(output_path, exist_ok=True)
+    except OSError as e:
+        logger.error(f"創建輸出目錄 {output_path} 失敗: {e}", exc_info=True)
+        return
+
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
     # 清理關鍵字，使其適合檔案名稱
@@ -58,14 +65,17 @@ def save_dataframe(df: pd.DataFrame, output_path: str, data_type: str, keywords:
     if len(safe_keywords) > 50:  # 避免檔案名稱過長
         safe_keywords = safe_keywords[:50]
 
+    if not safe_keywords: # 如果清理後關鍵字為空，使用預設名稱
+        safe_keywords = "news_search"
+
     filename = f"{safe_keywords}_{data_type}_{timestamp}.csv"
     filepath = os.path.join(output_path, filename)
 
     try:
         df.to_csv(filepath, index=False, encoding="utf-8-sig")
-        print(f"數據已成功儲存到：{filepath}")
+        logger.info(f"數據已成功儲存到：{filepath}")
     except Exception as e:
-        print(f"儲存數據到 {filepath} 時發生錯誤：{e}")
+        logger.error(f"儲存數據到 {filepath} 時發生錯誤：{e}", exc_info=True)
 
 
 def main():
@@ -133,18 +143,19 @@ def main():
     )
 
     args = parser.parse_args()
+    logger.info(f"接收到的參數: {args}")
 
     try:
         client = NewsClient(newsapi_key=args.newsapi_key)
-    except ValueError as e:  # 雖然目前 Client 初始化不一定拋錯，但保留以防未來變更
-        print(f"錯誤：{e}")
+    except ValueError as e:
+        logger.error(f"NewsClient 初始化失敗: {e}", exc_info=True)
         sys.exit(1)
 
-    print(
+    logger.info(
         f"正在搜尋新聞：關鍵字='{args.keywords}', 語言='{args.language}', 排序='{args.sort_by}'"
     )
     if args.from_date:
-        print(f"日期範圍: {args.from_date} 至 {args.to_date or '最新'}")
+        logger.info(f"日期範圍: {args.from_date} 至 {args.to_date or '最新'}")
 
     news_df = client.get_news_by_keyword(
         keywords=args.keywords,
@@ -158,33 +169,35 @@ def main():
 
     if news_df is not None:
         if not news_df.empty:
-            print(f"成功獲取 {len(news_df)} 筆新聞。")
-            print("部分新聞標題：")
+            logger.info(f"成功獲取 {len(news_df)} 筆新聞。")
+            logger.info("部分新聞標題：")
             for title in news_df["title"].head():
-                print(f"- {title}")
+                logger.info(f"- {title}")
 
             if args.add_sentiment:
                 if VADER_AVAILABLE:
-                    print(
-                        f"\n正在對 '{args.sentiment_text_column}' 欄位添加 Vader 情感分析..."
+                    logger.info(
+                        f"正在對 '{args.sentiment_text_column}' 欄位添加 Vader 情感分析..."
                     )
                     news_df = client.add_sentiment_to_dataframe(
                         news_df, text_column=args.sentiment_text_column
                     )
-                    print("已添加情感分析結果。部分數據 (標題與情感分數):")
-                    print(
-                        news_df[[args.sentiment_text_column, "vader_compound"]].head()
-                    )
+                    logger.info("已添加情感分析結果。部分數據 (標題與情感分數):")
+                    # 為了日誌美觀，可能需要格式化 DataFrame 的輸出，或者僅記錄摘要
+                    try:
+                        df_head_str = news_df[[args.sentiment_text_column, "vader_compound"]].head().to_string()
+                        logger.info(f"\n{df_head_str}")
+                    except Exception as e_df_log:
+                         logger.warning(f"記錄情感分析結果表頭時出錯: {e_df_log}")
+
                 else:
-                    print(
-                        "\n警告：要求進行情感分析，但 VaderSentiment 套件未安裝或不可用。跳過情感分析步驟。"
-                    )
+                    logger.warning("要求進行情感分析，但 VaderSentiment 套件未安裝或不可用。跳過情感分析步驟。")
 
             save_dataframe(news_df, args.output_path, "news_articles", args.keywords)
         else:
-            print(f"未找到關於 '{args.keywords}' 的新聞。")
+            logger.info(f"未找到關於 '{args.keywords}' 的新聞。")
     else:
-        print(
+        logger.warning(
             f"獲取新聞失敗 (關鍵字: '{args.keywords}')。請檢查 API Key、網路連線或 NewsAPI 的限制。"
         )
 
@@ -203,6 +216,7 @@ if __name__ == "__main__":
     # python apps/news_client/run.py "石油輸出國組織 會議" --language zh --from_date $FROM_DATE --to_date $TO_DATE --output_path temp_data/news
 
     # 如果 vaderSentiment 未安裝，--add_sentiment 會提示但不會中斷
+    logger.info("news_client/run.py 作為腳本執行...")
     main()
 
 """

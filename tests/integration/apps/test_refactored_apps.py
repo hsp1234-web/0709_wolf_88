@@ -33,7 +33,11 @@ def test_run_gold_layer_pipeline():
     assert "gold_layer_ok" in output
 
 def test_run_stress_index_pipeline():
-    """測試壓力指數計算管線啟動器（暫時保持不變）"""
+    """測試壓力指數計算管線啟動器，並驗證日誌輸出"""
     output = run_app_script("apps/run_stress_index.py")
+
+    # 驗證日誌格式和內容
+    assert "INFO" in output
+    assert "Initializing Stress Index Pipeline..." in output
     assert "Stress Index Pipeline finished" in output
     assert "stress_index_ok" in output

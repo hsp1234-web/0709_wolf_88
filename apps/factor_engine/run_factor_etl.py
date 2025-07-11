@@ -3,50 +3,68 @@
 普羅米修斯之火 - 因子提取、轉換、加載 (ETL) 主執行腳本
 """
 import pandas as pd
-from apps.daily_market_analyzer.db_manager import DBManager
-from apps.factor_engine.engine import FactorEngine
 import os  # 用於數據庫路徑
 
+# 為了能夠直接執行此腳本，需要確保 apps 目錄在 Python 的搜索路徑中
+# 這通常通過設置 PYTHONPATH 或在專案根目錄執行來實現
+# 例如: PYTHONPATH=. python apps/factor_engine/run_factor_etl.py
+# 或者，如果你的 IDE 或執行環境正確設置了根目錄，則可能不需要額外操作。
+
+# 臨時添加專案根目錄到 sys.path，以便於直接執行
+import sys
+project_root_for_direct_run = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if project_root_for_direct_run not in sys.path:
+    sys.path.insert(0, project_root_for_direct_run)
+    # 暫時使用 print，因為 logger 還未初始化
+    print(f"DEBUG (run_factor_etl.py direct run): 已將專案根目錄 {project_root_for_direct_run} 添加到 sys.path")
+
+from core.logger import get_logger
+from apps.daily_market_analyzer.db_manager import DBManager # 假設此模組路徑在 sys.path 更新後有效
+from apps.factor_engine.engine import FactorEngine # 假設此模組路徑在 sys.path 更新後有效
+
+
+logger = get_logger(__name__)
 
 def run_etl():
     """
     執行完整的因子提取、計算和儲存流程。
     """
-    print("INFO: 開始執行因子 ETL 流程...")
+    logger.info("開始執行因子 ETL 流程...")
 
     # 假設資料庫檔案位於 data_workspace/market_data.duckdb
     # TODO: 應該從統一的配置文件中讀取數據庫路徑
     db_file_path = os.path.join(
         os.path.dirname(__file__), "..", "..", "data_workspace", "market_data.duckdb"
     )
+    logger.info(f"因子 ETL 使用的資料庫路徑: {db_file_path}")
     db_manager = DBManager(db_path=db_file_path)
     factor_engine = FactorEngine(db_manager=db_manager)
 
     # 1. 從 MarketPrices_Daily 表中獲取所有不重複的 ticker
-    print("INFO: 正在從 MarketPrices_Daily 獲取所有 tickers...")
+    logger.info("正在從 MarketPrices_Daily 獲取所有 tickers...")
     try:
         tickers_df = db_manager.execute_query(
             "SELECT DISTINCT ticker FROM MarketPrices_Daily"
         )
         if tickers_df.empty:
-            print("警告: MarketPrices_Daily 中沒有找到任何 ticker。因子 ETL 流程終止。")
+            logger.warning("MarketPrices_Daily 中沒有找到任何 ticker。因子 ETL 流程終止。")
             return
         tickers_list = tickers_df["ticker"].tolist()
-        print(f"INFO: 共找到 {len(tickers_list)} 個 tickers。")
+        logger.info(f"共找到 {len(tickers_list)} 個 tickers。")
     except Exception as e:
-        print(f"錯誤: 無法從 MarketPrices_Daily 獲取 tickers: {e}")
+        logger.error(f"無法從 MarketPrices_Daily 獲取 tickers: {e}", exc_info=True)
         return
 
     all_factors_to_store = []
 
     for ticker_index, ticker in enumerate(tickers_list):
-        print(f"INFO: 正在處理 ticker {ticker_index + 1}/{len(tickers_list)}: {ticker}")
+        logger.info(f"正在處理 ticker {ticker_index + 1}/{len(tickers_list)}: {ticker}")
 
         # 2a. 使用 FactorEngine 讀取其價格歷史
         price_data_df = factor_engine.get_prices_for_ticker(ticker)
 
         if price_data_df.empty:
-            print(f"警告: 未能獲取 {ticker} 的價格數據，跳過此 ticker。")
+            logger.warning(f"未能獲取 {ticker} 的價格數據，跳過此 ticker。")
             continue
 
         # 確保索引名為 'datetime'，方便後續轉換
@@ -109,16 +127,16 @@ def run_etl():
                 factors_for_current_ticker, ignore_index=True
             )
             all_factors_to_store.append(current_ticker_factors_df)
-            print(
-                f"INFO: 為 {ticker} 計算並準備了 {len(current_ticker_factors_df)} 筆因子數據。"
+            logger.info(
+                f"為 {ticker} 計算並準備了 {len(current_ticker_factors_df)} 筆因子數據。"
             )
         else:
-            print(f"INFO: 未能為 {ticker} 計算出任何因子數據。")
+            logger.info(f"未能為 {ticker} 計算出任何因子數據。")
 
     # Ticker 相關因子已收集在 all_factors_to_store (list of DataFrames)
 
     # 3. 計算殖利率曲線因子
-    print("\nINFO: 開始計算殖利率曲線相關因子...")
+    logger.info("開始計算殖利率曲線相關因子...")
     treasury_yields_data = factor_engine.get_treasury_yields()
     if not treasury_yields_data.empty:
         yield_spread_factors = factor_engine.calculate_yield_spreads(
@@ -140,16 +158,16 @@ def run_etl():
                 ["ticker", "date", "factor_name", "factor_value"]
             ].dropna()
             all_factors_to_store.append(yield_spread_factors_long)
-            print(
-                f"INFO: 計算並準備了 {len(yield_spread_factors_long)} 筆殖利率曲線因子數據。"
+            logger.info(
+                f"計算並準備了 {len(yield_spread_factors_long)} 筆殖利率曲線因子數據。"
             )
         else:
-            print("INFO: 未能計算出殖利率曲線因子數據。")
+            logger.info("未能計算出殖利率曲線因子數據。")
     else:
-        print("INFO: 未能獲取公債殖利率數據，跳過殖利率曲線因子計算。")
+        logger.info("未能獲取公債殖利率數據，跳過殖利率曲線因子計算。")
 
     # 4. 計算信用利差代理因子
-    print("\nINFO: 開始計算信用利差代理因子...")
+    logger.info("開始計算信用利差代理因子...")
     credit_spread_proxy_factor = factor_engine.calculate_credit_spread_proxy()
     if not credit_spread_proxy_factor.empty:
         # credit_spread_proxy_factor DataFrame 結構: date (索引), HYG_LQD_price_ratio (欄位)
@@ -173,11 +191,11 @@ def run_etl():
             ["ticker", "date", "factor_name", "factor_value"]
         ].dropna()
         all_factors_to_store.append(credit_spread_proxy_long)
-        print(
-            f"INFO: 計算並準備了 {len(credit_spread_proxy_long)} 筆信用利差代理因子數據。"
+        logger.info(
+            f"計算並準備了 {len(credit_spread_proxy_long)} 筆信用利差代理因子數據。"
         )
     else:
-        print("INFO: 未能計算出信用利差代理因子數據。")
+        logger.info("未能計算出信用利差代理因子數據。")
 
     # 5. 合併所有因子數據並存入資料庫
     if (
@@ -190,35 +208,22 @@ def run_etl():
 
         final_factors_df = pd.concat(all_factors_to_store, ignore_index=True)
         if not final_factors_df.empty:
-            print(
-                f"\nINFO: ETL 流程總共計算出 {len(final_factors_df)} 筆因子數據，準備寫入資料庫..."
+            logger.info(
+                f"ETL 流程總共計算出 {len(final_factors_df)} 筆因子數據，準備寫入資料庫..."
             )
             db_manager.insert_factors(final_factors_df)
-            print("INFO: 所有因子數據已成功寫入 FactorStore_Daily。")
+            logger.info("所有因子數據已成功寫入 FactorStore_Daily。")
         else:
-            print("\nINFO: ETL 流程最終未產生任何可儲存的因子數據。")
+            logger.info("ETL 流程最終未產生任何可儲存的因子數據。")
     else:
         # 這個情況應該是 ticker 因子和宏觀因子都沒有產生
-        print("\nINFO: ETL 流程未產生任何可儲存的因子數據。")
+        logger.info("ETL 流程未產生任何可儲存的因子數據。")
 
-    print("\nINFO: 因子 ETL 流程執行完畢。")
+    logger.info("因子 ETL 流程執行完畢。")
 
 
 if __name__ == "__main__":
-    # 為了能夠直接執行此腳本，需要確保 apps 目錄在 Python 的搜索路徑中
-    # 這通常通過設置 PYTHONPATH 或在專案根目錄執行來實現
-    # 例如: PYTHONPATH=. python apps/factor_engine/run_factor_etl.py
-    # 或者，如果你的 IDE 或執行環境正確設置了根目錄，則可能不需要額外操作。
-
-    # 臨時添加專案根目錄到 sys.path，以便於直接執行
-    import sys
-    import os
-
-    # 假設此腳本位於 apps/factor_engine/run_factor_etl.py
-    # 則專案根目錄是向上兩級
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-        print(f"DEBUG: 已將專案根目錄 {project_root} 添加到 sys.path")
-
+    # 在此處，logger 應該已經由頂部的 get_logger(__name__) 初始化
+    logger.info("直接執行 run_factor_etl.py 腳本...")
+    # sys.path 的修改已在檔案頂部完成
     run_etl()

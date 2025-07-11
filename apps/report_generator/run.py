@@ -4,18 +4,32 @@ import sys
 import os
 from pathlib import Path
 
-# 移除路徑自我校正樣板碼
-from apps.report_generator.generator import ReportGenerator  # 移到頂部
+# --- 標準化「路徑自我校正」樣板碼 START ---
+try:
+    current_script_path = Path(__file__).resolve()
+    project_root = current_script_path.parent.parent.parent
+except NameError:
+    project_root = Path(os.getcwd()).resolve()
+except Exception as e:
+    print(
+        f"緊急錯誤: 在確定專案根目錄時發生初始錯誤 (apps/report_generator/run.py): {e}", file=sys.stderr
+    )
+    project_root = Path(".").resolve()
 
-# project_root 現在需要以其他方式定義，或者依賴於調用者正確設定 PYTHONPATH
-# 為了讓代碼在移除樣板碼後仍能定義 DEFAULT_DB_PATH，我們假設運行時 CWD 是專案根目錄
-# 或者，這些預設路徑應該從一個統一的配置模組讀取
-project_root = Path(os.getcwd())  # 假設執行時 CWD 是專案根目錄
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from core.logger import get_logger
+logger = get_logger(__name__)
+
+logger.debug(f"專案根目錄設定為: {project_root} (日誌來自 report_generator/run.py)")
+# --- 標準化「路徑自我校正」樣板碼 END ---
+
+from apps.report_generator.generator import ReportGenerator
+
+# project_root 現在由上面的樣板碼定義
 DEFAULT_DB_PATH = project_root / "analytics_mart.duckdb"
-# 預設報告輸出目錄
-DEFAULT_OUTPUT_DIR = (
-    project_root / "output"
-)  # 指揮官建議的 output 資料夾，之前是 output_reports
+DEFAULT_OUTPUT_DIR = project_root / "output"
 
 
 def main():
@@ -51,19 +65,25 @@ def main():
     )
 
     args = parser.parse_args()
+    logger.info(f"接收到的參數: {args}")
 
-    print(f"指令：開始為股票 {args.stock_id} 生成報告...")
-    print(f"時間週期: {args.timeframe}")  # 新增日誌
-    print(f"日期範圍: {args.start_date} 至 {args.end_date}")
-    print(f"使用資料庫: {args.db_path}")
-    print(f"報告輸出至: {args.output_dir}")
+    logger.info(f"指令：開始為股票 {args.stock_id} 生成報告...")
+    logger.info(f"時間週期: {args.timeframe}")
+    logger.info(f"日期範圍: {args.start_date} 至 {args.end_date}")
+    logger.info(f"使用資料庫: {args.db_path}")
+    logger.info(f"報告輸出至: {args.output_dir}")
 
     # 確保輸出目錄存在
     output_path = Path(args.output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+    try:
+        output_path.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.error(f"創建輸出目錄 {output_path} 失敗: {e}", exc_info=True)
+        sys.exit(1)
+
 
     try:
-        generator = ReportGenerator(db_path=args.db_path)
+        generator = ReportGenerator(db_path=args.db_path) # ReportGenerator 內部也應使用 logger
         report_path = generator.generate_report(
             stock_id=args.stock_id,
             start_date_str=args.start_date,
@@ -72,29 +92,24 @@ def main():
             output_dir=output_path,
         )
         if report_path:
-            print(f"報告已成功生成並儲存於: {report_path}")
+            logger.info(f"報告已成功生成並儲存於: {report_path}")
             sys.exit(0)
         else:
-            # 如果 report_path 為 None，表示 generate_report 內部已處理了錯誤訊息（例如無數據）
-            # 這裡我們打印一個警告，並以成功碼退出，避免阻塞主流程。
-            print(
-                f"警告：報告檔案未實際生成 (股票: {args.stock_id}, 週期: {args.timeframe})。詳情請查看 generate_report 內部日誌。"
+            logger.warning(
+                f"報告檔案未實際生成 (股票: {args.stock_id}, 週期: {args.timeframe})。詳情請查看 generate_report 內部日誌。"
             )
             sys.exit(0)  # 以成功碼退出
-    except ImportError as ie:  # 特別處理 Plotly 可能未安裝的情況
-        print(f"發生導入錯誤: {ie}", file=sys.stderr)
-        print("請確保已安裝所有必要的套件 (例如 plotly)。", file=sys.stderr)
+    except ImportError as ie:
+        logger.error(f"發生導入錯誤: {ie}. 請確保已安裝所有必要的套件 (例如 plotly)。", exc_info=True)
         sys.exit(1)
     except Exception as e:
-        print(
+        logger.error(
             f"生成報告時發生未預期錯誤 (股票: {args.stock_id}, 週期: {args.timeframe}): {e}",
-            file=sys.stderr,
+            exc_info=True,
         )
-        import traceback
-
-        traceback.print_exc()
         sys.exit(1)
 
 
 if __name__ == "__main__":
+    logger.info("report_generator/run.py 作為腳本執行...")
     main()

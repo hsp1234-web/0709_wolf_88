@@ -1,17 +1,20 @@
 # apps/run_stress_index.py
 from core.pipelines.pipeline import DataPipeline
 from core.pipelines.steps.financial_steps import CalculateStressIndexStep
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 def main():
     """配置並運行壓力指數計算管線"""
-    print("--- [App] Initializing Stress Index Pipeline ---")
+    logger.info("Initializing Stress Index Pipeline...")
 
     stress_index_pipeline = DataPipeline(steps=[
         CalculateStressIndexStep(),
     ])
 
     result = stress_index_pipeline.run()
-    print(f"--- [App] Stress Index Pipeline finished with result: {result} ---")
+    logger.info(f"Stress Index Pipeline finished with result: {result}")
 
 if __name__ == "__main__":
     main()
