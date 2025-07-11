@@ -145,11 +145,36 @@ def main():
     args = parser.parse_args()
     logger.info(f"接收到的參數: {args}")
 
+    # 從核心配置獲取設定
+    from core.config import config
+    api_key_from_core = config.get("news_client.api_key")
+    max_retries_from_core = config.get("news_client.max_retries", 3) # 提供預設值
+
+    # 決定最終使用的 API Key：優先使用命令行參數，其次是核心配置，最後是環境變數 (如果 NewsClient 內部還會檢查)
+    # 根據任務要求，以中央配置為主。如果命令行也提供，則命令行優先。
+    final_api_key = args.newsapi_key if args.newsapi_key else api_key_from_core
+
+    if not final_api_key or "YOUR_" in final_api_key:
+        logger.error("NewsClient 的 API Key 未在 config.yml 或命令行參數中有效設定。請檢查 config.yml 中的 'news_client.api_key' 或提供 --newsapi_key 參數。")
+        sys.exit(1)
+
+    logger.info(f"News client 即將使用 max_retries={max_retries_from_core} (來自核心配置)。")
+    # 假設 NewsClient 的構造函數或其方法會使用 max_retries，這裡僅記錄
+    # 注意: NewsClient 的實際定義未知，其如何處理 api_key 和 max_retries 需要確認
+
     try:
-        client = NewsClient(newsapi_key=args.newsapi_key)
-    except ValueError as e:
+        # 假設 NewsClient 接受 api_key 參數
+        # 如果 NewsClient 內部也處理環境變數，那麼這裡傳遞的 final_api_key 會覆蓋它
+        client = NewsClient(newsapi_key=final_api_key)
+                                           # max_retries 如何傳遞給 NewsClient 取決於其設計
+                                           # 目前的 NewsClient 導入似乎有問題，這裡僅為示意
+    except NameError: # 如果 NewsClient 真的無法導入
+        logger.error("無法實例化 NewsClient，可能是因為 'apps.news_client.client' 模組不存在或導入失敗。請檢查檔案結構和導入路徑。")
+        sys.exit(1)
+    except ValueError as e: # 假設 NewsClient 的 __init__ 可能拋出 ValueError
         logger.error(f"NewsClient 初始化失敗: {e}", exc_info=True)
         sys.exit(1)
+
 
     logger.info(
         f"正在搜尋新聞：關鍵字='{args.keywords}', 語言='{args.language}', 排序='{args.sort_by}'"

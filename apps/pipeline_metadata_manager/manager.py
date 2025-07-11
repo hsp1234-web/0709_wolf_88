@@ -16,7 +16,7 @@ import duckdb
 import os
 
 from core.logger import get_logger
-from . import config
+from core.config import config as core_config # 導入核心配置
 
 logger = get_logger(__name__)
 
@@ -48,24 +48,30 @@ class MetadataManager:
         table_name: Optional[str] = None,
         connection: Optional[duckdb.DuckDBPyConnection] = None,
     ):
-        resolved_table_name = table_name if table_name is not None else config.PROCESSED_FILES_TABLE_NAME
-        if resolved_table_name is None: # Should not happen if config has a default
-             # This is a critical configuration error
-             logger.critical("MetadataManager 初始化失敗: 表格名稱必須被提供或在 config 中設定。")
-             raise ValueError("Table name must be provided or set in config.")
+        # 從核心配置讀取，如果參數未提供
+        default_table_name_from_core = core_config.get("pipeline_metadata_manager.table_name", "processed_files_fallback")
+        resolved_table_name = table_name if table_name is not None else default_table_name_from_core
+
+        if resolved_table_name == "processed_files_fallback" and table_name is None:
+            logger.warning(f"pipeline_metadata_manager.table_name 未在 config.yml 中設定，且未通過參數提供。使用預設後備名稱: {resolved_table_name}")
+
         self.table_name = resolved_table_name
         logger.debug(f"MetadataManager 使用表格名稱: {self.table_name}")
-
 
         if connection is not None:
             self.conn = connection
             self.db_path = db_path # db_path might be None if connection is passed
             logger.info(f"MetadataManager 使用已存在的資料庫連接。DB 路徑 (如果提供): {self.db_path}")
         else:
-            resolved_db_path = db_path if db_path is not None else config.DATABASE_FILENAME
-            if resolved_db_path is None:
+            default_db_path_from_core = core_config.get("pipeline_metadata_manager.database_path", "metadata_fallback.sqlite")
+            resolved_db_path = db_path if db_path is not None else default_db_path_from_core
+
+            if resolved_db_path == "metadata_fallback.sqlite" and db_path is None:
+                 logger.warning(f"pipeline_metadata_manager.database_path 未在 config.yml 中設定，且未通過參數提供。使用預設後備路徑: {resolved_db_path}")
+
+            if resolved_db_path is None: # 雖然 core_config.get 有 default，但以防萬一
                 logger.critical(
-                    "MetadataManager 初始化失敗: 資料庫路徑必須被提供或在 config 中設定 (如果沒有提供現有連接)。"
+                    "MetadataManager 初始化失敗: 資料庫路徑無法解析。"
                 )
                 raise ValueError(
                     "Database path must be provided or set in config if no connection is given."
@@ -109,11 +115,14 @@ class MetadataManager:
     def write_fingerprint(
         self, fingerprint: str, filename: str, filesize: int, etl_version: Optional[str] = None
     ) -> bool:
-        resolved_etl_version = (
-            etl_version if etl_version is not None else config.DEFAULT_ETL_VERSION
-        )
-        if resolved_etl_version is None:
-            logger.warning(f"ETL 版本未提供且 config.DEFAULT_ETL_VERSION 也為 None，將使用 NULL 寫入資料庫。")
+        default_etl_version_from_core = core_config.get("pipeline_metadata_manager.default_etl_version", "unknown_etl_fallback")
+        resolved_etl_version = etl_version if etl_version is not None else default_etl_version_from_core
+
+        if resolved_etl_version == "unknown_etl_fallback" and etl_version is None:
+            logger.warning(f"pipeline_metadata_manager.default_etl_version 未在 config.yml 中設定，且未通過參數提供。使用預設後備版本: {resolved_etl_version}")
+
+        if resolved_etl_version is None: # Should not happen with fallback, but as a safeguard
+            logger.warning(f"ETL 版本解析為 None，將使用 NULL (或資料庫預設) 寫入資料庫。")
             # No explicit pass needed, NULL will be inserted if DB schema allows
 
         logger.debug(f"準備寫入指紋: {fingerprint}, 檔案: {filename}, 大小: {filesize}, ETL 版本: {resolved_etl_version}")
@@ -170,16 +179,11 @@ if __name__ == "__main__":
     manager: Optional[MetadataManager] = None # For finally block
     if fingerprint1:
         logger.info("初始化 MetadataManager (使用記憶體資料庫)...")
-        # Ensure config attributes are available for the test
-        if not hasattr(config, 'PROCESSED_FILES_TABLE_NAME') or config.PROCESSED_FILES_TABLE_NAME is None:
-            config.PROCESSED_FILES_TABLE_NAME = "processed_files_test"
-        if not hasattr(config, 'DATABASE_FILENAME') or config.DATABASE_FILENAME is None:
-            config.DATABASE_FILENAME = ":memory:" # Default for test if not set
-        if not hasattr(config, 'DEFAULT_ETL_VERSION') or config.DEFAULT_ETL_VERSION is None:
-            config.DEFAULT_ETL_VERSION = "test_v0.1"
-
-
-        manager = MetadataManager(db_path=":memory:") # Explicitly use in-memory for test
+        # 本地 config 的模擬不再需要，因為 MetadataManager 直接從 core_config 或參數獲取配置
+        # manager = MetadataManager(db_path=":memory:")
+        # 為了測試，可以明確指定 table_name，或者依賴 core_config 中的設定和後備邏輯
+        # 如果 core_config.yml 中已設定 pipeline_metadata_manager.table_name，則以下 table_name 參數可選
+        manager = MetadataManager(db_path=":memory:", table_name="test_processed_files_main_block")
 
         logger.info(f"檢查指紋 '{fingerprint1}' 是否存在...")
         exists = manager.check_fingerprint_exists(fingerprint1)

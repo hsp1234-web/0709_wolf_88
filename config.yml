@@ -1,0 +1,19 @@
+# config.yml
+# 這是整個專案的唯一設定檔
+
+# 全域設定
+global:
+  log_level: "INFO"
+
+# 各應用的專屬設定
+news_client:
+  api_key: "YOUR_NEWS_API_KEY_HERE" # 待填寫的憑證
+  max_retries: 3
+
+pipeline_metadata_manager:
+  database_path: "metadata.sqlite"
+  lock_timeout: 60
+  table_name: "processed_files_metadata" # 新增
+  default_etl_version: "v1.0.0-core-config" # 新增
+
+# 其他應用的設定可以陸續加入...
