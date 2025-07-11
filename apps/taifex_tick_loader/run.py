@@ -1,8 +1,6 @@
-import os
+# --- 路徑自我校正 (必須在所有 import 之前) ---
 import sys
-import datetime
-
-# --- 路徑自我校正 ---
+import os
 # 確保腳本無論從何處執行，都能正確找到專案根目錄並將其添加到 sys.path
 # 這對於後續導入 core 模組至關重要
 
@@ -16,8 +14,8 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_script_pa
 # 如果專案根目錄不在 sys.path 中，則添加它
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-
-
+# --- 以上為路徑校正 ---
+import datetime
 from apps.taifex_tick_loader.core.db_manager import DatabaseManager
 from apps.taifex_tick_loader.core.schemas import TaifexTick
 

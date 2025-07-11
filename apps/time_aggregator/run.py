@@ -1,15 +1,14 @@
-import os
+# --- 路徑自我校正 (必須在所有 import 之前) ---
 import sys
-import datetime
-import pandas as pd
-
-# --- 路徑自我校正 ---
+import os
 # 確保腳本無論從何處執行，都能正確找到專案根目錄並將其添加到 sys.path
 current_script_path = os.path.abspath(__file__)
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_script_path)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-
+# --- 以上為路徑校正 ---
+import datetime
+import pandas as pd
 from apps.time_aggregator.core.aggregator import TimeAggregator
 
 # 主執行入口: 時間序列聚合器

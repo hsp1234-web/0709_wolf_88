@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import duckdb
 import pandas as pd
 import datetime
+import os
 import numpy as np
 from typing import Optional, List, Dict, Any, Type # Added List, Dict, Any
 from pydantic import BaseModel

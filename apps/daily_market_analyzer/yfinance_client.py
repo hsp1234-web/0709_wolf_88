@@ -24,6 +24,7 @@ import os
 from datetime import datetime, timedelta
 import queue
 import duckdb
+from typing import Any # Import Any
 from .db_manager import DBManager
 
 
@@ -33,11 +34,11 @@ def _convert_missing_dates_to_ranges(missing_dates: list[str]) -> list[tuple[str
     sorted_missing_dates = sorted(
         list(set(missing_dates)), key=lambda d: datetime.strptime(d, "%Y-%m-%d")
     )
-    ranges = []
+    ranges: list[tuple[str,str]] = [] # Added type hint for ranges
     if not sorted_missing_dates:
-        return ranges
-    start_of_range = sorted_missing_dates[0]
-    end_of_range = sorted_missing_dates[0]
+        return [] # ranges was not yet defined here, should return empty list directly
+    start_of_range: str = sorted_missing_dates[0]
+    end_of_range: str = sorted_missing_dates[0]
     for i in range(1, len(sorted_missing_dates)):
         current_date_obj = datetime.strptime(sorted_missing_dates[i], "%Y-%m-%d").date()
         prev_date_obj = datetime.strptime(end_of_range, "%Y-%m-%d").date()
@@ -379,11 +380,11 @@ class YFinanceClient:
         end_date_str: str,
         db_table_name: str = "market_ohlcv_data",
         force_refresh: bool = False,
-    ) -> tuple[pd.DataFrame | None, dict]:
+    ) -> tuple[pd.DataFrame | None, dict[str, Any]]:
         print(
             f"===== 開始數據生產任務 (Producer): Ticker={ticker}, Range=[{start_date_str} to {end_date_str}], ForceRefresh={force_refresh}, Table={db_table_name} ====="
         )
-        overall_execution_log = {}
+        overall_execution_log: dict[str, Any] = {}
         try:
             start_date_obj = datetime.strptime(start_date_str, "%Y-%m-%d")
             end_date_obj = datetime.strptime(end_date_str, "%Y-%m-%d")

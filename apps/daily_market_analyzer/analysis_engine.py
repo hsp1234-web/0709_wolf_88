@@ -246,7 +246,7 @@ if __name__ == "__main__":
             "無法直接導入 DBManager，測試將使用純 Mock。這在實際執行 run.py 時應能正常工作。"
         )
 
-        class DBManager:
+        class FallbackMockDBManager: # Renamed to avoid conflict
             def __init__(self, db_path):
                 self.db_path = db_path
 

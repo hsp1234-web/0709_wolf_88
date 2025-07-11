@@ -20,8 +20,8 @@ class ReportGenerator:
         self.analyzer = analysis_engine_instance
         self.hardware_stats = hardware_stats if hardware_stats is not None else []
         self.hardware_report_csv_path = hardware_report_csv_path
-        self.target_tickers_overall = []
-        self.db_table_name = None
+        self.target_tickers_overall: list[str] = []
+        self.db_table_name: str | None = None # Added type hint
         print("資訊：報告生成器 (ReportGenerator) 初始化完畢。")
 
     def _generate_hardware_summary_md(self) -> str:
@@ -75,10 +75,10 @@ class ReportGenerator:
         report_generation_time: datetime,
         task_duration_seconds: float,
         target_tickers: list[str],
-        overall_execution_log: dict,
+        overall_execution_log: dict, # TODO: Add more specific type for overall_execution_log if possible
     ) -> str:
-        interval_counts = {}
-        final_ticker_status = {}
+        interval_counts: dict[str, int] = {}
+        final_ticker_status: dict[str, str] = {} # Added type hint
         for ticker in target_tickers:
             final_ticker_status[ticker] = "no_data"
             found_success_for_ticker = False

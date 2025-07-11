@@ -231,7 +231,7 @@ class TestGoldLayerBuilder(unittest.TestCase):
 
             # 比較 ma5 (跳過開頭的 NaN)
             pd.testing.assert_series_equal(
-                inst_features_df["ma5"].dropna().reset_index(drop=True),  # 小寫 'ma5'
+                inst_features_df["MA5"].dropna().reset_index(drop=True),  # 改為大寫 'MA5'
                 expected_ma5.dropna().reset_index(drop=True),
                 check_dtype=False,
                 rtol=1e-5,
@@ -239,7 +239,7 @@ class TestGoldLayerBuilder(unittest.TestCase):
             )
             # 比較 ma20
             pd.testing.assert_series_equal(
-                inst_features_df["ma20"].dropna().reset_index(drop=True),  # 小寫 'ma20'
+                inst_features_df["MA20"].dropna().reset_index(drop=True),  # 改為大寫 'MA20'
                 expected_ma20.dropna().reset_index(drop=True),
                 check_dtype=False,
                 rtol=1e-5,
@@ -247,9 +247,9 @@ class TestGoldLayerBuilder(unittest.TestCase):
             )
             # 比較 rsi14
             pd.testing.assert_series_equal(
-                inst_features_df["rsi14"]
+                inst_features_df["RSI14"]
                 .dropna()
-                .reset_index(drop=True),  # 小寫 'rsi14'
+                .reset_index(drop=True),  # 改為大寫 'RSI14'
                 expected_rsi14.dropna().reset_index(drop=True),
                 check_dtype=False,
                 rtol=1e-5,
@@ -276,9 +276,9 @@ class TestGoldLayerBuilder(unittest.TestCase):
                 "low": 118,
                 "close": 119.5,
                 "volume": 1500,
-                "ma5": 118.0,
-                "ma20": 110.0,
-                "rsi14": 65.0,  # 使用小寫鍵名
+                "MA5": 118.0,  # 改為大寫
+                "MA20": 110.0, # 改為大寫
+                "RSI14": 65.0, # 改為大寫
             }
         ]
         final_df = pd.DataFrame(final_df_data)
@@ -321,7 +321,7 @@ class TestGoldLayerBuilder(unittest.TestCase):
         self.assertIsNotNone(features_create_call)
         self.assertIn("date DATE", features_create_call)  # 來自 GoldMarketFeaturesDaily
         self.assertIn(
-            "rsi14 DOUBLE", features_create_call
+            "RSI14 DOUBLE", features_create_call # 改為大寫 RSI14
         )  # 注意 Pydantic Optional[float] 映射為 DOUBLE
         self.assertIsNotNone(features_insert_call)
 
@@ -336,8 +336,8 @@ class TestGoldLayerBuilder(unittest.TestCase):
         )
         self.assertEqual(
             list(registered_df_features.columns),
-            ["date", "instrument", "ma5", "ma20", "rsi14"],
-        )  # 使用小寫斷言
+            ["date", "instrument", "MA5", "MA20", "RSI14"], # 改為大寫
+        )
 
 
 class TestGoldLayerRunScript(unittest.TestCase):

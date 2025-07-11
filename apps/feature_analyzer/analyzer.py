@@ -208,12 +208,22 @@ class ChimeraAnalyzer:
         if pd.isna(total_net_shares):
             return "籌碼未知"
 
-        # total_net_shares is a float here (not None or NaN) due to pd.isna check
-        if total_net_shares > threshold_buy:
-            return "法人買超"
-        elif total_net_shares < threshold_sell:
-            return "法人賣超"
+        # At this point, total_net_shares is confirmed to be a float (not None or NaN)
+        # Mypy might still need a more explicit check or a cast if it doesn't infer this.
+        # Let's proceed assuming Mypy should understand this from pd.isna check for now.
+        # If errors persist, we might need an `assert total_net_shares is not None`
+        # or cast to float, though the latter should not be necessary.
+
+        if total_net_shares is not None: # Explicit check for None to satisfy Mypy
+            if total_net_shares > threshold_buy:
+                return "法人買超"
+            elif total_net_shares < threshold_sell:
+                return "法人賣超"
+            else:
+                return "法人中性"
         else:
+            # This case should ideally not be reached if pd.isna() correctly handles None.
+            # Adding for robustness and to satisfy Mypy if it's still confused.
             return "法人中性"
 
     def _apply_composite_signal_logic(self, df: pd.DataFrame) -> pd.DataFrame:

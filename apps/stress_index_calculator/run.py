@@ -36,7 +36,7 @@ except Exception as e:  # Catches NameError as well
         sys.exit(1)
 # --- 標準化路徑定義結束 ---
 
-from core.utils import setup_logger
+from core.utils import setup_logger # type: ignore[attr-defined]
 from apps.stress_index_calculator.calculator import (
     calculate_derived_indicators,
     calculate_stress_index,

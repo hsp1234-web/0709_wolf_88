@@ -6,10 +6,10 @@ from abc import ABC, abstractmethod
 
 class BaseAPIClient(ABC):
     """
-    所有 API 客戶端的抽象基礎類，封裝了通用的請求、認證和錯誤處理邏輯。
+    所有 API 客戶端的抽象基礎類，封裝了通用的請求、認證和錯誤處理 logique。
     """
 
-    def __init__(self, api_key: str, base_url: str):
+    def __init__(self, api_key: str | None, base_url: str | None): # Changed to Optional[str]
         self.api_key = api_key
         self.base_url = base_url
         self._session = requests.Session()
@@ -46,6 +46,9 @@ class BaseAPIClient(ABC):
 
         # 子類應負責準備包含其特定認證信息的 params。
         # BaseAPIClient._request 只負責執行請求。
+
+        if not self.base_url:
+            raise ValueError("BaseAPIClient: base_url is not set, cannot make a request.")
 
         url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
         response = self._session.get(url, params=params)

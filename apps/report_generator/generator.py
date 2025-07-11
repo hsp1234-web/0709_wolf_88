@@ -4,6 +4,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import pytz  # 確保導入 pytz 以便在 __main__ 中使用
+from typing import Any # For type hints
 
 # 導入 Plotly - 直接導入，如果失敗則讓 ImportError 自然拋出
 import plotly.graph_objects as go
@@ -184,12 +185,10 @@ class ReportGenerator:
         row_heights = [0.6, 0.2, 0.2] if has_pc_ratio_data else [0.7, 0.3]
 
         subplot_titles = ["K線與信號", "成交量"]
-        if has_pc_ratio_data:
-            pc_product_id_for_title = (
-                pc_ratio_df["product_id"].iloc[0]
-                if "product_id" in pc_ratio_df.columns and not pc_ratio_df.empty
-                else "Market"
-            )
+        pc_product_id_for_title = "Market" # Default value
+        if has_pc_ratio_data and pc_ratio_df is not None: # Explicit None check for pc_ratio_df
+            if "product_id" in pc_ratio_df.columns and not pc_ratio_df.empty:
+                 pc_product_id_for_title = pc_ratio_df["product_id"].iloc[0]
             subplot_titles.append(f"Put/Call Ratio ({pc_product_id_for_title})")
 
         fig = make_subplots(
@@ -290,7 +289,7 @@ class ReportGenerator:
                     "name": "籌碼未知相關",
                 },
             }
-            plot_data_points = {
+            plot_data_points: dict[str, dict[str, list[Any]]] = {
                 key: {"x": [], "y": [], "text": []} for key in marker_styles
             }
 
@@ -338,7 +337,7 @@ class ReportGenerator:
                         col=1,
                     )
 
-        if has_pc_ratio_data:
+        if has_pc_ratio_data and pc_ratio_df is not None: # Added explicit pc_ratio_df is not None
             pc_x_axis = pc_ratio_df["trading_date"]
             if "pc_volume_ratio" in pc_ratio_df.columns:
                 fig.add_trace(
@@ -386,12 +385,10 @@ class ReportGenerator:
         )
         fig.update_yaxes(title_text="股價", row=1, col=1)
         fig.update_yaxes(title_text="成交量", row=2, col=1)
-        if has_pc_ratio_data:
-            pc_product_id_for_y_title = (
-                pc_ratio_df["product_id"].iloc[0]
-                if "product_id" in pc_ratio_df.columns and not pc_ratio_df.empty
-                else "Market"
-            )
+        if has_pc_ratio_data and pc_ratio_df is not None: # Added explicit pc_ratio_df is not None
+            pc_product_id_for_y_title = "Market" # Default
+            if "product_id" in pc_ratio_df.columns and not pc_ratio_df.empty:
+                pc_product_id_for_y_title = pc_ratio_df["product_id"].iloc[0]
             fig.update_yaxes(
                 title_text=f"P/C Ratio ({pc_product_id_for_y_title})", row=3, col=1
             )

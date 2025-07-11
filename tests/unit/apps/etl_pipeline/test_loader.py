@@ -86,7 +86,7 @@ class TestLoader(unittest.TestCase):
         # Simulate table does not exist initially
         with patch(
             "apps.etl_pipeline.loader._get_table_schema_from_db", return_value=None
-        ) as mock_get_db_schema:
+        ) as _: # mock_get_db_schema: # F841 - changed to _
             result = loader.run_loading(self.test_argv)
 
         self.assertTrue(result, "run_loading 應在成功創建和載入時返回 True")
@@ -96,20 +96,20 @@ class TestLoader(unittest.TestCase):
         # Check if CREATE TABLE ... AS SELECT ... was called
         create_table_as_select_found = False
         for call_args in mock_conn.execute.call_args_list:
-            sql_command = str(
-                call_args[0][0]
-            ).upper()  # Convert to uppercase for case-insensitive check
-            normalized_sql = " ".join(sql_command.split())  # Normalize whitespace
+            # sql_command = str( # F841 - removed
+            #     call_args[0][0]
+            # ).upper()  # Convert to uppercase for case-insensitive check
+            # normalized_sql = " ".join(sql_command.split())  # Normalize whitespace # F841 - removed
 
             # More specific check for "CREATE TABLE target_table AS SELECT ... FROM READ_PARQUET(...)"
-            expected_create = f'CREATE TABLE "{self.table_name.upper()}"'  # DuckDB often upcases unquoted identifiers if not quoted
-            expected_as_select_from_parquet = "AS SELECT * FROM READ_PARQUET("
+            # expected_create = f'CREATE TABLE "{self.table_name.upper()}"'  # DuckDB often upcases unquoted identifiers if not quoted # F841 - removed
+            # expected_as_select_from_parquet = "AS SELECT * FROM READ_PARQUET(" # F841 - removed
 
             # In loader.py, table_name is quoted, so it should be case-sensitive if quotes are preserved.
             # Let's adjust the expectation to match the loader's quoting.
-            expected_create_quoted = (
-                f'CREATE TABLE "{self.table_name}"'  # Keep original case as it's quoted
-            )
+            # expected_create_quoted = ( # F841 - removed
+            #     f'CREATE TABLE "{self.table_name}"'  # Keep original case as it's quoted
+            # )
 
             # Check based on normalized SQL from loader.py
             # loader.py uses: db_conn.execute(f"CREATE TABLE \"{table_name}\" AS SELECT * FROM read_parquet('{str(parquet_path)}')")
@@ -118,13 +118,13 @@ class TestLoader(unittest.TestCase):
             executed_sql_normalized = " ".join(str(call_args[0][0]).upper().split())
 
             # Define expected parts, also normalized and in uppercase
-            expected_part1 = f'CREATE TABLE "{self.table_name.upper()}"'  # Table name is quoted, so case might matter or DuckDB normalizes it.
+            # expected_part1 = f'CREATE TABLE "{self.table_name.upper()}"'  # Table name is quoted, so case might matter or DuckDB normalizes it. # F841 - removed
             # loader.py quotes it as is: "{table_name}"
             # Let's assume loader.py is correct and test against that.
             expected_part1_loader_case = f'CREATE TABLE "{self.table_name}"'
-            normalized_part1_loader_case = " ".join(
-                expected_part1_loader_case.upper().split()
-            )
+            # normalized_part1_loader_case = " ".join( # F841 - removed
+            #     expected_part1_loader_case.upper().split()
+            # )
 
             expected_part2 = "AS SELECT"
             expected_part3 = "FROM READ_PARQUET"

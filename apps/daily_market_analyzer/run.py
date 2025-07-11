@@ -9,6 +9,7 @@ import shutil  # Added for Local-First
 import sys
 import threading  # 移到頂部
 from datetime import datetime
+from typing import Any, Dict # Import Any and Dict for type hints
 
 import duckdb  # 移到頂部，為了捕獲 duckdb.ConstraintException
 import pandas as pd
@@ -33,7 +34,7 @@ from apps.daily_market_analyzer.yfinance_client import YFinanceClient
 """
 # 移除 try-except ModuleNotFoundError 塊，因為路徑問題應由 pytest.ini 和 conftest.py 解決
 
-DATA_QUEUE = queue.Queue()
+DATA_QUEUE: queue.Queue[Dict[str, Any]] = queue.Queue() # Added type hint
 DB_WRITE_LOCK = threading.Lock()
 # --- 全局共享資源結束 ---
 
@@ -583,7 +584,7 @@ def run_data_pipeline(
     print("\n--- 開始數據處理流程 ---")
     pipeline_start_time = datetime.now()
     db_manager.create_ohlcv_table(table_name=args.table_name)
-    current_overall_execution_log = {}
+    current_overall_execution_log: Dict[str, Any] = {} # Added type hint
     if not tickers_list:
         print("警告 (run_data_pipeline): 標的列表為空，無法執行數據流程。")
         return {}, []

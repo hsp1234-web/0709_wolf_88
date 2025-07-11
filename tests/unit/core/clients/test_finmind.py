@@ -229,7 +229,7 @@ class TestFinMindClientFetchData:
         self, mock_internal_request, finmind_client_fixture: FinMindClient
     ):
         """測試便捷方法是否正確調用 fetch_data。"""
-        mock_df = pd.DataFrame({"buy_sell": [1000]})
+        # mock_df = pd.DataFrame({"buy_sell": [1000]}) # F841 - removed
         # fetch_data 會調用 _request, 所以我們 mock _request
         # 或者，如果我們假設 fetch_data 內部正確調用 _request,
         # 我們可以讓 mock_internal_request (代表 _request) 返回預期結果

@@ -70,18 +70,24 @@ class FinMindClient(BaseAPIClient):
             self.api_key
         )
 
-        url = (
+        if not self.base_url:
+            raise ValueError("FinMindClient: base_url is not set, cannot make a request.")
+
+        current_url = ( # Renamed url to current_url to avoid confusion if self.base_url is used later directly
             f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
             if endpoint
             else self.base_url
         )
 
         print(
-            f"資訊：向 FinMind API 發送請求，URL: {url}, 資料集：'{request_params.get('dataset')}', 資料ID：'{request_params.get('data_id')}'"
+            f"資訊：向 FinMind API 發送請求，URL: {current_url}, 資料集：'{request_params.get('dataset')}', 資料ID：'{request_params.get('data_id')}'"
         )
 
         try:
-            response: requests.Response = self._session.get(url, params=request_params)
+            # Ensure current_url is not None before calling get, though the check for self.base_url should cover this.
+            if not current_url:
+                 raise ValueError("FinMindClient: Calculated URL is empty, cannot make a request.")
+            response: requests.Response = self._session.get(current_url, params=request_params)
             response.raise_for_status()  # type: ignore[no-untyped-call]
 
             content_type = response.headers.get("Content-Type", "")

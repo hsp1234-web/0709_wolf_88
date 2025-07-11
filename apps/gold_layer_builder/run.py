@@ -1,15 +1,14 @@
-import os
+# --- 路徑自我校正 (必須在所有 import 之前) ---
 import sys
-import datetime
-import numpy as np
-import pandas as pd
-
-# --- 路徑自我校正 ---
+import os
 current_script_path = os.path.abspath(__file__)
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_script_path)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-
+# --- 以上為路徑校正 ---
+import datetime
+import numpy as np
+import pandas as pd
 from apps.gold_layer_builder.core.builder import GoldLayerBuilder
 
 # 主執行入口: 金層決策引擎
@@ -57,8 +56,8 @@ def main():
                         ts = current_date_base + datetime.timedelta(minutes=min_offset)
                         o = price_seed + np.random.uniform(-0.5, 0.5)
                         h = o + np.random.uniform(0, 0.3)
-                        l = o - np.random.uniform(0, 0.3)
-                        c = l + np.random.uniform(0, h - l)  # 確保 c 在 l 和 h 之間
+                        low_val = o - np.random.uniform(0, 0.3) # Renamed l to low_val
+                        c = low_val + np.random.uniform(0, h - low_val)  # 確保 c 在 l 和 h 之間
                         v = np.random.randint(50, 200)
                         all_silver_ticks.append(
                             {
@@ -66,7 +65,7 @@ def main():
                                 "instrument": instrument,
                                 "open": o,
                                 "high": h,
-                                "low": l,
+                                "low": low_val,
                                 "close": c,
                                 "volume": v,
                             }

@@ -711,7 +711,7 @@ class DBManager:
         actual_cols = df_to_insert.columns.tolist()
 
         # 檢查必要欄位，允許 commentary 為空但必須存在
-        missing_cols = [col for col in required_cols if col not in actual_cols]
+        # missing_cols = [col for col in required_cols if col not in actual_cols] # F841 - removed
         if any(
             col not in actual_cols
             for col in ["date", "indicator_name", "signal", "value"]

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-import os
+# --- 路徑自我校正 (必須在所有 import 之前) ---
 import sys
-
+import os
 # 假設此腳本位於 apps/strategic_analyzer/run_strategic_analyzer.py
 # 專案根目錄是向上兩級
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -10,7 +10,7 @@ if PROJECT_ROOT not in sys.path:
     print(
         f"DEBUG (run_strategic_analyzer): 已將專案根目錄 {PROJECT_ROOT} 添加到 sys.path"
     )
-
+# --- 以上為路徑校正 ---
 from apps.daily_market_analyzer.db_manager import DBManager
 from apps.strategic_analyzer.analyzer import StrategicAnalyzer
 

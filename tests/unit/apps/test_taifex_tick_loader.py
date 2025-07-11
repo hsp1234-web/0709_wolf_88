@@ -146,7 +146,7 @@ class TestTaifexTickLoaderRun(unittest.TestCase):
         # 模擬 `fetch_and_store_ticks`，因為我們只想測試 `__main__` 的文件清理部分
         with patch(
             "apps.taifex_tick_loader.run.fetch_and_store_ticks"
-        ) as mock_fetch_and_store:
+        ) as _: # mock_fetch_and_store: # F841 - changed to _
             # 使用 runpy 來執行 run.py 就像它被直接運行一樣
             # 這需要將 run.py 的路徑添加到 sys.path 或者確保 CWD 正確
             # 為了簡化，我們將直接檢查 run.py 中 __main__ guard 內部的 os.remove 調用
