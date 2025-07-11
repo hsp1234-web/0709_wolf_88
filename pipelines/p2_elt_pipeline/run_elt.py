@@ -16,6 +16,9 @@ import sqlite3
 import io # Added import for io.BytesIO
 
 # --- Loader 邏輯 ---
+# Moved import to top level for module-wide use
+from pipelines.p1_explorer.run import prospect_file_content, get_header_fingerprint
+
 def run_loader(input_dir, raw_db_path, schema_db_path):
     print("\n--- [階段 2] 執行 Loader ---")
     raw_conn = duckdb.connect(raw_db_path)
@@ -26,11 +29,31 @@ def run_loader(input_dir, raw_db_path, schema_db_path):
         format_fingerprint VARCHAR
     );""")
 
-    # 來自 p1_explorer 的函式
+    # 來自 p1_explorer 的函式 (now imported at top level)
     # This import will work if run_elt.py is run from the project root
     # or if the 'pipelines' directory is in PYTHONPATH.
     # Poetry run commands typically execute from the project root.
-    from pipelines.p1_explorer.run import prospect_file_content, get_header_fingerprint
+    # from pipelines.p1_explorer.run import prospect_file_content, get_header_fingerprint # Now at top
+
+    # --- Load known fingerprints from schema_registry.db (P1's output) ---
+    known_fingerprints = set()
+    if not os.path.exists(schema_db_path):
+        print(f"[WARNING] Loader: Schema registry DB {schema_db_path} not found. No files will be loaded.")
+    else:
+        try:
+            schema_conn = sqlite3.connect(schema_db_path)
+            # Check if schema_registry table exists before querying
+            table_exists_cursor = schema_conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_registry';")
+            if table_exists_cursor.fetchone():
+                known_fingerprints = {row[0] for row in schema_conn.execute("SELECT format_fingerprint FROM schema_registry").fetchall()}
+            else:
+                print(f"[WARNING] Loader: 'schema_registry' table not found in {schema_db_path}. No files will be loaded based on schema.")
+            schema_conn.close()
+        except sqlite3.Error as e:
+            print(f"[ERROR] Loader: Error reading schema registry {schema_db_path}: {e}. No files will be loaded.")
+
+    if not known_fingerprints:
+        print("[INFO] Loader: No known fingerprints loaded from schema registry. Only files matching these will be processed.")
 
     files_loaded = 0
     # Ensure input_dir exists before listing its contents
@@ -42,35 +65,61 @@ def run_loader(input_dir, raw_db_path, schema_db_path):
     for filename in os.listdir(input_dir):
         file_path = os.path.join(input_dir, filename)
 
+        if not os.path.isfile(file_path): # Skip directories
+            continue
+
         # 簡易版：檢查是否已載入
         if raw_conn.execute(f"SELECT COUNT(*) FROM raw_import_log WHERE file_path = ?", (file_path,)).fetchone()[0] > 0:
+            print(f"[INFO] Loader: File {filename} already in raw_import_log. Skipping.")
             continue
 
         try:
             file_bytes_content = None
+            # P1's logic for identifying processable files (simplified here)
+            # For actual use, P2 loader might need its own robust file type identification
+            # or rely more directly on P1's output manifest if P1 generated one.
             if zipfile.is_zipfile(file_path):
-                with zipfile.ZipFile(file_path, 'r') as zf:
-                    if zf.namelist(): # Check if zip file is not empty
-                        member = zf.namelist()[0] # Process only the first member
-                        file_bytes_content = zf.read(member)
-                    else:
-                        print(f"[WARNING] Loader: Zip file {filename} is empty.")
-                        continue
-            else:
+                try:
+                    with zipfile.ZipFile(file_path, 'r') as zf:
+                        if zf.namelist():
+                            member = zf.namelist()[0] # Process only the first member for prospecting
+                            # Check if member is csv or txt before reading
+                            if member.lower().endswith(('.csv', '.txt')):
+                                file_bytes_content = zf.read(member)
+                            else:
+                                print(f"[INFO] Loader: Member {member} in zip {filename} is not CSV/TXT. Skipping zip for schema check.")
+                                continue # Skip this zip if first member isn't CSV/TXT
+                        else:
+                            print(f"[WARNING] Loader: Zip file {filename} is empty. Skipping.")
+                            continue
+                except zipfile.BadZipFile:
+                    print(f"[WARN] Loader: File {filename} is a bad zip file. Skipping.")
+                    continue
+            elif filename.lower().endswith(('.csv', '.txt')):
                 with open(file_path, 'rb') as f:
                     file_bytes_content = f.read()
-
-            if file_bytes_content is None:
+            else:
+                # Skip files not matching expected types for prospecting by P1 logic
+                print(f"[INFO] Loader: File {filename} is not a processable type (zip, csv, txt) for schema check. Skipping.")
                 continue
 
-            result = prospect_file_content(file_bytes_content)
+            if file_bytes_content is None:
+                # This case might be hit if a zip file had no processable members.
+                print(f"[INFO] Loader: No content to process for {filename} after type checks. Skipping.")
+                continue
+
+            result = prospect_file_content(file_bytes_content) # Prospect content
             if result['status'] == 'success':
                 fingerprint = get_header_fingerprint(result['header'])
-                raw_conn.execute("INSERT INTO raw_import_log VALUES (?, ?, ?)", (file_path, file_bytes_content, fingerprint))
-                files_loaded += 1
+                # --- Key Change: Only load if fingerprint is known from P1 ---
+                if fingerprint in known_fingerprints:
+                    raw_conn.execute("INSERT INTO raw_import_log VALUES (?, ?, ?)", (file_path, file_bytes_content, fingerprint))
+                    files_loaded += 1
+                    print(f"[INFO] Loader: Loaded {filename} (fingerprint: {fingerprint[:8]}...) as it's a known schema.")
+                else:
+                    print(f"[INFO] Loader: Skipped {filename} (fingerprint: {fingerprint[:8]}...) as its schema is not in the registry.")
             else:
                 print(f"[INFO] Loader: Skipped file {filename} due to content prospecting failure: {result.get('error', 'Unknown error')}")
-
 
         except Exception as e:
             print(f"[ERROR] Loader 處理 {filename} 失敗: {e}")
@@ -79,42 +128,58 @@ def run_loader(input_dir, raw_db_path, schema_db_path):
     print(f"Loader 完成，新載入 {files_loaded} 個檔案。")
 
 # --- Transformer 邏輯 ---
+# Helper to get the specific fingerprint for daily_futures from schema_map
+def get_target_fingerprint(schema_map, target_header_str):
+    target_fingerprint = get_header_fingerprint(target_header_str)
+    if target_fingerprint in schema_map:
+        return target_fingerprint
+    # Fallback: check if any header in schema_map matches after splitting and joining
+    # This is a bit loose but might catch cases where P1 stores header differently
+    for fp, (header_list, _) in schema_map.items():
+        if get_header_fingerprint(",".join(header_list)) == target_fingerprint:
+            return fp
+    return None
+
 def run_transformer(raw_db_path, schema_db_path, analytics_db_path):
     print("\n--- [階段 3] 執行 Transformer ---")
 
-    # Ensure schema_db_path directory exists
+    # Load schema_map from schema_registry.db
     os.makedirs(os.path.dirname(schema_db_path), exist_ok=True)
-    schema_conn = sqlite3.connect(schema_db_path)
+    schema_conn_transformer = sqlite3.connect(schema_db_path)
     try:
-        # Check if schema_registry table exists
-        schema_exists = schema_conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_registry';").fetchone()
+        schema_exists = schema_conn_transformer.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_registry';").fetchone()
         if not schema_exists:
-            print(f"[WARNING] Transformer: schema_registry table not found in {schema_db_path}. Creating an empty one.")
-            # If p1_explorer hasn't run or created the table, we might need to create it here to avoid errors.
-            # Or, ensure p1_explorer always creates it. For now, let's create it if not exists.
-            schema_conn.execute("""
-            CREATE TABLE IF NOT EXISTS schema_registry (
-                format_fingerprint TEXT PRIMARY KEY,
-                header TEXT,
-                encoding TEXT,
-                file_count INTEGER DEFAULT 1,
-                first_seen_file TEXT
-            )""")
-            schema_conn.commit()
-            schema_map = {}
-        else:
-            schema_map = {row[0]: (row[1].split(','), row[2]) for row in schema_conn.execute("SELECT format_fingerprint, header, encoding FROM schema_registry").fetchall()}
+            print(f"[WARNING] Transformer: schema_registry table not found in {schema_db_path}. Transformer cannot operate.")
+            schema_conn_transformer.close()
+            return # Cannot proceed without schema
+
+        # Store header as string as P1 does, split later if needed by specific logic
+        schema_map = {row[0]: (row[1], row[2]) for row in schema_conn_transformer.execute("SELECT format_fingerprint, header, encoding FROM schema_registry").fetchall()}
     except sqlite3.Error as e:
         print(f"[ERROR] Transformer: SQLite error accessing schema_registry: {e}")
-        schema_conn.close()
+        schema_conn_transformer.close()
         return
     finally:
-        schema_conn.close()
-
+        schema_conn_transformer.close()
 
     if not schema_map:
-        print("[WARNING] 格式註冊表為空或讀取失敗，Transformer 無法執行有效轉換。")
-        # return # Decide if we should stop or proceed to create empty analytics_db
+        print("[WARNING] Transformer: 格式註冊表為空或讀取失敗，Transformer 無法執行有效轉換。")
+        # Create analytics_db anyway for consistency, but it will be empty.
+        # os.makedirs(os.path.dirname(analytics_db_path), exist_ok=True)
+        # duckdb.connect(analytics_db_path).close() # Ensure db file is created
+        return
+
+    # Define the specific header for 'daily_futures'
+    # This must exactly match how P1 explorer generates the header string for this data type
+    daily_futures_header_str = "交易日期,契約代碼,到期月份(週別),開盤價,最高價,最低價,收盤價,成交量"
+    target_daily_futures_fingerprint = get_target_fingerprint(schema_map, daily_futures_header_str)
+
+    if not target_daily_futures_fingerprint:
+        print(f"[WARNING] Transformer: Did not find fingerprint for daily_futures_header '{daily_futures_header_str}' in schema_map. Cannot process daily_futures.")
+        # Proceed to create empty table but don't try to load data for it.
+    else:
+        print(f"[INFO] Transformer: Target fingerprint for daily_futures is {target_daily_futures_fingerprint[:8]}...")
+
 
     # Ensure raw_db_path directory exists
     os.makedirs(os.path.dirname(raw_db_path), exist_ok=True)
@@ -160,12 +225,24 @@ def run_transformer(raw_db_path, schema_db_path, analytics_db_path):
     records = raw_conn.execute("SELECT content_blob, format_fingerprint FROM raw_import_log").fetchall()
     transformed_count = 0
     for blob, fingerprint in records:
-        if fingerprint not in schema_map:
-            print(f"[INFO] Transformer: Fingerprint {fingerprint[:8]}... not in schema_map. Skipping.")
+        # --- Key Change: Only process if fingerprint matches the target for daily_futures ---
+        if fingerprint != target_daily_futures_fingerprint:
+            if fingerprint in schema_map: # It's a known schema, just not the one we're processing now
+                print(f"[INFO] Transformer: Skipping record with fingerprint {fingerprint[:8]}... as it's not the target daily_futures fingerprint ({target_daily_futures_fingerprint[:8]}...).")
+            else: # Should not happen if loader only loads known FPs, but as a safeguard:
+                print(f"[INFO] Transformer: Fingerprint {fingerprint[:8]}... not in schema_map (and not target). Skipping.")
             continue
 
-        # schema_map stores header as a list of strings
-        header_list_from_registry, encoding = schema_map[fingerprint]
+        # At this point, fingerprint MUST be target_daily_futures_fingerprint
+        # And it must be in schema_map if target_daily_futures_fingerprint was found
+        if target_daily_futures_fingerprint not in schema_map:
+            # This should ideally not be reached if target_daily_futures_fingerprint is None and we checked above.
+            # However, if target_daily_futures_fingerprint was somehow non-None but still not in schema_map.
+            print(f"[ERROR] Transformer: Target fingerprint {target_daily_futures_fingerprint[:8]} not found in schema_map. This is unexpected. Skipping.")
+            continue
+
+        header_str_from_registry, encoding = schema_map[fingerprint]
+        # header_list_from_registry = header_str_from_registry.split(',') # If needed
 
         try:
             # Use io.BytesIO for pandas to read bytes

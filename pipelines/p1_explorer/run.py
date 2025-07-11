@@ -50,17 +50,32 @@ def main():
             continue
 
         try:
+            file_bytes_content = None # Initialize to ensure it's defined
             if zipfile.is_zipfile(file_path):
-                with zipfile.ZipFile(file_path, 'r') as zf:
-                    for member_name in zf.namelist():
-                        if member_name.endswith(('.csv', '.txt')):
-                            file_bytes = zf.read(member_name)
-                            break # 只處理第一個成員
-            else:
+                try:
+                    with zipfile.ZipFile(file_path, 'r') as zf:
+                        for member_name in zf.namelist():
+                            if member_name.lower().endswith(('.csv', '.txt')):
+                                file_bytes_content = zf.read(member_name)
+                                break # 只處理第一個符合條件的成員
+                        if file_bytes_content is None:
+                            print(f"[INFO] 在 ZIP 檔案 {filename} 中未找到 .csv 或 .txt 成員。跳過。")
+                            continue
+                except zipfile.BadZipFile:
+                    print(f"[WARN] 檔案 {filename} 不是一個有效的 ZIP 檔案或已損毀。跳過。")
+                    continue
+            elif filename.lower().endswith(('.csv', '.txt')):
                 with open(file_path, 'rb') as f:
-                    file_bytes = f.read()
+                    file_bytes_content = f.read()
+            else:
+                print(f"[INFO] 檔案 {filename} 不是支援的 .csv, .txt, 或 .zip 檔案。跳過。")
+                continue
 
-            result = prospect_file_content(file_bytes)
+            # 確保 file_bytes_content 確實被賦值 (例如，空的 zip 檔案可能導致它為 None)
+            if file_bytes_content is None:
+                continue
+
+            result = prospect_file_content(file_bytes_content)
 
             if result['status'] == 'success':
                 fingerprint = get_header_fingerprint(result['header'])

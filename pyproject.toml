@@ -82,6 +82,10 @@ openpyxl = "^3.1.5"
 pybreaker = "^1.4.0"
 requests-cache = "^1.2.1"
 urllib3 = "<2.0"
+
+[tool.poetry.scripts]
+test = "run_tests:main"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
