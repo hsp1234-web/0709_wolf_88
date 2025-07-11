@@ -1,13 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-普羅米修斯之火 - 戰略分析器每日執行腳本
-
-本腳本負責每日自動運行戰略分析器 (StrategicAnalyzer)，
-生成市場核心指標的紅黃綠信號，並將結果存儲到 StrategicDashboard_Daily 資料庫。
-
-執行順序建議：應在因子 ETL 流程 (run_factor_etl.py) 完成之後執行。
-"""
-
 import os
 import sys
 
@@ -23,6 +14,14 @@ if PROJECT_ROOT not in sys.path:
 from apps.daily_market_analyzer.db_manager import DBManager
 from apps.strategic_analyzer.analyzer import StrategicAnalyzer
 
+"""
+普羅米修斯之火 - 戰略分析器每日執行腳本
+
+本腳本負責每日自動運行戰略分析器 (StrategicAnalyzer)，
+生成市場核心指標的紅黃綠信號，並將結果存儲到 StrategicDashboard_Daily 資料庫。
+
+執行順序建議：應在因子 ETL 流程 (run_factor_etl.py) 完成之後執行。
+"""
 
 def run_daily_strategic_analysis():
     """

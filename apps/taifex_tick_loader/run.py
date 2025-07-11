@@ -1,6 +1,6 @@
-# 唯一的公開執行入口
 import os
 import sys
+import datetime
 
 # --- 路徑自我校正 ---
 # 確保腳本無論從何處執行，都能正確找到專案根目錄並將其添加到 sys.path
@@ -17,7 +17,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_script_pa
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-import datetime
+
 from apps.taifex_tick_loader.core.db_manager import DatabaseManager
 from apps.taifex_tick_loader.core.schemas import TaifexTick
 

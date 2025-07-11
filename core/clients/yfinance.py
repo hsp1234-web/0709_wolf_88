@@ -5,7 +5,7 @@ import yfinance as yf
 import pandas as pd
 
 import traceback
-from typing import List, Optional, Any, cast # Added Any, cast. Optional, List were already there.
+from typing import List, Any, cast # Added Any, cast. Optional, List were already there.
 
 from .base import BaseAPIClient
 

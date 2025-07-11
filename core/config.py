@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations  # 添加未來註解
 
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any, Dict, List  # Added Dict
+
+import yaml
+
 """
 核心設定模組
 """
-import yaml
-import json
-import sys
-import os
-from pathlib import Path
-from typing import List, Any, Dict # Added Dict
-
 LOG_LEVEL = "INFO"
 SUBPROCESS_TIMEOUT = 300
 

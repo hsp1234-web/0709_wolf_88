@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 # -*- coding: utf-8 -*-
-"""
-普羅米修斯之火 - 因子引擎核心
-"""
 # 標準庫導入 (如果有的話，例如 import os, sys)
 # (空一行)
 # 第三方庫導入
 import numpy as np
 import pandas as pd
+
 # import pandas_ta as ta # Pandas TA 通过 accessor (df.ta) 使用，通常不需要在此直接导入
 
 # (空一行)
 # 本地應用/庫導入
 from apps.daily_market_analyzer.db_manager import DBManager
 
+"""
+普羅米修斯之火 - 因子引擎核心
+"""
 # 本模組定義了 FactorEngine 類別，用於計算各種市場分析因子。
 
 class FactorEngine:

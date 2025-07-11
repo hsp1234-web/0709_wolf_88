@@ -1,6 +1,8 @@
-# 主執行入口: 金層決策引擎
 import os
 import sys
+import datetime
+import numpy as np
+import pandas as pd
 
 # --- 路徑自我校正 ---
 current_script_path = os.path.abspath(__file__)
@@ -8,11 +10,9 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_script_pa
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-import pandas as pd
-import datetime
-import numpy as np
 from apps.gold_layer_builder.core.builder import GoldLayerBuilder
 
+# 主執行入口: 金層決策引擎
 
 # --- 核心邏輯 ---
 def main():

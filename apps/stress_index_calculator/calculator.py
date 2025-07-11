@@ -1,6 +1,14 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations  # 添加未來註解
 
+import logging  # 添加導入
+
+import numpy as np
+import pandas as pd
+from typing import Optional  # 添加導入
+
+from .schemas import CalculatedData, FetchedData  # 移到標準庫和第三方庫導入之後
+
 """
 計算模組 (calculator.py)
 
@@ -10,12 +18,6 @@ from __future__ import annotations  # 添加未來註解
 - 計算加權壓力指數 (原始及平滑)
 - (可選) 計算 MACD 動能指標
 """
-import pandas as pd
-import numpy as np
-from typing import Optional  # 添加導入
-import logging  # 添加導入
-from .schemas import FetchedData, CalculatedData  # 移到標準庫和第三方庫導入之後
-
 # 全局性的註解，說明此模組的用途和主要提供的函式
 # 後續將根據 `一級交易pro.py` 的 Cell 8 內容填充具體函式實現
 

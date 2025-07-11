@@ -43,12 +43,12 @@ from apps.stress_index_calculator.calculator import (
     calculate_macd_momentum,
 )
 
+import logging  # 導入 logging 模組
 # --- 常數定義 ---
 SOURCE_DB_PATH = project_root / "market_data.duckdb"  # 使用 pathlib
 TARGET_DB_PATH = project_root / "analytics_mart.duckdb"  # 使用 pathlib
 STRESS_INDEX_TABLE = "dealer_stress_index"
 
-import logging  # 導入 logging 模組
 
 logger = setup_logger(
     "stress_index_calculator", level=logging.DEBUG

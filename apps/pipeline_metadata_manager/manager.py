@@ -10,7 +10,7 @@
     *   提供「寫入新指紋及元數據（檔名、大小、處理時間）」的功能。
 """
 from __future__ import annotations
-from typing import Optional, Dict, Any # Ensure Dict and Any are imported if used by config
+from typing import Optional # Ensure Dict and Any are imported if used by config
 import hashlib
 import duckdb
 import os

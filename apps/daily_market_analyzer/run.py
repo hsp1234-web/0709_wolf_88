@@ -1,6 +1,29 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations  # 添加 annotations
 
+import argparse
+import csv  # For hardware stats CSV
+import os
+import queue  # 移到頂部
+import shutil  # Added for Local-First
+import sys
+import threading  # 移到頂部
+from datetime import datetime
+
+import duckdb  # 移到頂部，為了捕獲 duckdb.ConstraintException
+import pandas as pd
+import psutil  # 新增：用於偵測系統資源
+
+# 移除 setup_project_path() 函數及其調用
+
+# 將應用模組導入移到頂部
+from apps.daily_market_analyzer.analysis_engine import AnalysisEngine
+from apps.daily_market_analyzer.db_manager import DBManager
+from apps.daily_market_analyzer.report_generator import ReportGenerator
+from apps.daily_market_analyzer.yfinance_client import YFinanceClient
+
+# import statistics # For hardware stats summary - will add to ReportGenerator instead
+
 """
 每日市場分析儀 主執行入口。
 
@@ -8,29 +31,6 @@ from __future__ import annotations  # 添加 annotations
 使用 DBManager 將數據存入資料庫，透過 AnalysisEngine 分析數據，
 最後使用 ReportGenerator 生成每日市場洞察報告。
 """
-import argparse
-import sys
-import os
-import shutil  # Added for Local-First
-from datetime import datetime
-import pandas as pd
-import csv  # For hardware stats CSV
-
-# import statistics # For hardware stats summary - will add to ReportGenerator instead
-
-import psutil  # 新增：用於偵測系統資源
-import queue  # 移到頂部
-import threading  # 移到頂部
-import duckdb  # 移到頂部，為了捕獲 duckdb.ConstraintException
-
-# 移除 setup_project_path() 函數及其調用
-
-# 將應用模組導入移到頂部
-from apps.daily_market_analyzer.yfinance_client import YFinanceClient
-from apps.daily_market_analyzer.db_manager import DBManager
-from apps.daily_market_analyzer.analysis_engine import AnalysisEngine
-from apps.daily_market_analyzer.report_generator import ReportGenerator
-
 # 移除 try-except ModuleNotFoundError 塊，因為路徑問題應由 pytest.ini 和 conftest.py 解決
 
 DATA_QUEUE = queue.Queue()
