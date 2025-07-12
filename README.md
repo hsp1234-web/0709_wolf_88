@@ -40,7 +40,7 @@
 以下為專案目前的完整檔案目錄結構 (已移除 `__pycache__` 和臨時檔案)。
 
 > **[文件化說明]**
-> 關於下表中每一個檔案的詳細功能、職責與執行邏輯，請參閱新建立的 **[`PROJECT_FILES_GLOSSARY.md`](./PROJECT_FILES_GLOSSARY.md)** 檔案。
+> 關於下表中每一個檔案的詳細功能、職責與執行邏輯，請參閱 **[`PROJECT_FILES_GLOSSARY.md`](./PROJECT_FILES_GLOSSARY.md)** 檔案。
 
 ```
 .
