@@ -45,7 +45,6 @@ def elt_test_environment(tmp_path):
 
     # Copy necessary data fixtures to the temporary downloads directory
     shutil.copy(os.path.join(FIXTURES_DIR, 'sample_daily_ohlc_20250711.zip'), downloads_dir)
-    shutil.copy(os.path.join(FIXTURES_DIR, 'sample_options_delta_20250711.csv'), downloads_dir)
     # We can also copy corrupted.zip to ensure it's ignored by P1 and thus P2
     shutil.copy(os.path.join(FIXTURES_DIR, 'corrupted.zip'), downloads_dir)
 

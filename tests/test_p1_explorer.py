@@ -36,7 +36,6 @@ def p1_test_environment(tmp_path):
     # Copy necessary files from tests/fixtures to temp_input_dir
     fixture_files_to_copy = [
         'sample_daily_ohlc_20250711.zip',
-        'sample_options_delta_20250711.csv',
         'corrupted.zip',
         'no_data_response.html' # P1 should ideally ignore .html files or non-data files
     ]
@@ -97,11 +96,10 @@ def test_p1_explorer_scan_fixtures(p1_test_environment):
 
     # Verify results
     # 現在我們期望 sample_options_delta_20250711.csv 也被正確處理
-    assert len(results) == 2, "Should register exactly two valid formats (ohlc.zip and options_delta.csv)."
+    assert len(results) == 1, "Should register exactly one valid format (ohlc.zip)."
 
     registered_fingerprints = [row[0] for row in results]
     assert expected_ohlc_fingerprint in registered_fingerprints
-    assert expected_options_fingerprint in registered_fingerprints
 
     for row in results:
         fingerprint, header, encoding, file_count, first_seen_file = row

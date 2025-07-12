@@ -74,6 +74,7 @@ fredapi = "^0.5.2"               # FRED API 客戶端
 # 用於保證專案品質的基石，應在 [tool.poetry.group.dev.dependencies] 中定義
 vectorbt = "^0.28.0"
 pydantic = "^2.11.7"
+openpyxl = "^3.1.5"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"           # 核心測試框架
 pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件
@@ -91,6 +92,7 @@ deptry = "^0.23.0" # Already here, but confirming
 # requests-cache = "^1.2.1" # Moved to dev
 # urllib3 = "<2.0" # Moved to main
 # deptry = "^0.23.0" # Duplicate
+pytest-timeout = "^2.4.0"
 
 [tool.poetry.scripts]
 test = "run_tests:main"
