@@ -11,7 +11,7 @@ api_keys:
   fred: "c85a224a0e0d72a7bccb471c0021eb7b"
 
   # 其他未來可能用到的金鑰
-  # fmp: "YOUR_FMP_KEY_HERE"
+  fmp: "YOUR_REAL_FMP_API_KEY_HERE" # <-- 在此處新增您的 FMP 金鑰
   # finmind: "YOUR_FINMIND_KEY_HERE"
 
 # --- 資料庫設定 ---
