@@ -1,13 +1,11 @@
-# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.7.0**
+# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.8.0**
 
 ## **一、 專案概覽與目的**
 
 【普羅米修斯之火】是一個專為進階量化研究與金融市場分析而設計的 Python 框架。本專案旨在提供一個從多樣化數據源獲取金融數據、進行複雜指標計算、回測交易策略、並將結果視覺化的完整解決方案。其核心設計強調模組化、可擴展性以及數據處理的穩健性。
 
-**最近更新 (作戰計畫 032 & 033):**
-*   **FMPClient 實戰驗證**: 成功整合並執行了 `FMPClient` 的端到端測試，驗證了獲取真實市場數據（如歷史股價）的能力。
-*   **FinMindClient 實戰驗證**: 成功整合並執行了 `FinMindClient` 的端到端測試，驗證了獲取台灣市場特定數據（如三大法人買賣超）的能力。
-*   **配置與腳本標準化**: 建立了標準化的 API 金鑰配置與驗證腳本執行流程，為未來新增數據客戶端奠定了基礎。
+**最近更新 (作戰計畫 035):**
+*   **TaifexFileReader 模擬測試環境**: 成功建立了 `TaifexFileReader` 的本地模擬測試環境，包括創建模擬數據 Fixture，並修改原型腳本以讀取這些本地檔案，驗證了核心的解析邏輯。
 
 ## **二、 技術棧 (Technology Stack)**
 
@@ -63,7 +61,8 @@
 │   ├── run_fmp_test.py
 │   ├── run_finmind_test.py
 │   ├── run_gold_layer.py
-│   └── run_stress_index.py
+│   ├── run_stress_index.py
+│   └── run_taifex_prototype_test.py
 ├── core
 │   ├── analysis
 │   │   ├── data_engine.py
@@ -105,7 +104,11 @@
 │   ├── fixtures
 │   │   ├── corrupted.zip
 │   │   ├── no_data_response.html
-│   │   └── sample_daily_ohlc_20250711.zip
+│   │   ├── sample_daily_ohlc_20250711.zip
+│   │   └── taifex_data
+│   │       ├── Delta值_2025_05_31.csv
+│   │       ├── Delta值_2025_07_03.csv
+│   │       └── PC_Ratio_2025_07_01.csv
 │   ├── integration
 │   │   ├── analysis
 │   │   ├── apps
@@ -158,7 +161,16 @@
     poetry run python apps/run_finmind_test.py
     ```
 
-### **5.2 數據回填與快取**
+### **5.2 Taifex 檔案讀取器原型驗證**
+
+此腳本用於驗證 `TaifexFileReader` 的本地檔案解析邏輯，不需網路連線或 API 金鑰。
+
+*   **執行原型驗證**:
+    ```bash
+    poetry run python apps/run_taifex_prototype_test.py
+    ```
+
+### **5.3 數據回填與快取**
 
 此管線用於填充 DuckDB 資料庫，供其他模組使用。
 
@@ -168,7 +180,7 @@
     ```
 *   **說明**: 此腳本會使用 `YFinanceClient` (無需金鑰) 獲取 SPY 的小時級數據，並存儲在根目錄的 `prometheus_fire.duckdb` 檔案中。
 
-### **5.3 執行 SMA 策略回測與視覺化**
+### **5.4 執行 SMA 策略回測與視覺化**
 
 這是一個完整的無金鑰工作流程，用於驗證因子計算、回測和視覺化功能。
 
@@ -184,7 +196,7 @@
     ```
     *   **說明**: 此腳本會讀取上一步生成的 CSV 檔案，並在 `output` 目錄下創建一個名為 `sma_crossover_chart.html` 的互動式圖表。
 
-### **5.4 測試**
+### **5.5 測試**
 *   **運行所有測試**:
     ```bash
     poetry run pytest
@@ -192,6 +204,15 @@
 *   **目前測試狀態**: 109 個通過, 16 個跳過 (基於最近一次完整測試運行)。
 
 ## **六、 版本歷史與變更日誌**
+
+### **v0.8.0 (對應作戰計畫 035)**
+*   **功能驗證**:
+    *   **TaifexFileReader**: 成功建立了 `TaifexFileReader` 的本地模擬測試環境，並驗證了其核心解析邏輯。
+*   **新增功能**:
+    *   新增 `apps/run_taifex_prototype_test.py` 作為 TaifexFileReader 的原型驗證腳本。
+    *   在 `tests/fixtures/` 下新增 `taifex_data` 目錄，並建立 `PC_Ratio` 和 `Delta` 值的模擬 CSV 檔案。
+*   **修復**:
+    *   修正了模擬檔案的編碼問題，確保其為 `ms950` 編碼，以符合 `pandas` 的讀取需求。
 
 ### **v0.7.0 (對應作戰計畫 033)**
 *   **功能驗證**:

@@ -52,9 +52,13 @@ def run_backfill(start_date_str, end_date_str):
     print("--- 數據回填作業完成 ---")
 
 
-if __name__ == "__main__":
+def main():
+    """主執行函數"""
     # 範例：回填過去三天的數據
     # 實際使用時，可以透過 argparse 等方式傳入參數
     end_date = pd.Timestamp.now()
     start_date = end_date - pd.Timedelta(days=3)
     run_backfill(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+
+if __name__ == "__main__":
+    main()
