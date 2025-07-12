@@ -44,12 +44,9 @@ def run(
         logger.info(f"提取階段完成，成功獲取 {len(raw_data)} 個原始數據集。")
 
         # === 第二步: 轉換 (Transform) ===
-        # 目前為一個預留位置，待未來實現
         logger.info("--- [階段 2/3] 數據轉換 ---")
-        # transformed_data = transform.run_transformation(raw_data)
-        # logger.info(f"轉換階段完成，成功處理 {len(transformed_data)} 個數據集。")
-        logger.info("轉換邏輯待實現，此階段跳過。")
-        transformed_data = raw_data  # 暫時直接傳遞
+        transformed_data = transform.run_transformation(raw_data)
+        logger.info(f"轉換階段完成，成功處理並生成包含 {len(transformed_data)} 行的統一數據集。")
 
         # === 第三步: 加載 (Load) ===
         # 目前為一個預留位置，待未來實現

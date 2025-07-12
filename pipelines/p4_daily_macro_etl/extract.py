@@ -81,6 +81,8 @@ def run_extraction(
             "^GSPC": "S&P 500 指數",
             "^IXIC": "NASDAQ 綜合指數",
             "^MOVE": "MOVE 恐慌指數",
+            "GC=F": "黃金期貨",
+            "HG=F": "銅期貨",
         }
         # yfinance 的快取由其內部處理，但我們的 force_download 邏輯可以應用
         # yfinance client 的 fetch_data 不直接支援 force_download，但我們可以透過不使用快取版本的 session 來模擬
