@@ -64,6 +64,15 @@ def get_fred_api_key() -> str:
     return key
 
 
+def get_database_path() -> str:
+    """一個專用的輔助函數，用於獲取數據庫檔案路徑。"""
+    path = config.get("database.path", "output/default_database.duckdb")
+    if not path:
+        # 提供一個合理的預設值
+        return "output/default_database.duckdb"
+    return path
+
+
 if __name__ == "__main__":
     print("--- 設定檔管理器測試 ---")
     # 重新載入設定以確保測試時是最新的（或創建一個新的臨時實例）

@@ -49,13 +49,11 @@ def run(
         logger.info(f"轉換階段完成，成功處理並生成包含 {len(transformed_data)} 行的統一數據集。")
 
         # === 第三步: 加載 (Load) ===
-        # 目前為一個預留位置，待未來實現
         logger.info("--- [階段 3/3] 數據加載 ---")
-        # load.run_loading(transformed_data)
-        # logger.info("加載階段完成。")
-        logger.info("加載邏輯待實現，此階段跳過。")
+        load.run_load(transformed_data)
+        logger.info("加載階段完成。")
 
-        logger.info("========== P4 每日宏觀數據 ETL 管線執行成功 ==========")
+        logger.info("========== ✅ P4 每日宏觀數據 ETL 管線作戰任務圓滿完成 ==========")
 
     except Exception as e:
         logger.error(f"ETL 管線執行過程中發生嚴重錯誤: {e}", exc_info=True)
