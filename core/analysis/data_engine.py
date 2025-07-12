@@ -25,6 +25,7 @@ class DataEngine:
         yf_client: YFinanceClient,
         fred_client: FredClient,
         taifex_client: TaifexDBClient,
+        db_connection=None,
     ):
         """
         透過依賴注入初始化，傳入所有需要的數據客戶端。
@@ -34,10 +35,14 @@ class DataEngine:
         self.taifex_client = taifex_client
 
         # --- 新增程式碼 ---
-        # 建立到 DuckDB 的持久連接
-        db_path = Path("prometheus_fire.duckdb")
-        self.db_con = duckdb.connect(database=str(db_path), read_only=False)
-        print("DataEngine: DuckDB 連接已建立。")
+        if db_connection:
+            self.db_con = db_connection
+            print("DataEngine: 使用傳入的 DuckDB 連接。")
+        else:
+            # 建立到 DuckDB 的持久連接
+            db_path = Path("prometheus_fire.duckdb")
+            self.db_con = duckdb.connect(database=str(db_path), read_only=False)
+            print("DataEngine: DuckDB 連接已建立。")
 
     # 建議增加一個關閉連接的方法，確保程式結束時能優雅關閉
     def close(self):
