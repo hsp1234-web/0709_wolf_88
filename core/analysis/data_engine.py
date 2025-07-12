@@ -44,6 +44,44 @@ class DataEngine:
             self.db_con = duckdb.connect(database=str(db_path), read_only=False)
             print("DataEngine: DuckDB 連接已建立。")
 
+        self._initialize_db()
+
+    def _initialize_db(self):
+        """如果 hourly_time_series 表不存在，則創建它。"""
+        try:
+            # 檢查表是否存在
+            self.db_con.execute("SELECT 1 FROM hourly_time_series LIMIT 1")
+            print("DataEngine: 'hourly_time_series' 表已存在。")
+        except duckdb.CatalogException:
+            # 表不存在，創建它
+            print("DataEngine: 'hourly_time_series' 表不存在，正在創建...")
+            # 根據 generate_snapshot 的結構定義欄位
+            schema = {
+                "timestamp": "TIMESTAMP",
+                "spy_open": "DOUBLE", "spy_high": "DOUBLE", "spy_low": "DOUBLE", "spy_close": "DOUBLE", "spy_volume": "BIGINT",
+                "qqq_close": "DOUBLE", "tlt_close": "DOUBLE", "btc_usd_close": "DOUBLE",
+                "nq_f_close": "DOUBLE", "es_f_close": "DOUBLE", "ym_f_close": "DOUBLE",
+                "cl_f_close": "DOUBLE", "gc_f_close": "DOUBLE", "si_f_close": "DOUBLE",
+                "zb_f_close": "DOUBLE", "zn_f_close": "DOUBLE", "zt_f_close": "DOUBLE", "zf_f_close": "DOUBLE",
+                "gld_close": "DOUBLE", "shy_close": "DOUBLE", "iei_close": "DOUBLE",
+                "aapl_close": "DOUBLE", "msft_close": "DOUBLE", "nvda_close": "DOUBLE", "goog_close": "DOUBLE", "tsm_close": "DOUBLE",
+                "601318_ss_close": "DOUBLE", "688981_ss_close": "DOUBLE", "0981_hk_close": "DOUBLE",
+                "spy_rsi_14_1h": "DOUBLE", "spy_macd_signal_1h": "DOUBLE", "spy_bbands_width_pct_1h": "DOUBLE",
+                "spy_vwap_1h": "DOUBLE", "spy_atr_14_1h": "DOUBLE", "spy_vwap_deviation_pct_1h": "DOUBLE",
+                "spy_momentum_1h_100": "DOUBLE", "spy_bollinger_band_upper_1h": "DOUBLE", "spy_bollinger_band_lower_1h": "DOUBLE",
+                "spy_bb_middle_band_20h": "DOUBLE", "spy_bb_upper_band_20h": "DOUBLE", "spy_bb_lower_band_20h": "DOUBLE",
+                "spy_bb_band_width_pct_20h": "DOUBLE", "spy_bb_percent_b_20h": "DOUBLE",
+                "spy_gex_total": "DOUBLE", "spy_gex_flip_level": "DOUBLE", "spy_max_pain": "DOUBLE",
+                "spy_call_wall_strike": "DOUBLE", "spy_put_wall_strike": "DOUBLE",
+                "spy_pc_ratio_volume": "DOUBLE", "spy_pc_ratio_oi": "DOUBLE", "spy_iv_atm_1m": "DOUBLE",
+                "spy_skew_quantified": "DOUBLE", "spy_vanna_exposure": "DOUBLE", "spy_charm_exposure": "DOUBLE",
+                "vvix_close": "DOUBLE",
+            }
+            columns_def = ", ".join([f'"{col}" {dtype}' for col, dtype in schema.items()])
+            create_table_sql = f"CREATE TABLE hourly_time_series ({columns_def})"
+            self.db_con.execute(create_table_sql)
+            print("DataEngine: 'hourly_time_series' 表已成功創建。")
+
     # 建議增加一個關閉連接的方法，確保程式結束時能優雅關閉
     def close(self):
         self.db_con.close()

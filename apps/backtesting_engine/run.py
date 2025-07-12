@@ -10,6 +10,8 @@ sys.path.append(str(project_root))
 from apps.factor_engine.sma_crossover_factor import calculate_sma_crossover
 from apps.backtesting_engine.engine import Backtester
 
+import os
+
 def main():
     """
     回測管線主執行器。
@@ -30,7 +32,7 @@ def main():
     # 步驟 2: 初始化並運行回測引擎
     print("[2/3] 正在初始化並運行回測引擎...")
     backtester = Backtester(price_series, signal_series)
-    backtester.run()
+    results_df = backtester.run() # 獲取回測結果 DataFrame
 
     # 步驟 3: 獲取並展示績效
     print("[3/3] 正在計算並展示績效報告...")
@@ -40,6 +42,20 @@ def main():
     for key, value in performance.items():
         print(f"{key}: {value}")
     print("---------------------------------")
+
+    # 步驟 4: 儲存結果以供視覺化
+    print("[4/4] 正在儲存回測結果...")
+    output_dir = project_root / "output"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 結合因子數據與回測結果
+    # 注意：backtester.results 的索引可能與 factor_result 不完全對齊，我們用外部合併
+    final_output_df = pd.concat([factor_result, results_df[['cumulative_returns', 'strategy_returns']]], axis=1)
+    final_output_df.index.name = 'datetime'
+
+    output_path = output_dir / "sma_crossover_result.csv"
+    final_output_df.to_csv(output_path)
+    print(f"✔ 結果已儲存至: {output_path}")
 
 if __name__ == "__main__":
     main()
