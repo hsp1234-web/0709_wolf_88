@@ -3,7 +3,6 @@ import hashlib
 import sqlite3
 import argparse
 import zipfile
-from collections import Counter
 
 def get_header_fingerprint(header_line: str) -> str:
     """對標準化後的標頭計算指紋。"""

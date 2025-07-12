@@ -56,9 +56,15 @@ class DataEngine:
         # 2. 計算技術指標
         technicals_data = self._calculate_technicals(ohlcv)
 
-        # 3. 獲取宏觀數據 (範例: VIX)
-        vix_data = self.fred_client.get_series('VIXCLS')
-        latest_vix = vix_data.iloc[-1] if not vix_data.empty else None
+        # 3. 獲取宏觀數據
+        # VIX 指數
+        vix_data = self.fred_client.fetch_data('VIXCLS') # 使用正確的方法名 fetch_data
+        latest_vix = vix_data['VIXCLS'].iloc[-1] if not vix_data.empty and 'VIXCLS' in vix_data.columns else None # 從 DataFrame 中提取 Series
+
+        # 【升級】直接獲取真實 MOVE 指數，取代代理計算
+        # 為了演示，這裡的 start_date 設為固定值，實際應用中可能需要更動態的日期範圍
+        move_series = self.yf_client.get_move_index(start_date="2020-01-01", end_date=as_of_date)
+        latest_move = move_series.iloc[-1] if not move_series.empty else None
 
         # 4. 獲取本地期交所數據 (範例)
         # inst_pos = self.taifex_client.get_institutional_positions(start_date=as_of_date, end_date=as_of_date)
@@ -73,6 +79,7 @@ class DataEngine:
             "technicals_section": technicals_data,
             "macro_section": {
                 "VIX": latest_vix,
+                "MOVE_Index": latest_move, # <--- 使用新指標
             },
             # TODO: 添加期權市場、市場內部結構等部分
         }

@@ -1,9 +1,7 @@
 import pytest
 import os
 import shutil
-import sqlite3
 import duckdb
-import pandas as pd # For creating expected dataframes
 from unittest.mock import patch # Added missing import
 
 # Add project root to sys.path
@@ -13,9 +11,8 @@ if PROJECT_ROOT_FROM_TEST_P2 not in sys.path:
     sys.path.insert(0, PROJECT_ROOT_FROM_TEST_P2)
 
 # Import main functions from P1 and P2
-from pipelines.p1_explorer.run import main as p1_explorer_main
-from pipelines.p2_elt_pipeline.run_elt import main as p2_elt_main
-from pipelines.p1_explorer.run import get_header_fingerprint # To help setup schema if needed
+from pipelines.p1_explorer.run import main as p1_explorer_main  # noqa: E402
+from pipelines.p2_elt_pipeline.run_elt import main as p2_elt_main  # noqa: E402
 
 # Define the path to the fixture files
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')

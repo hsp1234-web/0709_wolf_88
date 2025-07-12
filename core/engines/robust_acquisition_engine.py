@@ -1,15 +1,14 @@
 import asyncio
-import aiohttp
 import pandas as pd
 import yfinance as yf
 import psutil
 import duckdb
-import os
 import requests_cache
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from pybreaker import CircuitBreaker
 from datetime import datetime # 修正導入
+import time # For time.time()
 
 # --- 核心配置 ---
 MEMORY_USAGE_THRESHOLD = 70.0

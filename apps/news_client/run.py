@@ -31,7 +31,7 @@ logger = get_logger(__name__) # 在 sys.path 更新後初始化 logger
 # logger.debug(f"專案根目錄設定為: {project_root}")
 # --- 標準化「路徑自我校正」樣板碼 END ---
 
-from apps.news_client.client import NewsClient, VADER_AVAILABLE
+from apps.news_client.client import NewsClient, VADER_AVAILABLE  # noqa: E402
 
 
 def save_dataframe(df: pd.DataFrame, output_path: str, data_type: str, keywords: str):

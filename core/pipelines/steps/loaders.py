@@ -66,7 +66,7 @@ except ImportError as e:
                 self.logger.info(f"Fallback DatabaseManager connection closed for {self.db_path}")
 
         def create_table_if_not_exists(self, table_name: str, model_schema_ignored): # schema ignored in fallback
-            if not self.conn: return
+            if not self.conn: return  # noqa: E701
             # Fallback schema based on expected DataFrame structure
             # This must align with the DataFrame created from simulated_ticks_data
             fallback_schema_sql = """
@@ -82,7 +82,7 @@ except ImportError as e:
             self.logger.info(f"Fallback: Ensured table '{table_name}' with predefined schema.")
 
         def insert_ticks(self, table_name: str, ticks_input: list | pd.DataFrame):
-            if not self.conn: return
+            if not self.conn: return  # noqa: E701
 
             if isinstance(ticks_input, pd.DataFrame):
                 ticks_df = ticks_input
@@ -164,8 +164,8 @@ if __name__ == '__main__':
 
     test_db_path = "temp_test_tick_loader_step.duckdb"
     # Clean up before test
-    if os.path.exists(test_db_path): os.remove(test_db_path)
-    if os.path.exists(f"{test_db_path}.wal"): os.remove(f"{test_db_path}.wal")
+    if os.path.exists(test_db_path): os.remove(test_db_path)  # noqa: E701
+    if os.path.exists(f"{test_db_path}.wal"): os.remove(f"{test_db_path}.wal")  # noqa: E701
 
     loader_step = TaifexTickLoaderStep(db_path=test_db_path, table_name="test_ticks")
     loaded_data = loader_step.execute()

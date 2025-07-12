@@ -29,10 +29,10 @@ def calculate_file_fingerprint(file_path: str) -> str:
         fp = sha256_hash.hexdigest()
         logger.debug(f"計算檔案 '{file_path}' 的指紋為: {fp}")
         return fp
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         logger.error(f"計算指紋時檔案未找到: {file_path}", exc_info=True)
         raise
-    except IOError as e:
+    except IOError:
         logger.error(f"計算指紋時發生 IO 錯誤: {file_path}", exc_info=True)
         raise
 
@@ -122,7 +122,7 @@ class MetadataManager:
             logger.warning(f"pipeline_metadata_manager.default_etl_version 未在 config.yml 中設定，且未通過參數提供。使用預設後備版本: {resolved_etl_version}")
 
         if resolved_etl_version is None: # Should not happen with fallback, but as a safeguard
-            logger.warning(f"ETL 版本解析為 None，將使用 NULL (或資料庫預設) 寫入資料庫。")
+            logger.warning("ETL 版本解析為 None，將使用 NULL (或資料庫預設) 寫入資料庫。")
             # No explicit pass needed, NULL will be inserted if DB schema allows
 
         logger.debug(f"準備寫入指紋: {fingerprint}, 檔案: {filename}, 大小: {filesize}, ETL 版本: {resolved_etl_version}")

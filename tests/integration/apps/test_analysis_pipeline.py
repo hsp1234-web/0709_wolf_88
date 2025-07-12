@@ -1,7 +1,7 @@
 # tests/integration/apps/test_analysis_pipeline.py
 import pytest
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import subprocess
 import duckdb # 導入 duckdb
 import sys

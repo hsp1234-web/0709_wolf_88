@@ -17,8 +17,12 @@ def mock_clients():
     # 創建一個價格持續上漲的 DataFrame，以測試 RSI 是否會超買
     price_data = {'Close': [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 120]}
     mock_yf.get_history.return_value = pd.DataFrame(price_data)
+    # 設定 get_move_index 的返回值
+    mock_yf.get_move_index.return_value = pd.Series([120.5], name="^MOVE")
 
-    mock_fred.get_series.return_value = pd.Series([25.5], name="VIXCLS")
+
+    # FredClient.fetch_data 返回 DataFrame，欄位名為 symbol
+    mock_fred.fetch_data.return_value = pd.DataFrame({'VIXCLS': [25.5]})
 
     return mock_yf, mock_fred, mock_taifex
 
@@ -45,7 +49,9 @@ def test_data_engine_logic(mock_clients):
 
     # 驗證宏觀數據是否被正確提取
     assert snapshot['macro_section']['VIX'] == 25.5
+    assert snapshot['macro_section']['MOVE_Index'] == 120.5 # 驗證 MOVE 指數
 
     # 驗證客戶端的方法是否被正確呼叫
     mock_yf.get_history.assert_called_once_with("FAKE_TICKER", period="1y")
-    mock_fred.get_series.assert_called_once_with('VIXCLS')
+    mock_fred.fetch_data.assert_called_once_with('VIXCLS') # 確認呼叫的是 fetch_data
+    mock_yf.get_move_index.assert_called_once_with(start_date="2020-01-01", end_date="2025-07-12") # 驗證 get_move_index 呼叫

@@ -2,7 +2,7 @@ import pytest
 import os
 import sqlite3
 import shutil # For cleaning up test directories/files if needed
-from unittest.mock import patch, call # For more complex patching if main() calls other funcs
+from unittest.mock import patch # For more complex patching if main() calls other funcs
 
 # Add project root to sys.path
 import sys
@@ -11,8 +11,8 @@ if PROJECT_ROOT_FROM_TEST_P1 not in sys.path:
     sys.path.insert(0, PROJECT_ROOT_FROM_TEST_P1)
 
 # Import the main function from p1_explorer
-from pipelines.p1_explorer.run import main as p1_explorer_main
-from pipelines.p1_explorer.run import get_header_fingerprint # For verifying fingerprints
+from pipelines.p1_explorer.run import main as p1_explorer_main  # noqa: E402
+from pipelines.p1_explorer.run import get_header_fingerprint  # noqa: E402 # For verifying fingerprints
 
 # Define the path to the fixture files
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
@@ -92,8 +92,8 @@ def test_p1_explorer_scan_fixtures(p1_test_environment):
     # 2. From sample_options_delta_20250711.csv
     #    Header: "商品代號,到期月份(W),履約價,買賣權,結算價,Delta,成交量"
     #    Encoding: UTF-8 (as created)
-    expected_options_header = "商品代號,到期月份(W),履約價,買賣權,結算價,Delta,成交量"
-    expected_options_fingerprint = get_header_fingerprint(expected_options_header)
+    # expected_options_header = "商品代號,到期月份(W),履約價,買賣權,結算價,Delta,成交量" # Unused variable
+    # expected_options_fingerprint = get_header_fingerprint(expected_options_header) # Unused variable
 
     # Verify results
     # 暫時調整：因為 sample_options_delta_20250711.csv 為空，所以只期望找到一種格式

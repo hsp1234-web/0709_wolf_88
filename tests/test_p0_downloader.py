@@ -1,7 +1,7 @@
 import pytest
 import os
 import requests
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Add project root to sys.path to allow imports from pipelines
 import sys
@@ -9,7 +9,7 @@ PROJECT_ROOT_FROM_TEST_P0 = os.path.abspath(os.path.join(os.path.dirname(__file_
 if PROJECT_ROOT_FROM_TEST_P0 not in sys.path:
     sys.path.insert(0, PROJECT_ROOT_FROM_TEST_P0)
 
-from pipelines.p0_downloader.run import execute_download
+from pipelines.p0_downloader.run import execute_download  # noqa: E402
 
 # Define the path to the fixture files
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')

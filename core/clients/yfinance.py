@@ -185,6 +185,44 @@ class YFinanceClient(BaseAPIClient):
         )
         return combined_df
 
+    def get_move_index(self, start_date: str, end_date: str) -> pd.Series:
+        """ 從 yfinance 獲取 ICE BofA MOVE Index (^MOVE) 的歷史收盤價。 """
+        print(f"資訊：YFinanceClient 正在獲取 ^MOVE 指數數據，日期範圍: {start_date} 至 {end_date}")
+        try:
+            move_ticker = yf.Ticker('^MOVE')
+            # yfinance 的 end 參數不包含，所以需將結束日期加一天
+            # 同時，確保 start_date 和 end_date 的格式正確
+            start_date_dt = pd.to_datetime(start_date)
+            end_date_dt = pd.to_datetime(end_date)
+
+            end_date_for_yf = (end_date_dt + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+            start_date_for_yf = start_date_dt.strftime('%Y-%m-%d')
+
+            history = move_ticker.history(start=start_date_for_yf, end=end_date_for_yf)
+
+            if history.empty:
+                print(f"警告：^MOVE 指數在 {start_date_for_yf} 至 {end_date_for_yf} 未返回任何數據。")
+                return pd.Series(dtype='float64', name='Close')
+
+            # 確保返回的是 Series，並且索引是 DatetimeIndex
+            close_series = history['Close']
+            if not isinstance(close_series.index, pd.DatetimeIndex):
+                 close_series.index = pd.to_datetime(close_series.index)
+
+            # 篩選掉結束日期之後的數據（因為我們加了一天）
+            close_series = close_series[close_series.index <= end_date_dt]
+
+            if close_series.empty:
+                print(f"警告：^MOVE 指數在篩選日期 ({start_date_dt.date()} 至 {end_date_dt.date()}) 後數據為空。")
+                return pd.Series(dtype='float64', name='Close')
+
+            print(f"資訊：YFinanceClient 成功獲取 {len(close_series)} 筆 ^MOVE 指數數據。")
+            return close_series
+        except Exception as e:
+            print(f"錯誤：YFinanceClient 獲取 ^MOVE 指數時失敗: {e}")
+            traceback.print_exc() # 添加 traceback 以獲取更詳細的錯誤信息
+            return pd.Series(dtype='float64', name='Close')
+
 if __name__ == "__main__":
     print("--- YFinanceClient 重構後測試 (直接執行 core/clients/yfinance.py) ---")
     try:

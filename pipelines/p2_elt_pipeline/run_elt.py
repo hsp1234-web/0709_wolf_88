@@ -7,17 +7,17 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-import duckdb
-import os
-import argparse
-import zipfile
-import pandas as pd
-import sqlite3
-import io # Added import for io.BytesIO
+import duckdb  # noqa: E402
+import os  # noqa: E402
+import argparse  # noqa: E402
+import zipfile  # noqa: E402
+import pandas as pd  # noqa: E402
+import sqlite3  # noqa: E402
+import io  # noqa: E402 # Added import for io.BytesIO
 
 # --- Loader 邏輯 ---
 # Moved import to top level for module-wide use
-from pipelines.p1_explorer.run import prospect_file_content, get_header_fingerprint
+from pipelines.p1_explorer.run import prospect_file_content, get_header_fingerprint  # noqa: E402
 
 def run_loader(input_dir, raw_db_path, schema_db_path):
     print("\n--- [階段 2] 執行 Loader ---")
@@ -69,7 +69,7 @@ def run_loader(input_dir, raw_db_path, schema_db_path):
             continue
 
         # 簡易版：檢查是否已載入
-        if raw_conn.execute(f"SELECT COUNT(*) FROM raw_import_log WHERE file_path = ?", (file_path,)).fetchone()[0] > 0:
+        if raw_conn.execute("SELECT COUNT(*) FROM raw_import_log WHERE file_path = ?", (file_path,)).fetchone()[0] > 0:
             print(f"[INFO] Loader: File {filename} already in raw_import_log. Skipping.")
             continue
 
@@ -202,7 +202,7 @@ def run_transformer(raw_db_path, schema_db_path, analytics_db_path):
         # No data to process if the table was just created empty
         raw_conn.close()
         analytics_conn.close()
-        print(f"Transformer 完成，成功轉換 0 筆記錄 (raw_import_log was missing or empty).")
+        print("Transformer 完成，成功轉換 0 筆記錄 (raw_import_log was missing or empty).")
         return
 
     # 範例：只為一種特定格式建立表格

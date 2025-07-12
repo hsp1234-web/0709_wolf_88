@@ -1,34 +1,48 @@
-# 檔案路徑: tests/integration/test_data_engine_cache.py
+# 檔案路徑: tests/integration/analysis/test_data_engine_cache.py
 import pytest
 import requests_cache
-from unittest.mock import patch, MagicMock # 增加了 MagicMock
-import pandas as pd # 增加了 pandas
+import os # 導入 os 模組
+from unittest.mock import MagicMock # <--- 修正導入 (已存在，確認無誤)
+import pandas as pd
+import fredapi # <--- 導入 fredapi 以便 spy
 
 from core.clients.base import BaseAPIClient # 我們需要監控它的請求方法
 from core.clients.fred import FredClient
 from core.analysis.data_engine import DataEngine
 
-# 為了簡化，這裡只測試 FredClient 的快取
-# 在真實場景中，需要為每個客戶端都進行類似設置
+# 獲取 API 金鑰
+FRED_API_KEY = os.environ.get("FRED_API_KEY_TEST_ONLY") # 使用不同的環境變數名稱以示區隔
+
 @pytest.fixture(scope="module")
 def real_fred_client():
     """創建一個使用暫存快取的真實客戶端實例。"""
+    if not FRED_API_KEY:
+        pytest.skip("FRED_API_KEY_TEST_ONLY 環境變數未設定，跳過此整合測試。") # <--- 如果沒有金鑰則跳過
     session = requests_cache.CachedSession('test_cache', backend='sqlite', expire_after=300)
-    return FredClient(api_key="YOUR_FRED_API_KEY", session=session) # 注意：需要一個真實或假的API Key
+    # FredClient 現在接受 api_key 參數，並且我們已修改其 __init__
+    return FredClient(api_key=FRED_API_KEY, session=session)
 
 # 清理快取
 @pytest.fixture(autouse=True)
 def cleanup_cache(real_fred_client):
-    real_fred_client.session.cache.clear()
+    # 如果 real_fred_client 被跳過，它不會被執行，所以這裡需要一個保護
+    if hasattr(real_fred_client, 'session') and real_fred_client.session:
+        real_fred_client.session.cache.clear()
+    else:
+        # 如果 real_fred_client fixture 被跳過，那麼 real_fred_client 可能是一個 SkipMarker 或類似物件
+        # 在這種情況下，我們不需要清除快取，因為 client 都沒有被創建。
+        pass
 
+
+@pytest.mark.skipif(not FRED_API_KEY, reason="FRED_API_KEY_TEST_ONLY is not set") # <--- 在測試函數層級也加入跳過條件
 def test_data_engine_caching(real_fred_client, mocker): # mocker 是 pytest-mock 的 fixture
     """
     【演習場測試】
     驗證快取機制是否能避免重複的 API 呼叫。
     """
     # 1. 準備 (Arrange)
-    # 監控 BaseAPIClient 的核心請求方法
-    spy = mocker.spy(BaseAPIClient, '_perform_request')
+    # 監控 fredapi.Fred 類的 get_series 方法
+    spy = mocker.spy(fredapi.Fred, 'get_series')
 
     # 創建一個假的 yfinance 客戶端，因為我們只想測試 FRED 的快取
     mock_yf = MagicMock()

@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 logger.debug(f"專案根目錄設定為: {project_root} (日誌來自 report_generator/run.py)")
 # --- 標準化「路徑自我校正」樣板碼 END ---
 
-from apps.report_generator.generator import ReportGenerator
+from apps.report_generator.generator import ReportGenerator  # noqa: E402
 
 # project_root 現在由上面的樣板碼定義
 DEFAULT_DB_PATH = project_root / "analytics_mart.duckdb"

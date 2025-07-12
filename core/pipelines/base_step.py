@@ -1,7 +1,6 @@
 # core/pipelines/base_step.py
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
 
 import pandas as pd

@@ -18,9 +18,9 @@ if project_root_for_direct_run not in sys.path:
     # 暫時使用 print，因為 logger 還未初始化
     print(f"DEBUG (run_factor_etl.py direct run): 已將專案根目錄 {project_root_for_direct_run} 添加到 sys.path")
 
-from core.logger import get_logger
-from apps.daily_market_analyzer.db_manager import DBManager # 假設此模組路徑在 sys.path 更新後有效
-from apps.factor_engine.engine import FactorEngine # 假設此模組路徑在 sys.path 更新後有效
+from core.logger import get_logger  # noqa: E402
+from apps.daily_market_analyzer.db_manager import DBManager  # noqa: E402, 假設此模組路徑在 sys.path 更新後有效
+from apps.factor_engine.engine import FactorEngine  # noqa: E402, 假設此模組路徑在 sys.path 更新後有效
 
 
 logger = get_logger(__name__)

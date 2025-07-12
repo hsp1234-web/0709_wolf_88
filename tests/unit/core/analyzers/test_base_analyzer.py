@@ -106,7 +106,7 @@ def test_base_analyzer_initialization_logs_name(mocker):
     mocker.patch('logging.getLogger', return_value=mock_logger) # Mock getLogger 以捕獲日誌實例
 
     analyzer_name = "my_test_analyzer"
-    analyzer = DummyAnalyzer(analyzer_name=analyzer_name)
+    DummyAnalyzer(analyzer_name=analyzer_name) # Create instance, but not assigned if not used
 
     # 驗證 getLogger 是否以正確的名稱被調用
     # logging.getLogger.assert_called_once_with(f"analyzer.{analyzer_name}") # 這是 mocker.patch 的用法
@@ -121,7 +121,7 @@ def test_base_analyzer_initialization_logs_name(mocker):
 
     # 重新設計這個測試，直接檢查實例的 logger
     analyzer_name_direct = "direct_logger_test"
-    analyzer_direct = DummyAnalyzer(analyzer_name=analyzer_name_direct)
+    DummyAnalyzer(analyzer_name=analyzer_name_direct) # Create instance, but not assigned if not used
 
     # 由於 logger 是在 BaseAnalyzer 的 __init__ 中創建的，我們需要 mock BaseAnalyzer 內部的 getLogger
     # 或者，更簡單的方式是，如果 BaseAnalyzer.__init__ 確實調用了 self.logger.info，

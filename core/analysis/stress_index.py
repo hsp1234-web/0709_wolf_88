@@ -11,7 +11,7 @@
 """
 import pandas as pd
 import plotly.graph_objects as go
-from typing import List, Dict
+from typing import Dict
 
 # 導入我們經過驗證的數據客戶端
 from core.clients.fred import FredClient
@@ -190,8 +190,8 @@ class StressIndexCalculator:
         # 移除原始利率，只保留利差 (如果已計算)
         # 確保只移除我們定義在 self.fred_series 中的原始利率欄位名
         cols_to_drop = []
-        if 'DGS10' in self.fred_series.values(): cols_to_drop.append('DGS10')
-        if 'DGS2' in self.fred_series.values(): cols_to_drop.append('DGS2')
+        if 'DGS10' in self.fred_series.values(): cols_to_drop.append('DGS10')  # noqa: E701
+        if 'DGS2' in self.fred_series.values(): cols_to_drop.append('DGS2')  # noqa: E701
 
         # 檢查這些列是否存在於 aligned_df 中再刪除
         existing_cols_to_drop = [col for col in cols_to_drop if col in aligned_df.columns]
@@ -202,12 +202,12 @@ class StressIndexCalculator:
         # 篩選出我們實際要用於 Z-score 計算的欄位
         # 這些欄位應該是 VIX, Yield_Spread, Reserves, SOFR, NYFed_Positions (Total_Positions)
         final_columns_for_zscore = []
-        if 'VIX' in aligned_df.columns: final_columns_for_zscore.append('VIX')
-        if 'Yield_Spread' in aligned_df.columns: final_columns_for_zscore.append('Yield_Spread')
-        if 'Reserves' in aligned_df.columns: final_columns_for_zscore.append('Reserves')
-        if 'SOFR' in aligned_df.columns: final_columns_for_zscore.append('SOFR')
+        if 'VIX' in aligned_df.columns: final_columns_for_zscore.append('VIX')  # noqa: E701
+        if 'Yield_Spread' in aligned_df.columns: final_columns_for_zscore.append('Yield_Spread')  # noqa: E701
+        if 'Reserves' in aligned_df.columns: final_columns_for_zscore.append('Reserves')  # noqa: E701
+        if 'SOFR' in aligned_df.columns: final_columns_for_zscore.append('SOFR')  # noqa: E701
         # **修正**: 檢查 'NYFed_Positions' 而不是 'Total_Positions'
-        if 'NYFed_Positions' in aligned_df.columns: final_columns_for_zscore.append('NYFed_Positions')
+        if 'NYFed_Positions' in aligned_df.columns: final_columns_for_zscore.append('NYFed_Positions')  # noqa: E701
 
         if not final_columns_for_zscore:
             print("錯誤：沒有可用於 Z-score 計算的最終欄位。")

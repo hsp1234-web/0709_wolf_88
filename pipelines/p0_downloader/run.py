@@ -5,7 +5,6 @@ import random
 import argparse
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import warnings
 from collections import Counter
 
 # --- 全域配置 (可移至設定檔) ---
@@ -54,7 +53,7 @@ def main():
     parser.add_argument('--max-workers', type=int, default=16, help="最大同時下載任務數")
     args = parser.parse_args()
 
-    print(f"--- 啟動數據採集任務 ---")
+    print("--- 啟動數據採集任務 ---")
     print(f"時間範圍: {args.start_date} 到 {args.end_date}")
     print(f"輸出目錄: {args.output_dir}")
 

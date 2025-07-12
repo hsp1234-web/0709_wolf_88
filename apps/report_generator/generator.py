@@ -4,14 +4,15 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 import pytz  # 確保導入 pytz 以便在 __main__ 中使用
+import sys # For sys.exit
 from typing import Any # For type hints
 
 from core.logger import get_logger # 移到頂部
 logger = get_logger(__name__)
 
 # 導入 Plotly - 直接導入，如果失敗則讓 ImportError 自然拋出
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import plotly.graph_objects as go  # noqa: E402
+from plotly.subplots import make_subplots  # noqa: E402
 
 
 class ReportGenerator:
