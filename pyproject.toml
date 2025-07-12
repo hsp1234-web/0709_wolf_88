@@ -52,7 +52,7 @@ pybreaker = "^1.4.0" # Moved from dev-dependencies
 # statsmodels = "^0.14.5"     # 提供豐富的統計模型與測試 # Unused
 
 # G. 資料視覺化
-plotly = "^6.2.0"           # 強大的互動式圖表函式庫
+plotly = ">=5.18.0,<5.19.0"           # 強大的互動式圖表函式庫
 
 # H. 核心工具與輔助
 # python-dateutil = "^2.9.0.post0" # 強大的日期字串解析功能 # Unused
@@ -72,6 +72,8 @@ fredapi = "^0.5.2"               # FRED API 客戶端
 
 # --- 開發依賴 (Development Dependencies) ---
 # 用於保證專案品質的基石，應在 [tool.poetry.group.dev.dependencies] 中定義
+vectorbt = "^0.28.0"
+pydantic = "^2.11.7"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"           # 核心測試框架
 pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件
