@@ -1,92 +1,54 @@
 # apps/report_generator/run.py
 import argparse
-import os
 import sys
 from pathlib import Path
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
 try:
     current_script_path = Path(__file__).resolve()
-    project_root = current_script_path.parent.parent.parent
+    project_root = current_script_path.parents[2]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
 except NameError:
-    project_root = Path(os.getcwd()).resolve()
-except Exception as e:
-    print(
-        f"緊急錯誤: 在確定專案根目錄時發生初始錯誤 (apps/report_generator/run.py): {e}",
-        file=sys.stderr,
-    )
-    project_root = Path(".").resolve()
-
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-from core.logger import get_logger
-
-logger = get_logger(__name__)
-
-logger.debug(f"專案根目錄設定為: {project_root} (日誌來自 report_generator/run.py)")
+    project_root = Path.cwd()
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
 # --- 標準化「路徑自我校正」樣板碼 END ---
 
-from apps.report_generator.generator import ReportGenerator  # noqa: E402
+from apps.report_generator.generator import ReportGenerator
+from core.logger import LogManager
 
-# project_root 現在由上面的樣板碼定義
 DEFAULT_DB_PATH = project_root / "analytics_mart.duckdb"
 DEFAULT_OUTPUT_DIR = project_root / "output"
 
 
-def main():
+def main(log_manager: LogManager):
     parser = argparse.ArgumentParser(
         description="視覺化報告生成器：為指定標的生成包含複合信號標記的K線圖報告。"
     )
-    parser.add_argument(
-        "--stock-id", required=True, type=str, help="要生成報告的股票代碼。"
-    )
-    parser.add_argument(
-        "--start-date", required=True, type=str, help="報告開始日期 (YYYY-MM-DD)。"
-    )
-    parser.add_argument(
-        "--end-date", required=True, type=str, help="報告結束日期 (YYYY-MM-DD)。"
-    )
-    parser.add_argument(
-        "--timeframe",
-        type=str,
-        default="1d",
-        help="報告的時間週期 (例如: '1min', '5min', '1h', '1d', '1w', '1m')。預設為 '1d' (日線)。",
-    )
-    parser.add_argument(
-        "--db-path",
-        type=str,
-        default=str(DEFAULT_DB_PATH),
-        help=f"分析資料庫路徑 (預設: {DEFAULT_DB_PATH})",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default=str(DEFAULT_OUTPUT_DIR),
-        help=f"報告輸出目錄 (預設: {DEFAULT_OUTPUT_DIR})",
-    )
+    parser.add_argument("--stock-id", required=True, type=str, help="要生成報告的股票代碼。")
+    parser.add_argument("--start-date", required=True, type=str, help="報告開始日期 (YYYY-MM-DD)。")
+    parser.add_argument("--end-date", required=True, type=str, help="報告結束日期 (YYYY-MM-DD)。")
+    parser.add_argument("--timeframe", type=str, default="1d", help="報告的時間週期。預設為 '1d'。")
+    parser.add_argument("--db-path", type=str, default=str(DEFAULT_DB_PATH), help=f"分析資料庫路徑 (預設: {DEFAULT_DB_PATH})")
+    parser.add_argument("--output-dir", type=str, default=str(DEFAULT_OUTPUT_DIR), help=f"報告輸出目錄 (預設: {DEFAULT_OUTPUT_DIR})")
 
     args = parser.parse_args()
-    logger.info(f"接收到的參數: {args}")
+    log_manager.log("INFO", f"接收到的參數: {args}")
 
-    logger.info(f"指令：開始為股票 {args.stock_id} 生成報告...")
-    logger.info(f"時間週期: {args.timeframe}")
-    logger.info(f"日期範圍: {args.start_date} 至 {args.end_date}")
-    logger.info(f"使用資料庫: {args.db_path}")
-    logger.info(f"報告輸出至: {args.output_dir}")
+    log_manager.log("INFO", f"指令：開始為股票 {args.stock_id} 生成報告...")
+    log_manager.log("INFO", f"時間週期: {args.timeframe}")
+    log_manager.log("INFO", f"日期範圍: {args.start_date} 至 {args.end_date}")
 
-    # 確保輸出目錄存在
     output_path = Path(args.output_dir)
     try:
         output_path.mkdir(parents=True, exist_ok=True)
     except OSError as e:
-        logger.error(f"創建輸出目錄 {output_path} 失敗: {e}", exc_info=True)
+        log_manager.log("ERROR", f"創建輸出目錄 {output_path} 失敗: {e}")
         sys.exit(1)
 
     try:
-        generator = ReportGenerator(
-            db_path=args.db_path
-        )  # ReportGenerator 內部也應使用 logger
+        generator = ReportGenerator(db_path=args.db_path, log_manager=log_manager)
         report_path = generator.generate_report(
             stock_id=args.stock_id,
             start_date_str=args.start_date,
@@ -95,27 +57,21 @@ def main():
             output_dir=output_path,
         )
         if report_path:
-            logger.info(f"報告已成功生成並儲存於: {report_path}")
-            sys.exit(0)
+            log_manager.log("INFO", f"報告已成功生成並儲存於: {report_path}")
         else:
-            logger.warning(
-                f"報告檔案未實際生成 (股票: {args.stock_id}, 週期: {args.timeframe})。詳情請查看 generate_report 內部日誌。"
-            )
-            sys.exit(0)  # 以成功碼退出
-    except ImportError as ie:
-        logger.error(
-            f"發生導入錯誤: {ie}. 請確保已安裝所有必要的套件 (例如 plotly)。",
-            exc_info=True,
-        )
-        sys.exit(1)
+            log_manager.log("WARNING", f"報告檔案未實際生成 (股票: {args.stock_id}, 週期: {args.timeframe})。")
     except Exception as e:
-        logger.error(
-            f"生成報告時發生未預期錯誤 (股票: {args.stock_id}, 週期: {args.timeframe}): {e}",
-            exc_info=True,
-        )
+        log_manager.log("ERROR", f"生成報告時發生未預期錯誤: {e}")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    logger.info("report_generator/run.py 作為腳本執行...")
-    main()
+    # Setup for standalone execution
+    output_dir = project_root / "output"
+    log_db_path = output_dir / "logs" / "standalone_test.sqlite"
+    archive_dir = output_dir / "logs" / "archive"
+    dummy_logger = LogManager(db_path=log_db_path, archive_dir=archive_dir)
+
+    dummy_logger.log("INFO", "report_generator/run.py 作為腳本執行...")
+    main(log_manager=dummy_logger)
+    dummy_logger.archive_to_file()

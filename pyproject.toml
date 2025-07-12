@@ -7,7 +7,7 @@
 
 [tool.poetry]
 name = "financial-analysis-agent"
-version = "0.1.0"
+version = "0.6.0"
 description = "AI-assisted financial data analysis project based on the Bedrock Protocol."
 authors = ["Jules Agent <jules@agent.ai>"]
 readme = "README.md"

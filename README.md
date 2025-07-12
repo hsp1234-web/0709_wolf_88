@@ -1,16 +1,19 @@
-# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.8.0**
+# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.6.0**
 
 ## **一、 專案概覽與目的**
 
 【普羅米修斯之火】是一個專為進階量化研究與金融市場分析而設計的 Python 框架。本專案旨在提供一個從多樣化數據源獲取金融數據、進行複雜指標計算、回測交易策略、並將結果視覺化的完整解決方案。其核心設計強調模組化、可擴展性以及數據處理的穩健性。
 
-**最近更新 (作戰計畫 035):**
-*   **TaifexFileReader 模擬測試環境**: 成功建立了 `TaifexFileReader` 的本地模擬測試環境，包括創建模擬數據 Fixture，並修改原型腳本以讀取這些本地檔案，驗證了核心的解析邏輯。
+**最近更新（作戰計畫 038：「精準指示器系統」實作）：**
+*   **架構升級**: 引入了基於 `Typer` 的統一命令列介面 (`run.py`)，標準化所有應用的執行流程。
+*   **日誌系統**: 實作了 v82.0「精準指示器」日誌系統 (`core/logger.py`)，提供基於 SQLite 的即時日誌記錄與任務結束後的自動歸檔功能。
+*   **全專案重構**: 將所有模組的日誌記錄方式重構為依賴注入模型，以適應新的日誌系統，並修復了相關的所有測試。
 
 ## **二、 技術棧 (Technology Stack)**
 
 *   **核心程式語言:** Python (>=3.12, <3.14)
 *   **依賴管理:** Poetry (v1.8.2 或相容版本)
+*   **命令列介面**: Typer (`^0.16.0`)
 *   **數據處理:**
     *   Pandas (`^2.3.1`)
     *   NumPy (`<2.0`)
@@ -22,6 +25,7 @@
     *   YFinance (`0.2.60`)
 *   **資料庫**:
     *   DuckDB (`^1.3.2`)
+    *   SQLite3 (內建，用於日誌系統)
 *   **設定檔管理:**
     *   PyYAML (`^6.0.2`)
 *   **視覺化**:
@@ -31,12 +35,14 @@
     *   Pytest-Mock (`^3.14.1`)
     *   Ruff (用於程式碼檢查與格式化)
 
-## **三、 檔案目錄結構**
+## **三、 檔案目錄結構 (v0.6.0)**
 
-以下為專案目前的檔案目錄結構 (已移除 `__pycache__` 和臨時檔案)：
+以下為專案目前的完整檔案目錄結構 (已移除 `__pycache__` 和臨時檔案)：
 
 ```
 .
+├── README.md
+├── _test_run.py
 ├── apps
 │   ├── analysis_pipeline
 │   │   └── run.py
@@ -58,11 +64,12 @@
 │   │   └── run.py
 │   ├── visualization
 │   │   └── plot_sma_crossover.py
-│   ├── run_fmp_test.py
 │   ├── run_finmind_test.py
+│   ├── run_fmp_test.py
 │   ├── run_gold_layer.py
 │   ├── run_stress_index.py
 │   └── run_taifex_prototype_test.py
+├── config.yml
 ├── core
 │   ├── analysis
 │   │   ├── data_engine.py
@@ -77,20 +84,25 @@
 │   │   ├── nyfed.py
 │   │   ├── taifex_db.py
 │   │   └── yfinance.py
+│   ├── config.py
+│   ├── constants.py
 │   ├── db
 │   │   └── db_manager.py
 │   ├── engines
 │   │   └── robust_acquisition_engine.py
+│   ├── logger.py
 │   ├── pipelines
 │   │   ├── base_step.py
 │   │   ├── pipeline.py
 │   │   └── steps
-│   ├── config.py
-│   ├── constants.py
-│   └── logger.py
+│   └── utils
+│       ├── caching.py
+│       └── path_utils.py
+├── mypy.ini
 ├── output
-│   ├── sma_crossover_chart.html
-│   └── sma_crossover_result.csv
+│   └── logs
+│       ├── archive
+│       └── standalone_test.sqlite
 ├── pipelines
 │   ├── p0_downloader
 │   │   └── run.py
@@ -100,26 +112,29 @@
 │   │   └── run_elt.py
 │   └── p3_backfill_hourly_data
 │       └── run.py
-├── tests
-│   ├── fixtures
-│   │   ├── corrupted.zip
-│   │   ├── no_data_response.html
-│   │   ├── sample_daily_ohlc_20250711.zip
-│   │   └── taifex_data
-│   │       ├── Delta值_2025_05_31.csv
-│   │       ├── Delta值_2025_07_03.csv
-│   │       └── PC_Ratio_2025_07_01.csv
-│   ├── integration
-│   │   ├── analysis
-│   │   ├── apps
-│   │   └── pipelines
-│   └── unit
-│       ├── analysis
-│       └── core
-├── config.yml
 ├── poetry.lock
 ├── pyproject.toml
-└── README.md
+├── pytest.ini
+├── run.py
+├── run_pipeline.sh
+├── run_tests.py
+└── tests
+    ├── conftest.py
+    ├── fixtures
+    │   ├── corrupted.zip
+    │   ├── no_data_response.html
+    │   └── sample_daily_ohlc_20250711.zip
+    ├── ignition_test.py
+    ├── integration
+    │   ├── analysis
+    │   ├── apps
+    │   └── pipelines
+    ├── test_p0_downloader.py
+    ├── test_p1_explorer.py
+    ├── test_p2_elt_pipeline.py
+    └── unit
+        ├── analysis
+        └── core
 ```
 
 ## **四、 環境設定與執行**
@@ -132,105 +147,95 @@
 4.  **安裝依賴**: `poetry install`。
 5.  **激活虛擬環境**: `poetry shell` (或使用 `poetry run <command>`)。
 6.  **設定 API 金鑰**:
-    *   為了運行所有數據獲取功能，您**必須**在 `config.yml` 中提供有效的 API 金鑰/Token。
+    *   **FRED API 金鑰**: 為了運行壓力指數計算，您**必須**在 `config.yml` 中提供一個有效的 FRED API 金鑰。
         ```yaml
         # In config.yml
         api_keys:
           fred: "YOUR_REAL_FRED_API_KEY_HERE"
-          fmp: "YOUR_REAL_FMP_API_KEY_HERE"
-          finmind: "YOUR_REAL_FINMIND_API_TOKEN_HERE"
         ```
     *   ⚠️ **安全警告**：`config.yml` 檔案包含敏感金鑰，**絕對不可**提交到任何版本控制系統（如 Git）。請確保它已被列在 `.gitignore` 檔案中。
 
 ## **五、 主要功能執行與測試**
 
-### **5.1 數據客戶端實戰驗證**
+### **5.1 主要功能執行 (v0.6.0 新版 CLI 用法)**
+**[重要]** 從 v0.6.0 開始，所有獨立的應用腳本都已整合至根目錄的 `run.py` 中，透過子命令進行呼叫。
 
-這些腳本用於驗證各個數據客戶端與真實 API 的連通性。請確保已在 `config.yml` 中設定對應的金鑰。
-
-1.  **驗證 FRED & NYFED (壓力指數)**:
+*   **查看所有可用命令**:
     ```bash
-    poetry run python apps/run_stress_index.py
+    poetry run python run.py --help
     ```
-2.  **驗證 FMP (以獲取 Apple 股價為例)**:
+*   **執行 SMA 策略回測**:
     ```bash
-    poetry run python apps/run_fmp_test.py
+    poetry run python run.py sma-backtest
     ```
-3.  **驗證 FinMind (以獲取台積電三大法人買賣超為例)**:
+*   **執行壓力指數計算**:
     ```bash
-    poetry run python apps/run_finmind_test.py
+    poetry run python run.py stress-index
     ```
-
-### **5.2 Taifex 檔案讀取器原型驗證**
-
-此腳本用於驗證 `TaifexFileReader` 的本地檔案解析邏輯，不需網路連線或 API 金鑰。
-
-*   **執行原型驗證**:
+*   **執行 FMP 數據獲取驗證**:
     ```bash
-    poetry run python apps/run_taifex_prototype_test.py
+    poetry run python run.py fmp-fetch
     ```
 
-### **5.3 數據回填與快取**
+### **5.2 (歷史用法 - v0.5.0 及更早版本)**
 
-此管線用於填充 DuckDB 資料庫，供其他模組使用。
-
+#### **5.2.1 數據回填與快取 (歷史)**
 *   **執行數據回填**:
     ```bash
+    # [舊命令，v0.6.0 後不推薦]
     poetry run python pipelines/p3_backfill_hourly_data/run.py
     ```
 *   **說明**: 此腳本會使用 `YFinanceClient` (無需金鑰) 獲取 SPY 的小時級數據，並存儲在根目錄的 `prometheus_fire.duckdb` 檔案中。
 
-### **5.4 執行 SMA 策略回測與視覺化**
-
-這是一個完整的無金鑰工作流程，用於驗證因子計算、回測和視覺化功能。
-
+#### **5.2.2 執行 SMA 策略回測與視覺化 (歷史)**
 1.  **計算因子並執行回測**:
     ```bash
+    # [舊命令，v0.6.0 後請使用 run.py sma-backtest]
     poetry run python apps/backtesting_engine/run.py
     ```
-    *   **說明**: 此腳本會從 DuckDB 讀取數據，計算 SMA 交叉信號，執行回測，打印績效報告，並將詳細結果儲存到 `output/sma_crossover_result.csv`。
-
 2.  **生成視覺化圖表**:
     ```bash
+    # [此腳本暫未整合至 run.py]
     poetry run python apps/visualization/plot_sma_crossover.py
     ```
-    *   **說明**: 此腳本會讀取上一步生成的 CSV 檔案，並在 `output` 目錄下創建一個名為 `sma_crossover_chart.html` 的互動式圖表。
 
-### **5.5 測試**
+#### **5.2.3 執行壓力指數計算 (歷史)**
+*   **執行計算**:
+    ```bash
+    # [舊命令，v0.6.0 後請使用 run.py stress-index]
+    poetry run python apps/run_stress_index.py
+    ```
+
+### **5.3 測試**
 *   **運行所有測試**:
     ```bash
     poetry run pytest
     ```
-*   **目前測試狀態**: 109 個通過, 16 個跳過 (基於最近一次完整測試運行)。
+*   **目前測試狀態**: 112 個通過, 16 個跳過 (基於最近一次完整測試運行)。
 
 ## **六、 版本歷史與變更日誌**
 
-### **v0.8.0 (對應作戰計畫 035)**
-*   **功能驗證**:
-    *   **TaifexFileReader**: 成功建立了 `TaifexFileReader` 的本地模擬測試環境，並驗證了其核心解析邏輯。
-*   **新增功能**:
-    *   新增 `apps/run_taifex_prototype_test.py` 作為 TaifexFileReader 的原型驗證腳本。
-    *   在 `tests/fixtures/` 下新增 `taifex_data` 目錄，並建立 `PC_Ratio` 和 `Delta` 值的模擬 CSV 檔案。
-*   **修復**:
-    *   修正了模擬檔案的編碼問題，確保其為 `ms950` 編碼，以符合 `pandas` 的讀取需求。
-
-### **v0.7.0 (對應作戰計畫 033)**
-*   **功能驗證**:
-    *   **FinMindClient**: 成功執行了端到端的實戰驗證，確認可獲取台灣市場數據。
-*   **新增功能**:
-    *   新增 `apps/run_finmind_test.py` 作為 FinMindClient 的標準驗證腳本。
-*   **配置**:
-    *   在 `config.yml` 中新增 `finmind` API Token 的配置項。
-
-### **v0.6.0 (對應作戰計畫 032)**
-*   **功能驗證**:
-    *   **FMPClient**: 成功執行了端到端的實戰驗證，確認可獲取美國市場股價數據。
-*   **新增功能**:
-    *   新增 `apps/run_fmp_test.py` 作為 FMPClient 的標準驗證腳本。
-*   **配置**:
-    *   在 `config.yml` 中新增 `fmp` API Key 的配置項。
-*   **修復**:
-    *   修正了驗證腳本中 `config` 模組的導入方式，從 `load_config` 函數改為直接使用 `config` 實例。
+### **v0.6.0 (2025-07-13) - 作戰計畫 038**
+*   **【重大架構升級】實作統一 CLI 入口與 v82.0 精準指示器日誌系統**
+    *   **背景**: 隨著專案模組增加，舊有的分散式執行方式 (每個 `app` 都有自己的執行腳本) 導致了代碼重複、日誌分散、難以統一管理等問題。為了建立一個更穩健、可擴展的框架，我們引入了中央指揮與控制系統。
+    *   **實作細節**:
+        *   **引入 `Typer`**: 在根目錄下建立 `run.py`，利用 `Typer` 函式庫將其打造為一個功能強大且易於擴展的命令列介面 (CLI) 應用。現在，所有核心功能都作為子命令 (如 `stress-index`, `sma-backtest`) 註冊到 `run.py` 中。
+        *   **建立 `LogManager`**: 在 `core/logger.py` 中，設計並實作了 `LogManager` 類別。此類別在 `run.py` 啟動時被實例化，並透過 `Typer` 的上下文 (`ctx.obj`) 依賴注入到各個子命令對應的任務函數中。
+        *   **日誌持久化與歸檔**: `LogManager` 使用 `SQLite` 作為即時日誌後端 (`output/logs/session.sqlite`)，確保了日誌寫入的高效與安全。在每個任務 (無論成功或失敗) 結束時，`run.py` 的 `finally` 區塊會確保 `LogManager` 的 `archive_to_file` 方法被呼叫，將該次執行的所有日誌轉存為一個帶時間戳的 `.txt` 報告，存放於 `output/logs/archive/`，實現了永久的、人類可讀的作戰紀錄。
+    *   **影響**:
+        *   **開發流程簡化**: 開發者現在只需關注 `apps/` 下的業務邏輯，並將其主函數註冊到 `run.py` 即可，無需再編寫重複的路徑校正和日誌初始化代碼。
+        *   **可追溯性增強**: 所有的操作都有了集中化、永久性的日誌記錄，極大地便利了問題排查和結果審計。
+*   **【全專案重構】日誌系統整合**
+    *   **背景**: 為了配合全新的 `LogManager`，所有先前使用舊版 `get_logger` 的模組都需要進行重構。
+    *   **實作細節**:
+        *   系統性地掃描了 `apps/` 目錄下的所有模組。
+        *   將模組中的主函數 (如 `main`, `run_etl`) 的簽名進行修改，使其能夠接收一個 `log_manager: LogManager` 參數。
+        *   移除了所有 `from core.logger import get_logger` 的引用。
+        *   將所有的 `logger.info(...)` 呼叫替換為 `log_manager.log("INFO", ...)`。
+        *   更新了 `if __name__ == "__main__":` 區塊，在獨立執行時創建一個備用的 `LogManager` 實例，以保持模組的獨立可測試性。
+    *   **影響**:
+        *   統一了整個專案的日誌記錄方式。
+        *   修復了 `ignition_test.py` 中因無法導入 `get_logger` 而導致的大量測試失敗。
 
 ### **v0.5.0 (對應作戰計畫 031)**
 *   **功能驗證**:
