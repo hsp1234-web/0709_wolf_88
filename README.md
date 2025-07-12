@@ -32,38 +32,113 @@
 *   **其他主要依賴:** (詳見 `pyproject.toml`)
     *   DuckDB (`^1.3.2`), SciPy (`^1.15.3`), Numba (`^0.61.2`), Peewee (`^3.18.2`), Statsmodels (`^0.14.5`), python-dateutil, pytz, psutil 等。
 
-## **三、 檔案目錄結構 (部分)**
+## **三、 檔案目錄結構**
+
+以下為專案目前的完整檔案目錄結構 (使用 `tree -L 3 -a -I '.git|.pytest_cache|__pycache__|.venv' --dirsfirst` 命令產生)：
 
 ```
 .
-├── README.md
-├── config.yml                 # 專案設定檔 (API 金鑰應在此配置，並加入 .gitignore)
-├── poetry.lock
-├── pyproject.toml             # Poetry 專案定義與依賴管理
-├── core/
-│   ├── analysis/              # 分析引擎與邏輯
-│   │   └── data_engine.py     # 數據引擎核心 (已整合 MOVE 指數)
-│   ├── clients/               # API 數據客戶端模組
-│   │   ├── base.py            # 基礎 API 客戶端 (含快取)
-│   │   ├── fred.py            # FRED 數據客戶端 (含應急快取)
-│   │   ├── yfinance.py        # Yahoo Finance 客戶端 (新增 get_move_index)
-│   │   └── nyfed.py           # 紐約聯儲數據客戶端
-│   ├── config.py              # 設定檔管理器
-│   └── utils/
-│       └── caching.py         # 快取相關工具函數
-├── tests/
+├── apps
+│   ├── analysis_pipeline
+│   │   └── run.py
+│   ├── backtesting_engine
+│   │   ├── __init__.py
+│   │   └── main.py
+│   ├── factor_engine
+│   │   ├── engine.py
+│   │   └── run_factor_etl.py
+│   ├── news_client
+│   │   └── run.py
+│   ├── pipeline_metadata_manager
+│   │   ├── __init__.py
+│   │   └── manager.py
+│   ├── portfolio_optimizer
+│   │   ├── __init__.py
+│   │   └── main.py
+│   ├── report_generator
+│   │   ├── __init__.py
+│   │   ├── generator.py
+│   │   └── run.py
+│   ├── __init__.py
+│   ├── py.typed
+│   ├── run_gold_layer.py
+│   └── run_stress_index.py
+├── core
+│   ├── analysis
+│   │   ├── data_engine.py
+│   │   └── stress_index.py
+│   ├── analyzers
+│   │   ├── __init__.py
+│   │   └── base_analyzer.py
+│   ├── clients
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── finmind.py
+│   │   ├── fmp.py
+│   │   ├── fred.py
+│   │   ├── nyfed.py
+│   │   ├── taifex_db.py
+│   │   └── yfinance.py
+│   ├── db
+│   │   ├── __init__.py
+│   │   └── db_manager.py
+│   ├── engines
+│   │   ├── __init__.py
+│   │   └── robust_acquisition_engine.py
+│   ├── pipelines
+│   │   ├── steps
+│   │   ├── __init__.py
+│   │   ├── base_step.py
+│   │   └── pipeline.py
+│   ├── utils
+│   │   ├── __init__.py
+│   │   ├── caching.py
+│   │   └── path_utils.py
+│   ├── __init__.py
+│   ├── config.py
+│   ├── constants.py
+│   ├── logger.py
+│   └── py.typed
+├── pipelines
+│   ├── p0_downloader
+│   │   └── run.py
+│   ├── p1_explorer
+│   │   ├── __init__.py
+│   │   └── run.py
+│   ├── p2_elt_pipeline
+│   │   └── run_elt.py
+│   └── __init__.py
+├── tests
+│   ├── fixtures
+│   │   ├── corrupted.zip
+│   │   ├── no_data_response.html
+│   │   ├── sample_daily_ohlc_20250711.zip
+│   │   └── sample_options_delta_20250711.csv
+│   ├── integration
+│   │   ├── analysis
+│   │   ├── apps
+│   │   └── pipelines
+│   ├── unit
+│   │   ├── analysis
+│   │   ├── core
+│   │   └── test_feature_analyzer.py
 │   ├── conftest.py
-│   ├── fixtures/              # 測試數據
-│   │   └── sample_options_delta_20250711.csv # (目前為空檔案)
-│   ├── integration/
-│   │   └── analysis/
-│   │       └── test_data_engine_cache.py # (已修復)
-│   └── unit/
-│       └── analysis/
-│           └── test_data_engine.py     # (已更新 MOVE 指數測試)
-└── financial_data_cache.sqlite  # 由 requests-cache 生成的快取資料庫
+│   ├── test_p0_downloader.py
+│   ├── test_p1_explorer.py
+│   └── test_p2_elt_pipeline.py
+├── .financial_data_cache.sqlite
+├── .gitignore
+├── README.md
+├── _test_run.py
+├── config.yml
+├── mypy.ini
+├── pipeline_test_loader.duckdb
+├── poetry.lock
+├── pyproject.toml
+├── pytest.ini
+├── run_pipeline.sh
+└── run_tests.py
 ```
-*(註：此結構為根據近期操作的簡化表示，完整結構請參考專案實際情況。)*
 
 ## **四、 環境設定與執行**
 
