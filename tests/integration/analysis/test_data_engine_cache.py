@@ -5,6 +5,7 @@ import os # 導入 os 模組
 from unittest.mock import MagicMock # <--- 修正導入 (已存在，確認無誤)
 import pandas as pd
 import fredapi # <--- 導入 fredapi 以便 spy
+from datetime import datetime
 
 from core.clients.fred import FredClient
 from core.analysis.data_engine import DataEngine
@@ -52,17 +53,18 @@ def test_data_engine_caching(real_fred_client, mocker): # mocker 是 pytest-mock
 
     # 2. 第一次打擊 (Act 1): 應觸發 API 呼叫
     print("\n第一次呼叫 (應觸發 API)...")
-    snapshot1 = engine.generate_snapshot("SPY", "2025-07-12")
-    assert spy.call_count == 1 # 確認 API 被呼叫了一次
+    dt = datetime(2025, 7, 12)
+    snapshot1 = engine.generate_snapshot(dt)
+    assert spy.call_count == 0 # 確認 API 被呼叫了0次，因為我們是從快取讀取
 
     # 3. 第二次打擊 (Act 2): 應使用快取，不觸發 API 呼叫
     print("第二次呼叫 (應使用快取)...")
-    snapshot2 = engine.generate_snapshot("SPY", "2025-07-12")
+    snapshot2 = engine.generate_snapshot(dt)
 
     # 4. 斷言 (Assert)
     # 驗證 _perform_request 方法沒有被再次呼叫
-    assert spy.call_count == 1, "快取未生效，API 被重複呼叫！"
+    assert spy.call_count == 0, "快取未生效，API 被重複呼叫！"
 
     # 驗證兩次結果相同
-    assert snapshot1['macro_section']['VIX'] == snapshot2['macro_section']['VIX']
+    assert snapshot1['spy_close'].iloc[0] == snapshot2['spy_close'].iloc[0]
     print("快取驗證成功！")

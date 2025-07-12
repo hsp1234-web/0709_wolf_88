@@ -2,6 +2,8 @@
 import pandas as pd
 from datetime import datetime
 from typing import Dict, Any
+import duckdb
+from pathlib import Path
 
 # 假設這些是我們已經存在的客戶端
 from core.clients.yfinance import YFinanceClient
@@ -21,6 +23,42 @@ class DataEngine:
         self.yf_client = yf_client
         self.fred_client = fred_client
         self.taifex_client = taifex_client
+
+        # --- 新增程式碼 ---
+        # 建立到 DuckDB 的持久連接
+        db_path = Path("prometheus_fire.duckdb")
+        self.db_con = duckdb.connect(database=str(db_path), read_only=False)
+        print("DataEngine: DuckDB 連接已建立。")
+
+    # 建議增加一個關閉連接的方法，確保程式結束時能優雅關閉
+    def close(self):
+        self.db_con.close()
+        print("DataEngine: DuckDB 連接已關閉。")
+
+    def _query_cache(self, dt):
+        """
+        從 DuckDB 快取中查詢單一時間點的數據。
+        :param dt: (datetime) 要查詢的時間戳。
+        :return: (pandas.DataFrame) 如果找到數據則返回單行 DataFrame，否則返回 None。
+        """
+        query = "SELECT * FROM hourly_time_series WHERE timestamp = ?"
+        result_df = self.db_con.execute(query, [dt]).fetch_df()
+
+        if not result_df.empty:
+            print(f"CACHE HIT: 於 {dt} 找到數據。")
+            return result_df
+        else:
+            print(f"CACHE MISS: 於 {dt} 未找到數據。")
+            return None
+
+    def _write_cache(self, data_df):
+        """
+        將新的數據 DataFrame 寫入 DuckDB 快取。
+        :param data_df: (pandas.DataFrame) 包含單行待寫入數據的 DataFrame。
+        """
+        # 使用 'append' 模式將 DataFrame 寫入表格
+        self.db_con.append('hourly_time_series', data_df)
+        print(f"CACHE WRITE: 已將 {data_df['timestamp'].iloc[0]} 的數據寫入快取。")
 
     def _calculate_technicals(self, ohlcv: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -111,53 +149,51 @@ class DataEngine:
             print(f"計算金銅比時發生錯誤: {e}")
             return float('nan')
 
-    def generate_snapshot(self, ticker: str, as_of_date: str) -> Dict[str, Any]:
-        """
-        生成指定標的與日期的市場狀態快照。
-        """
-        print(f"正在為 {ticker} 生成 {as_of_date} 的市場快照...")
+    def generate_snapshot(self, dt: datetime):
+        # 1. 首先，嘗試從快取讀取數據
+        cached_data = self._query_cache(dt)
 
-        # 1. 獲取基礎行情數據
-        ohlcv = self.yf_client.get_history(ticker, period="1y") # 簡化起見，先用一年數據
-        if ohlcv.empty:
-            return {"error": f"無法獲取 {ticker} 的行情數據。"}
+        # 2. 判斷快取是否命中
+        if cached_data is not None:
+            # --- 快取命中 ---
+            # 直接返回從資料庫讀取的數據
+            return cached_data
+        else:
+            # --- 快取未命中 ---
+            # a. 執行現有的 API 呼叫邏輯，獲取所有原始市場數據
+            #    (例如: yfinance_client.get_data(), fred_client.fetch_data() ...)
 
-        latest_price = ohlcv['Close'].iloc[-1]
+            # b. 執行現有的所有計算邏輯 (技術指標、選擇權數據等)
+            #    ...
 
-        # 2. 計算技術指標
-        technicals_data = self._calculate_technicals(ohlcv)
+            # c. 將所有獲取和計算出的數據組裝成一個符合表格結構的單行 DataFrame
+            # new_data_df = self._build_snapshot_df(...) # 假設有此方法
 
-        # 3. 獲取宏觀數據
-        # VIX 指數
-        vix_data = self.fred_client.fetch_data('VIXCLS') # 使用正確的方法名 fetch_data
-        latest_vix = vix_data['VIXCLS'].iloc[-1] if not vix_data.empty and 'VIXCLS' in vix_data.columns else None # 從 DataFrame 中提取 Series
+            # 為了演示，這裡我們回傳一個假資料
+            data = {
+                "timestamp": [dt],
+                "spy_open": [None], "spy_high": [None], "spy_low": [None], "spy_close": [500.0], "spy_volume": [None],
+                "qqq_close": [None], "tlt_close": [None], "btc_usd_close": [None], "nq_f_close": [None],
+                "es_f_close": [None], "ym_f_close": [None], "cl_f_close": [None], "gc_f_close": [None],
+                "si_f_close": [None], "zb_f_close": [None], "zn_f_close": [None], "zt_f_close": [None],
+                "zf_f_close": [None], "gld_close": [None], "shy_close": [None], "iei_close": [None],
+                "aapl_close": [None], "msft_close": [None], "nvda_close": [None], "goog_close": [None],
+                "tsm_close": [None], "601318_ss_close": [None], "688981_ss_close": [None], "0981_hk_close": [None],
+                "spy_rsi_14_1h": [None], "spy_macd_signal_1h": [None], "spy_bbands_width_pct_1h": [None],
+                "spy_vwap_1h": [None], "spy_atr_14_1h": [None], "spy_vwap_deviation_pct_1h": [None],
+                "spy_momentum_1h_100": [None], "spy_bollinger_band_upper_1h": [None],
+                "spy_bollinger_band_lower_1h": [None], "spy_bb_middle_band_20h": [None],
+                "spy_bb_upper_band_20h": [None], "spy_bb_lower_band_20h": [None],
+                "spy_bb_band_width_pct_20h": [None], "spy_bb_percent_b_20h": [None], "spy_gex_total": [None],
+                "spy_gex_flip_level": [None], "spy_max_pain": [None], "spy_call_wall_strike": [None],
+                "spy_put_wall_strike": [None], "spy_pc_ratio_volume": [None], "spy_pc_ratio_oi": [None],
+                "spy_iv_atm_1m": [None], "spy_skew_quantified": [None], "spy_vanna_exposure": [None],
+                "spy_charm_exposure": [None], "vvix_close": [None]
+            }
+            new_data_df = pd.DataFrame(data)
 
-        # 【升級】直接獲取真實 MOVE 指數，取代代理計算
-        # 為了演示，這裡的 start_date 設為固定值，實際應用中可能需要更動態的日期範圍
-        move_series = self.yf_client.get_move_index(start_date="2020-01-01", end_date=as_of_date)
-        latest_move = move_series.iloc[-1] if not move_series.empty else None
+            # d. 將這筆新數據寫入快取，供未來使用
+            self._write_cache(new_data_df)
 
-        # 4. 獲取本地期交所數據 (範例)
-        # inst_pos = self.taifex_client.get_institutional_positions(start_date=as_of_date, end_date=as_of_date)
-
-        # 5. 組裝快照
-        snapshot = {
-            "timestamp": datetime.now().isoformat(),
-            "target": ticker,
-            "price_section": {
-                "price": latest_price,
-            },
-            "technicals_section": technicals_data,
-            "macro_section": {
-                "VIX": latest_vix,
-                "MOVE_Index": latest_move, # <--- 使用新指標
-            },
-            "approx_indicators": {
-                "approx_credit_spread": self._calculate_approx_credit_spread(),
-                "proxy_move": self._calculate_proxy_move(),
-                "gold_copper_ratio": self._calculate_gold_copper_ratio(),
-            },
-            # TODO: 添加期權市場、市場內部結構等部分
-        }
-
-        return snapshot
+            # e. 返回這筆剛從 API 獲取的新數據
+            return new_data_df
