@@ -1,7 +1,13 @@
 # In pipelines/p3_backfill_hourly_data/run.py
 import pandas as pd
-from core.analysis.data_engine import DataEngine  # 假設路徑與導入正確
-from core.config import load_config  # 假設
+import sys
+from pathlib import Path
+
+project_root = Path(__file__).resolve().parent.parent.parent
+sys.path.append(str(project_root))
+
+from core.analysis.data_engine import DataEngine
+from core.config import config
 
 def run_backfill(start_date_str, end_date_str):
     """
@@ -17,8 +23,14 @@ def run_backfill(start_date_str, end_date_str):
     print(f"--- 開始執行數據回填作業：從 {start_date_str} 到 {end_date_str} ---")
 
     # 步驟 1: 初始化
-    config = load_config()
-    data_engine = DataEngine(config)
+    from core.clients.yfinance import YFinanceClient
+    from core.clients.fred import FredClient
+    from core.clients.taifex_db import TaifexDBClient
+
+    yf_client = YFinanceClient()
+    fred_client = FredClient(api_key=config.get("api_keys.fred"))
+    taifex_client = TaifexDBClient()
+    data_engine = DataEngine(yf_client=yf_client, fred_client=fred_client, taifex_client=taifex_client)
 
     # 步驟 2: 產生時間戳
     hourly_timestamps = pd.date_range(start=start_date_str, end=end_date_str, freq='H')

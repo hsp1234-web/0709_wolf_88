@@ -197,3 +197,16 @@ class DataEngine:
 
             # e. 返回這筆剛從 API 獲取的新數據
             return new_data_df
+
+    def get_hourly_series(self, ticker: str, column: str, start_date: str, end_date: str) -> "pd.Series":
+        """
+        從 DuckDB 獲取指定時間範圍內的小時級數據。
+        """
+        query = f"SELECT timestamp, {ticker}_{column} FROM hourly_time_series WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp"
+        result_df = self.db_con.execute(query, [start_date, end_date]).fetch_df()
+
+        if result_df.empty:
+            return pd.Series(dtype='float64')
+
+        result_df = result_df.set_index('timestamp')
+        return result_df[f'{ticker}_{column}']
