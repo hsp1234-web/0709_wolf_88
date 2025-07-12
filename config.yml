@@ -12,7 +12,7 @@ api_keys:
 
   # 其他未來可能用到的金鑰
   fmp: "YOUR_REAL_FMP_API_KEY_HERE" # <-- 在此處新增您的 FMP 金鑰
-  finmind: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNS0wNy0xMiAyMTo0NTo1NiIsInVzZXJfaWQiOiJmaW5taW5kaHNwIiwiaXAiOiIyMjMuMTM5LjE0OS45OCIsImV4cCI6MTc1MjkzMjc1Nn0.Z1Bqwjn_e-KZl-fQrdvJkvqKURly2PT8gGqtKYDsYh8"
+  finmind: "YOUR_REAL_FINMIND_API_TOKEN_HERE" # <-- 在此處新增您的 FinMind Token
 
 # --- 資料庫設定 ---
 database:
