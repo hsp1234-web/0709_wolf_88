@@ -14,6 +14,7 @@ try:
     from apps.backtesting_engine.run import main as run_sma_backtest
     from apps.run_stress_index import main as run_stress_index
     from apps.run_fmp_test import main as run_fmp_test
+    from pipelines.p4_daily_macro_etl.run_etl import run as run_daily_macro_etl
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -63,6 +64,26 @@ def stress_index(ctx: typer.Context):
 def fmp_fetch(ctx: typer.Context):
     """執行 FMPClient 端到端實戰驗證。"""
     execute_task(ctx.obj, "FMP 數據獲取驗證", run_fmp_test)
+
+
+@app.command()
+def build_daily_data(
+    ctx: typer.Context,
+    force_download: bool = typer.Option(
+        False,
+        "--force-download",
+        "-f",
+        help="強制從網路重新下載所有數據，忽略本地快取。",
+    ),
+):
+    """執行 P4 每日宏觀數據 ETL 管線。"""
+    execute_task(
+        ctx.obj,
+        "每日宏觀數據ETL",
+        run_daily_macro_etl,
+        force_download=force_download,
+    )
+
 
 if __name__ == "__main__":
     try:
