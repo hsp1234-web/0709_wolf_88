@@ -2,6 +2,7 @@
 """
 模擬的投資組合優化器應用主模組
 """
+
 from core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -35,7 +36,7 @@ if __name__ == "__main__":
         #     run_optimization as optimizer_run_optimization,
         # )
 
-        run_optimization() # 直接調用
+        run_optimization()  # 直接調用
     except ModuleNotFoundError as e:
         if e.name == REQUIRED_MODULE:
             module_name = e.name

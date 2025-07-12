@@ -1,12 +1,13 @@
-import pytest
+import os
+import sys
 import unittest
+from datetime import date, datetime
+from pathlib import Path
+
 import duckdb
 import pandas as pd
-from pathlib import Path
-from datetime import date, datetime
+import pytest
 import pytz  # For timezone aware datetime
-import sys
-import os
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
 try:
@@ -32,9 +33,10 @@ except Exception as e:
 # from apps.feature_analyzer.analyzer import ChimeraAnalyzer # 暫時註解以避免導入錯誤
 
 
-@pytest.mark.skip(reason="Skipping due to missing apps.feature_analyzer module and to expedite Redline Recovery")
+@pytest.mark.skip(
+    reason="Skipping due to missing apps.feature_analyzer module and to expedite Redline Recovery"
+)
 class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
-
     def setUp(self):
         """為每個測試案例設置一個乾淨的檔案型資料庫。"""
         self.test_db_file = Path("test_temp_analyzer_pc_ratio.duckdb")
@@ -68,7 +70,7 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
 
         # Analyzer 將使用相同的檔案路徑
         # self.analyzer = ChimeraAnalyzer(db_path=self.db_path_str) # Commented out to pass pre-check
-        pass # Added to maintain a valid method body
+        pass  # Added to maintain a valid method body
 
     def tearDown(self):
         """測試結束後刪除臨時資料庫檔案。"""
@@ -212,11 +214,11 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
         # ) # Commented out to pass pre-check
         # pc_analyzer_basic.run() # Commented out to pass pre-check
 
-        with duckdb.connect(self.db_path_str): # Removed "as conn"
+        with duckdb.connect(self.db_path_str):  # Removed "as conn"
             # result_df = conn.execute(
             #     f"SELECT trading_date, product_id, pc_volume_ratio, pc_oi_ratio, total_put_volume, total_call_volume, total_put_oi, total_call_oi FROM {self.analyzer.taifex_pc_ratio_table} ORDER BY trading_date, product_id"
             # ).fetchdf() # Commented out to pass pre-check
-            result_df = pd.DataFrame() # Added to avoid further errors
+            result_df = pd.DataFrame()  # Added to avoid further errors
 
         print("Debug: result_df in test_pc_ratio_calculation_basic:")
         print(result_df.to_string())  # 打印完整的 DataFrame
@@ -321,11 +323,13 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
         # ) # Commented out to pass pre-check
         # pc_analyzer_zero_call.run() # Commented out to pass pre-check
 
-        with duckdb.connect(self.db_path_str): # Removed "as conn"
+        with duckdb.connect(self.db_path_str):  # Removed "as conn"
             # result_df = conn.execute(
             #     f"SELECT pc_volume_ratio, pc_oi_ratio FROM {self.analyzer.taifex_pc_ratio_table} WHERE product_id = 'TXO'"
             # ).fetchdf() # Commented out to pass pre-check
-            result_df = pd.DataFrame({'pc_volume_ratio': [pd.NA], 'pc_oi_ratio': [1.6]}) # Added to avoid further errors
+            result_df = pd.DataFrame(
+                {"pc_volume_ratio": [pd.NA], "pc_oi_ratio": [1.6]}
+            )  # Added to avoid further errors
         self.assertTrue(pd.isna(result_df["pc_volume_ratio"].iloc[0]))
         self.assertAlmostEqual(result_df["pc_oi_ratio"].iloc[0], 800 / 500)
 
@@ -362,11 +366,11 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
         # ) # Commented out to pass pre-check
         # pc_analyzer_no_match.run() # Commented out to pass pre-check
 
-        with duckdb.connect(self.db_path_str): # Removed "as conn"
+        with duckdb.connect(self.db_path_str):  # Removed "as conn"
             # result_df = conn.execute(
             #     f"SELECT * FROM {self.analyzer.taifex_pc_ratio_table}"
             # ).fetchdf() # Commented out to pass pre-check
-            result_df = pd.DataFrame() # Added to avoid further errors
+            result_df = pd.DataFrame()  # Added to avoid further errors
         self.assertTrue(result_df.empty)
 
     def test_pc_ratio_idempotency(self):
@@ -420,16 +424,21 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
         # ) # Commented out to pass pre-check
         # pc_analyzer_idempotency_run1.run() # Commented out to pass pre-check
 
-        with duckdb.connect(self.db_path_str): # Removed "as conn"
+        with duckdb.connect(self.db_path_str):  # Removed "as conn"
             # count_after_first_run = conn.execute(
             #     f"SELECT COUNT(*) FROM {self.analyzer.taifex_pc_ratio_table}"
             # ).fetchone()[0] # Commented out to pass pre-check
             # first_run_data = conn.execute(
             #     f"SELECT * FROM {self.analyzer.taifex_pc_ratio_table} ORDER BY trading_date, product_id"
             # ).fetchdf() # Commented out to pass pre-check
-            count_after_first_run = 1 # Added to avoid further errors
-            first_run_data = pd.DataFrame({'trading_date': [date(2023,1,1)], 'product_id': ['TXO'], 'calculated_at': [datetime.now(pytz.utc)]}) # Added to avoid further errors
-
+            count_after_first_run = 1  # Added to avoid further errors
+            first_run_data = pd.DataFrame(
+                {
+                    "trading_date": [date(2023, 1, 1)],
+                    "product_id": ["TXO"],
+                    "calculated_at": [datetime.now(pytz.utc)],
+                }
+            )  # Added to avoid further errors
 
         # 創建新的實例以模擬第二次運行
         # pc_analyzer_idempotency_run2 = ChimeraAnalyzer(
@@ -441,15 +450,21 @@ class TestChimeraAnalyzerTaifexPCRatio(unittest.TestCase):
         # ) # Commented out to pass pre-check
         # pc_analyzer_idempotency_run2.run() # Run again # Commented out to pass pre-check
 
-        with duckdb.connect(self.db_path_str): # Removed "as conn"
+        with duckdb.connect(self.db_path_str):  # Removed "as conn"
             # count_after_second_run = conn.execute(
             #     f"SELECT COUNT(*) FROM {self.analyzer.taifex_pc_ratio_table}"
             # ).fetchone()[0] # Commented out to pass pre-check
             # second_run_data = conn.execute(
             #     f"SELECT * FROM {self.analyzer.taifex_pc_ratio_table} ORDER BY trading_date, product_id"
             # ).fetchdf() # Commented out to pass pre-check
-            count_after_second_run = 1 # Added to avoid further errors
-            second_run_data = pd.DataFrame({'trading_date': [date(2023,1,1)], 'product_id': ['TXO'], 'calculated_at': [datetime.now(pytz.utc)]}) # Added to avoid further errors
+            count_after_second_run = 1  # Added to avoid further errors
+            second_run_data = pd.DataFrame(
+                {
+                    "trading_date": [date(2023, 1, 1)],
+                    "product_id": ["TXO"],
+                    "calculated_at": [datetime.now(pytz.utc)],
+                }
+            )  # Added to avoid further errors
 
         self.assertEqual(count_after_first_run, 1)
         self.assertEqual(count_after_second_run, 1)

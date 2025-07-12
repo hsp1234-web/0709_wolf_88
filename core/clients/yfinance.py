@@ -1,11 +1,15 @@
 # core/clients/yfinance.py
 # 此模組包含從 Yahoo Finance 下載市場數據的客戶端邏輯。
 
-import yfinance as yf
-import pandas as pd
-
 import traceback
-from typing import List, Any, cast # Added Any, cast. Optional, List were already there.
+from typing import (  # Added Any, cast. Optional, List were already there.
+    Any,
+    List,
+    cast,
+)
+
+import pandas as pd
+import yfinance as yf
 
 from .base import BaseAPIClient
 
@@ -25,7 +29,11 @@ class YFinanceClient(BaseAPIClient):
         super().__init__(api_key=None, base_url=None)
         print("資訊：YFinanceClient 初始化完成。")
 
-    def fetch_data(self, symbol: str, **kwargs) -> pd.DataFrame: # Return type changed to pd.DataFrame from Optional[pd.DataFrame]
+    def fetch_data(
+        self, symbol: str, **kwargs
+    ) -> (
+        pd.DataFrame
+    ):  # Return type changed to pd.DataFrame from Optional[pd.DataFrame]
         """
         從 Yahoo Finance 抓取指定商品代碼的每日 OHLCV 數據。
         """
@@ -76,12 +84,13 @@ class YFinanceClient(BaseAPIClient):
                 print(
                     f"警告：YFinanceClient - 商品 {symbol} 使用參數 {history_params} 未找到數據或返回為空。"
                 )
-                return pd.DataFrame() # Return empty DataFrame as per original logic for failure/no data
+                return (
+                    pd.DataFrame()
+                )  # Return empty DataFrame as per original logic for failure/no data
 
             # At this point, hist_data is a non-empty DataFrame (or yfinance would have errored/returned empty)
             # We can now safely cast it if needed, or proceed with operations
             hist_data = cast(pd.DataFrame, hist_data)
-
 
             hist_data.reset_index(inplace=True)
             hist_data["symbol"] = symbol
@@ -95,24 +104,37 @@ class YFinanceClient(BaseAPIClient):
 
             # --- 核心修改點 START ---
             # 先將索引/欄位轉為 datetime 物件並強制轉換為 UTC
-            hist_data[date_col_name] = pd.to_datetime(hist_data[date_col_name], utc=True)
+            hist_data[date_col_name] = pd.to_datetime(
+                hist_data[date_col_name], utc=True
+            )
             # 現在所有時間都帶有 UTC 時區，再進行統一清除，使其變為無時區的 UTC 時間
             hist_data[date_col_name] = hist_data[date_col_name].dt.tz_convert(None)
             # --- 核心修改點 END ---
 
             # 確保最終日期欄位名為 'Date'
-            if date_col_name != "Date" and "Date" not in hist_data.columns: # 避免意外覆蓋已存在的 "Date" 欄
+            if (
+                date_col_name != "Date" and "Date" not in hist_data.columns
+            ):  # 避免意外覆蓋已存在的 "Date" 欄
                 hist_data.rename(columns={date_col_name: "Date"}, inplace=True)
-            elif date_col_name == "Date" and date_col_name != "Date": # 理論上不會發生，但作為防禦
-                 # 如果 date_col_name 是 "Date"，就不需要重命名
-                 pass
+            elif (
+                date_col_name == "Date" and date_col_name != "Date"
+            ):  # 理論上不會發生，但作為防禦
+                # 如果 date_col_name 是 "Date"，就不需要重命名
+                pass
 
             rename_map = {"Adj Close": "Adj_Close"}
             final_df = hist_data.rename(columns=rename_map)
             final_df["Date"] = pd.to_datetime(final_df["Date"])
 
             required_cols = [
-                "Date", "symbol", "Open", "High", "Low", "Close", "Adj_Close", "Volume",
+                "Date",
+                "symbol",
+                "Open",
+                "High",
+                "Low",
+                "Close",
+                "Adj_Close",
+                "Volume",
             ]
             cols_to_keep = []
             missing_cols = []
@@ -127,23 +149,30 @@ class YFinanceClient(BaseAPIClient):
                 ):
                     final_df["Adj_Close"] = final_df["Close"]
                     cols_to_keep.append("Adj_Close")
-                elif col not in final_df.columns: # only add to missing if not handled by auto_adjust case
+                elif (
+                    col not in final_df.columns
+                ):  # only add to missing if not handled by auto_adjust case
                     missing_cols.append(col)
 
             if missing_cols:
-                 print(
+                print(
                     f"警告：YFinanceClient - 抓取的數據中缺少以下預期欄位: {missing_cols} (Symbol: {symbol})。"
                 )
 
             # Ensure all cols_to_keep actually exist before trying to select them
             # This can happen if auto_adjust is true, 'Adj_Close' is required but not initially present
-            valid_cols_to_keep = [col for col in cols_to_keep if col in final_df.columns]
-            if not valid_cols_to_keep: # If no valid columns remain (highly unlikely but a safeguard)
-                print(f"警告：YFinanceClient - 沒有有效的欄位可供選擇 (Symbol: {symbol})")
+            valid_cols_to_keep = [
+                col for col in cols_to_keep if col in final_df.columns
+            ]
+            if (
+                not valid_cols_to_keep
+            ):  # If no valid columns remain (highly unlikely but a safeguard)
+                print(
+                    f"警告：YFinanceClient - 沒有有效的欄位可供選擇 (Symbol: {symbol})"
+                )
                 return pd.DataFrame()
 
             final_df = final_df[valid_cols_to_keep]
-
 
             print(
                 f"資訊：YFinanceClient 成功抓取並處理 {len(final_df)} 筆數據，商品: {symbol}。"
@@ -166,7 +195,9 @@ class YFinanceClient(BaseAPIClient):
         for symbol_ticker in symbols:
             try:
                 df_symbol = self.fetch_data(symbol=symbol_ticker, **kwargs)
-                if df_symbol is not None and not df_symbol.empty: # Check for None as well
+                if (
+                    df_symbol is not None and not df_symbol.empty
+                ):  # Check for None as well
                     all_data_list.append(df_symbol)
             except Exception as e:
                 print(
@@ -186,42 +217,51 @@ class YFinanceClient(BaseAPIClient):
         return combined_df
 
     def get_move_index(self, start_date: str, end_date: str) -> pd.Series:
-        """ 從 yfinance 獲取 ICE BofA MOVE Index (^MOVE) 的歷史收盤價。 """
-        print(f"資訊：YFinanceClient 正在獲取 ^MOVE 指數數據，日期範圍: {start_date} 至 {end_date}")
+        """從 yfinance 獲取 ICE BofA MOVE Index (^MOVE) 的歷史收盤價。"""
+        print(
+            f"資訊：YFinanceClient 正在獲取 ^MOVE 指數數據，日期範圍: {start_date} 至 {end_date}"
+        )
         try:
-            move_ticker = yf.Ticker('^MOVE')
+            move_ticker = yf.Ticker("^MOVE")
             # yfinance 的 end 參數不包含，所以需將結束日期加一天
             # 同時，確保 start_date 和 end_date 的格式正確
             start_date_dt = pd.to_datetime(start_date)
             end_date_dt = pd.to_datetime(end_date)
 
-            end_date_for_yf = (end_date_dt + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
-            start_date_for_yf = start_date_dt.strftime('%Y-%m-%d')
+            end_date_for_yf = (end_date_dt + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+            start_date_for_yf = start_date_dt.strftime("%Y-%m-%d")
 
             history = move_ticker.history(start=start_date_for_yf, end=end_date_for_yf)
 
             if history.empty:
-                print(f"警告：^MOVE 指數在 {start_date_for_yf} 至 {end_date_for_yf} 未返回任何數據。")
-                return pd.Series(dtype='float64', name='Close')
+                print(
+                    f"警告：^MOVE 指數在 {start_date_for_yf} 至 {end_date_for_yf} 未返回任何數據。"
+                )
+                return pd.Series(dtype="float64", name="Close")
 
             # 確保返回的是 Series，並且索引是 DatetimeIndex
-            close_series = history['Close']
+            close_series = history["Close"]
             if not isinstance(close_series.index, pd.DatetimeIndex):
-                 close_series.index = pd.to_datetime(close_series.index)
+                close_series.index = pd.to_datetime(close_series.index)
 
             # 篩選掉結束日期之後的數據（因為我們加了一天）
             close_series = close_series[close_series.index <= end_date_dt]
 
             if close_series.empty:
-                print(f"警告：^MOVE 指數在篩選日期 ({start_date_dt.date()} 至 {end_date_dt.date()}) 後數據為空。")
-                return pd.Series(dtype='float64', name='Close')
+                print(
+                    f"警告：^MOVE 指數在篩選日期 ({start_date_dt.date()} 至 {end_date_dt.date()}) 後數據為空。"
+                )
+                return pd.Series(dtype="float64", name="Close")
 
-            print(f"資訊：YFinanceClient 成功獲取 {len(close_series)} 筆 ^MOVE 指數數據。")
+            print(
+                f"資訊：YFinanceClient 成功獲取 {len(close_series)} 筆 ^MOVE 指數數據。"
+            )
             return close_series
         except Exception as e:
             print(f"錯誤：YFinanceClient 獲取 ^MOVE 指數時失敗: {e}")
-            traceback.print_exc() # 添加 traceback 以獲取更詳細的錯誤信息
-            return pd.Series(dtype='float64', name='Close')
+            traceback.print_exc()  # 添加 traceback 以獲取更詳細的錯誤信息
+            return pd.Series(dtype="float64", name="Close")
+
 
 if __name__ == "__main__":
     print("--- YFinanceClient 重構後測試 (直接執行 core/clients/yfinance.py) ---")
@@ -263,9 +303,7 @@ if __name__ == "__main__":
             print("獲取 ^GSPC 數據返回空 DataFrame 或 None。")
 
         print("\n測試獲取 SPY 數據 (最近1天, 1m 間隔)...")
-        spy_intraday = client.fetch_data(
-            symbol="SPY", period="1d", interval="1m"
-        )
+        spy_intraday = client.fetch_data(symbol="SPY", period="1d", interval="1m")
         if spy_intraday is not None and not spy_intraday.empty:
             print(f"成功獲取 SPY 1分鐘數據 (共 {len(spy_intraday)} 筆):")
             assert "Date" in spy_intraday.columns

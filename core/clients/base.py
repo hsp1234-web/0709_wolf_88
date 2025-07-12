@@ -7,13 +7,16 @@
 - **關鍵升級**: 內建並整合了來自 core.utils.caching 的中央快取引擎。
 - 為所有子類別提供統一的、具備永久快取和手動刷新能力的 requests Session。
 """
-import requests
+
 from contextlib import contextmanager
-from typing import Iterator, Optional # Import Optional
+from typing import Iterator, Optional  # Import Optional
+
+import requests
 
 # 從我們的通用工具模組導入快取工具
 # 這裡我們使用之前建立的同步版本
 from core.utils.caching import get_cached_session, temporary_disabled_cache
+
 
 class BaseAPIClient:
     """
@@ -75,7 +78,9 @@ class BaseAPIClient:
         """
         raise NotImplementedError("子類別必須實現 fetch_data 方法")
 
-    def _perform_request(self, endpoint: str, params: Optional[dict] = None, method: str = "GET") -> requests.Response:
+    def _perform_request(
+        self, endpoint: str, params: Optional[dict] = None, method: str = "GET"
+    ) -> requests.Response:
         """
         執行實際的 HTTP 請求。
 
@@ -92,21 +97,28 @@ class BaseAPIClient:
             ValueError: 如果 base_url 未設定。
         """
         if not self.base_url:
-            raise ValueError(f"{self.__class__.__name__}: base_url is not set, cannot make a request.")
+            raise ValueError(
+                f"{self.__class__.__name__}: base_url is not set, cannot make a request."
+            )
 
         url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
-        print(f"資訊：{self.__class__.__name__} 正在向 {method} {url} 發送請求，參數：{params}")
+        print(
+            f"資訊：{self.__class__.__name__} 正在向 {method} {url} 發送請求，參數：{params}"
+        )
 
         if method.upper() == "GET":
             response = self._session.get(url, params=params)
         elif method.upper() == "POST":
-            response = self._session.post(url, params=params) # Or json=params if API expects JSON body
+            response = self._session.post(
+                url, params=params
+            )  # Or json=params if API expects JSON body
         else:
             raise ValueError(f"不支援的 HTTP 方法: {method}")
 
         response.raise_for_status()
         return response
+
 
 # 範例使用 (主要用於開發時測試)
 if __name__ == "__main__":
@@ -121,7 +133,7 @@ if __name__ == "__main__":
             url = self.base_url + endpoint
 
             # 從 kwargs 中提取 force_refresh 參數
-            force_refresh = kwargs.get('force_refresh', False)
+            force_refresh = kwargs.get("force_refresh", False)
 
             # 使用 _get_request_context 來控制快取
             with self._get_request_context(force_refresh=force_refresh):
@@ -134,7 +146,7 @@ if __name__ == "__main__":
     client = MockClient()
     try:
         print("\n--- 執行第一次 (應會下載) ---")
-        client.fetch_data("2") # 延遲 2 秒
+        client.fetch_data("2")  # 延遲 2 秒
 
         print("\n--- 執行第二次 (應從快取讀取) ---")
         client.fetch_data("2")

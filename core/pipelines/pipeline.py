@@ -35,15 +35,19 @@ class DataPipeline:
             for i, step in enumerate(self._steps, 1):
                 # 修正: 獲取類名應為 step.__class__.__name__
                 step_name = step.__class__.__name__
-                self.logger.info(f"--- [步驟 {i}/{len(self._steps)}]：正在執行 {step_name} ---")
+                self.logger.info(
+                    f"--- [步驟 {i}/{len(self._steps)}]：正在執行 {step_name} ---"
+                )
                 data = step.execute(data)
                 self.logger.info(f"步驟 {step_name} 執行完畢。")
 
             self.logger.info("數據管線所有步驟均已成功執行。")
-            return data # 返回最後一個步驟的結果
+            return data  # 返回最後一個步驟的結果
 
         except Exception as e:
-            self.logger.error(f"數據管線在執行步驟 '{step_name}' 時發生嚴重錯誤：{e}", exc_info=True)
+            self.logger.error(
+                f"數據管線在執行步驟 '{step_name}' 時發生嚴重錯誤：{e}", exc_info=True
+            )
             # 考慮到管線執行失敗時的健壯性，這裡可以選擇重新拋出異常
             # 或者根據需求決定是否要抑制異常並繼續（儘管通常建議拋出）
             raise

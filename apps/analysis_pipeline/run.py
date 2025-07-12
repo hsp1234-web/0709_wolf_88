@@ -8,9 +8,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(project_root))
 
-from apps.factor_engine.sma_crossover_factor import calculate_sma_crossover
-
 def main():
+    from apps.factor_engine.sma_crossover_factor import calculate_sma_crossover
     """
     分析管線主執行器。
 
@@ -21,18 +20,18 @@ def main():
     """
     parser = argparse.ArgumentParser(description="【普羅米修斯之火】分析管線執行器")
     parser.add_argument(
-        '--factor',
+        "--factor",
         type=str,
-        choices=['sma_crossover'],
-        default='sma_crossover',
-        help='要運行的因子或分析名稱'
+        choices=["sma_crossover"],
+        default="sma_crossover",
+        help="要運行的因子或分析名稱",
     )
     # 未來可增加更多參數，如 ticker, start_date 等
     args = parser.parse_args()
 
     print(f"--- 啟動分析管線，執行任務: {args.factor} ---")
 
-    if args.factor == 'sma_crossover':
+    if args.factor == "sma_crossover":
         # 執行我們的 SMA 交叉因子計算
         result = calculate_sma_crossover()
         if result is not None:

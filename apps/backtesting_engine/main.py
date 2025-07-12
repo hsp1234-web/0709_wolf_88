@@ -2,6 +2,7 @@
 """
 模擬的回測引擎應用主模組
 """
+
 from core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -35,15 +36,17 @@ if __name__ == "__main__":
         #     execute_backtest as engine_execute_backtest,
         # )
 
-        execute_backtest() # 直接調用 execute_backtest
+        execute_backtest()  # 直接調用 execute_backtest
     except ModuleNotFoundError as e:
         if e.name == REQUIRED_MODULE:
             module_name = e.name
             logger.error(
-                f"指揮官，Jules 回報在執行任務時發現環境中缺少必要的依賴項（'{module_name}' 模組）。"
+                f"指揮官，Jules 回報在執行任務時發現環境中缺少必要的依賴項"
+                f"（'{module_name}' 模組）。"
             )
             logger.error(
-                "這可能導致回測功能無法正常運行。請您確認專案的 requirements.txt 文件是否包含所有必需的依賴項。"
+                "這可能導致回測功能無法正常運行。"
+                "請您確認專案的 requirements.txt 文件是否包含所有必需的依賴項。"
             )
             logger.error("任務無法繼續。")
         else:

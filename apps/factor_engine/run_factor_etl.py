@@ -2,30 +2,41 @@
 """
 普羅米修斯之火 - 因子提取、轉換、加載 (ETL) 主執行腳本
 """
-import pandas as pd
+
 import os  # 用於數據庫路徑
 
 # 為了能夠直接執行此腳本，需要確保 apps 目錄在 Python 的搜索路徑中
 # 這通常通過設置 PYTHONPATH 或在專案根目錄執行來實現
 # 例如: PYTHONPATH=. python apps/factor_engine/run_factor_etl.py
 # 或者，如果你的 IDE 或執行環境正確設置了根目錄，則可能不需要額外操作。
-
 # 臨時添加專案根目錄到 sys.path，以便於直接執行
 import sys
-project_root_for_direct_run = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+import pandas as pd
+
+project_root_for_direct_run = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)
 if project_root_for_direct_run not in sys.path:
     sys.path.insert(0, project_root_for_direct_run)
     # 暫時使用 print，因為 logger 還未初始化
-    print(f"DEBUG (run_factor_etl.py direct run): 已將專案根目錄 {project_root_for_direct_run} 添加到 sys.path")
+    print(
+        f"DEBUG (run_factor_etl.py direct run): "
+        f"已將專案根目錄 {project_root_for_direct_run} 添加到 sys.path"
+    )
 
 from core.logger import get_logger  # noqa: E402
-from apps.daily_market_analyzer.db_manager import DBManager  # noqa: E402, 假設此模組路徑在 sys.path 更新後有效
-from apps.factor_engine.engine import FactorEngine  # noqa: E402, 假設此模組路徑在 sys.path 更新後有效
-
 
 logger = get_logger(__name__)
 
+
 def run_etl():
+    from apps.daily_market_analyzer.db_manager import (
+        DBManager,  # noqa: E402, 假設此模組路徑在 sys.path 更新後有效
+    )
+    from apps.factor_engine.engine import (
+        FactorEngine,  # noqa: E402, 假設此模組路徑在 sys.path 更新後有效
+    )
     """
     執行完整的因子提取、計算和儲存流程。
     """
@@ -47,7 +58,9 @@ def run_etl():
             "SELECT DISTINCT ticker FROM MarketPrices_Daily"
         )
         if tickers_df.empty:
-            logger.warning("MarketPrices_Daily 中沒有找到任何 ticker。因子 ETL 流程終止。")
+            logger.warning(
+                "MarketPrices_Daily 中沒有找到任何 ticker。因子 ETL 流程終止。"
+            )
             return
         tickers_list = tickers_df["ticker"].tolist()
         logger.info(f"共找到 {len(tickers_list)} 個 tickers。")
@@ -128,7 +141,8 @@ def run_etl():
             )
             all_factors_to_store.append(current_ticker_factors_df)
             logger.info(
-                f"為 {ticker} 計算並準備了 {len(current_ticker_factors_df)} 筆因子數據。"
+                f"為 {ticker} 計算並準備了 "
+                f"{len(current_ticker_factors_df)} 筆因子數據。"
             )
         else:
             logger.info(f"未能為 {ticker} 計算出任何因子數據。")
@@ -143,11 +157,12 @@ def run_etl():
             treasury_yields_data
         )
         if not yield_spread_factors.empty:
-            # 將寬表格式 (date 為索引, 各利差為欄位) 的殖利率因子轉換為長表格式，
-            # 以符合 FactorStore_Daily 的 (ticker, date, factor_name, factor_value) 結構。
+            # 將寬表格式 (date 為索引, 各利差為欄位) 的殖利率因子轉換為長表格式，以符合
+            # FactorStore_Daily 的 (ticker, date, factor_name, factor_value) 結構。
             yield_spread_factors_long = yield_spread_factors.reset_index().melt(
                 id_vars="date",  # 將 'date' 索引轉換為欄位，並作為融合時的ID變數
-                var_name="factor_name",  # 其餘欄位名 (如 'spread_10y_2y') 變為 'factor_name' 欄的值
+                var_name="factor_name",  # 其餘欄位名 (如 'spread_10y_2y')
+                # 變為 'factor_name' 欄的值
                 value_name="factor_value",
             )
             yield_spread_factors_long["ticker"] = "US_TREASURY"  # 特殊 ticker 名稱

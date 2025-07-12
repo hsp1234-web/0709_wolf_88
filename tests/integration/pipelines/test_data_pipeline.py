@@ -1,17 +1,19 @@
 import logging
-import os # For potential db cleanup, though steps should manage their test dbs
+import os  # For potential db cleanup, though steps should manage their test dbs
+
 from core.pipelines.pipeline import DataPipeline
-from core.pipelines.steps.loaders import TaifexTickLoaderStep
 from core.pipelines.steps.aggregators import TimeAggregatorStep
+from core.pipelines.steps.loaders import TaifexTickLoaderStep
 
 # 配置基本的日誌記錄，以便觀察管線執行過程
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.StreamHandler() # Ensure logs go to console
-    ]
+        logging.StreamHandler()  # Ensure logs go to console
+    ],
 )
+
 
 def test_full_data_pipeline_run_without_errors():
     logger = logging.getLogger(__name__)
@@ -37,16 +39,20 @@ def test_full_data_pipeline_run_without_errors():
 
     # 1. 定義我們的ETL步驟實例
     # 使用特定的數據庫名稱 "pipeline_test_loader.duckdb"
-    tick_loader = TaifexTickLoaderStep(db_path=pipeline_loader_db_path, table_name="pipeline_test_ticks")
+    tick_loader = TaifexTickLoaderStep(
+        db_path=pipeline_loader_db_path, table_name="pipeline_test_ticks"
+    )
 
     # TimeAggregatorStep 接收 aggregation_level
     time_aggregator = TimeAggregatorStep(aggregation_level="1Min")
 
     # 2. 創建一個數據管線，將步驟按順序組合起來
-    my_pipeline = DataPipeline(steps=[
-        tick_loader,
-        time_aggregator,
-    ])
+    my_pipeline = DataPipeline(
+        steps=[
+            tick_loader,
+            time_aggregator,
+        ]
+    )
 
     # 3. 執行管線
     logger.info("準備執行 DataPipeline...")
@@ -63,9 +69,8 @@ def test_full_data_pipeline_run_without_errors():
         # 即使只是 assert True，也比沒有好。
         assert True, "管線執行應該無錯誤完成"
 
-
     except Exception as e:
         logger.error(f"執行數據管線時發生頂層錯誤: {e}", exc_info=True)
-        assert False, f"管線執行時發生錯誤: {e}" # 如果發生例外，測試應失敗
+        assert False, f"管線執行時發生錯誤: {e}"  # 如果發生例外，測試應失敗
 
     logger.info("--- [驗證用數據管線執行完畢] ---")

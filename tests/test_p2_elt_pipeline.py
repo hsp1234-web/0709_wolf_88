@@ -1,21 +1,25 @@
-import pytest
 import os
 import shutil
-import duckdb
-from unittest.mock import patch # Added missing import
 
 # Add project root to sys.path
 import sys
-PROJECT_ROOT_FROM_TEST_P2 = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+from unittest.mock import patch  # Added missing import
+
+import duckdb
+import pytest
+
+PROJECT_ROOT_FROM_TEST_P2 = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..")
+)
 if PROJECT_ROOT_FROM_TEST_P2 not in sys.path:
     sys.path.insert(0, PROJECT_ROOT_FROM_TEST_P2)
 
-# Import main functions from P1 and P2
-from pipelines.p1_explorer.run import main as p1_explorer_main  # noqa: E402
-from pipelines.p2_elt_pipeline.run_elt import main as p2_elt_main  # noqa: E402
+from pipelines.p1_explorer.run import main as p1_explorer_main
+from pipelines.p2_elt_pipeline.run_elt import main as p2_elt_main
 
 # Define the path to the fixture files
-FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
+FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
+
 
 @pytest.fixture
 def elt_test_environment(tmp_path):
@@ -44,11 +48,14 @@ def elt_test_environment(tmp_path):
     analytics_db_path = analytics_warehouse_dir / "analytics_taifex.duckdb"
 
     # Copy necessary data fixtures to the temporary downloads directory
-    shutil.copy(os.path.join(FIXTURES_DIR, 'sample_daily_ohlc_20250711.zip'), downloads_dir)
-    shutil.copy(os.path.join(FIXTURES_DIR, 'sample_options_delta_20250711.csv'), downloads_dir)
+    shutil.copy(
+        os.path.join(FIXTURES_DIR, "sample_daily_ohlc_20250711.zip"), downloads_dir
+    )
+    shutil.copy(
+        os.path.join(FIXTURES_DIR, "sample_options_delta_20250711.csv"), downloads_dir
+    )
     # We can also copy corrupted.zip to ensure it's ignored by P1 and thus P2
-    shutil.copy(os.path.join(FIXTURES_DIR, 'corrupted.zip'), downloads_dir)
-
+    shutil.copy(os.path.join(FIXTURES_DIR, "corrupted.zip"), downloads_dir)
 
     return {
         "downloads_dir": str(downloads_dir),
@@ -56,6 +63,7 @@ def elt_test_environment(tmp_path):
         "raw_db_path": str(raw_db_path),
         "analytics_db_path": str(analytics_db_path),
     }
+
 
 def test_full_elt_pipeline_flow(elt_test_environment):
     """
@@ -72,28 +80,38 @@ def test_full_elt_pipeline_flow(elt_test_environment):
     """
     # --- Arrange: Run P1 Explorer ---
     p1_args = [
-        "--input-dir", elt_test_environment["downloads_dir"],
-        "--db-path", elt_test_environment["schema_db_path"]
+        "--input-dir",
+        elt_test_environment["downloads_dir"],
+        "--db-path",
+        elt_test_environment["schema_db_path"],
     ]
-    with patch.object(sys, 'argv', ['pipelines/p1_explorer/run.py'] + p1_args):
+    with patch.object(sys, "argv", ["pipelines/p1_explorer/run.py"] + p1_args):
         p1_explorer_main()
 
-    assert os.path.exists(elt_test_environment["schema_db_path"]), "P1 did not create schema_registry.db"
+    assert os.path.exists(elt_test_environment["schema_db_path"]), (
+        "P1 did not create schema_registry.db"
+    )
 
     # --- Act: Run P2 ELT Pipeline ---
     p2_args = [
-        "--input-dir", elt_test_environment["downloads_dir"],
-        "--schema-db-path", elt_test_environment["schema_db_path"],
-        "--raw-db-path", elt_test_environment["raw_db_path"],
-        "--analytics-db-path", elt_test_environment["analytics_db_path"]
+        "--input-dir",
+        elt_test_environment["downloads_dir"],
+        "--schema-db-path",
+        elt_test_environment["schema_db_path"],
+        "--raw-db-path",
+        elt_test_environment["raw_db_path"],
+        "--analytics-db-path",
+        elt_test_environment["analytics_db_path"],
     ]
     # Patch sys.argv for p2_elt_main
     # Note: p2_elt_pipeline.run_elt.main is the function to call
     # Removed local import of patch, global one should be used.
-    with patch.object(sys, 'argv', ['pipelines/p2_elt_pipeline/run_elt.py'] + p2_args):
+    with patch.object(sys, "argv", ["pipelines/p2_elt_pipeline/run_elt.py"] + p2_args):
         p2_elt_main()
 
-    assert os.path.exists(elt_test_environment["analytics_db_path"]), "P2 did not create analytics_taifex.duckdb"
+    assert os.path.exists(elt_test_environment["analytics_db_path"]), (
+        "P2 did not create analytics_taifex.duckdb"
+    )
 
     # --- Assert: Verify analytics_taifex.duckdb ---
     conn = duckdb.connect(elt_test_environment["analytics_db_path"])
@@ -115,20 +133,24 @@ def test_full_elt_pipeline_flow(elt_test_environment):
 
     # 2. Query daily_futures and verify record count
     # sample_daily_ohlc_20250711.zip contains a CSV with 2 data rows.
-    daily_futures_count = conn.execute("SELECT COUNT(*) FROM daily_futures;").fetchone()[0]
+    daily_futures_count = conn.execute(
+        "SELECT COUNT(*) FROM daily_futures;"
+    ).fetchone()[0]
     assert daily_futures_count == 2, "daily_futures table should have 2 records."
 
     # 3. Query daily_futures and verify specific values (optional, but good for confidence)
     # Columns in daily_futures are: "交易日期", "契約代碼", "到期月份(週別)", "開盤價", "最高價", "最低價", "收盤價", "成交量"
     # All are VARCHAR in the current P2 script.
-    first_row = conn.execute('SELECT * FROM daily_futures WHERE "契約代碼" = \'TX\'').fetchone()
+    first_row = conn.execute(
+        "SELECT * FROM daily_futures WHERE \"契約代碼\" = 'TX'"
+    ).fetchone()
     assert first_row is not None, "TX contract data not found in daily_futures"
     # Expected: 2025/07/11,TX,202507,18000,18050,17950,18020,1000
     assert first_row[0] == "2025/07/11"  # 交易日期
-    assert first_row[1] == "TX"          # 契約代碼
-    assert first_row[2] == "202507"      # 到期月份(週別)
-    assert first_row[3] == "18000"       # 開盤價
-    assert first_row[7] == "1000"        # 成交量
+    assert first_row[1] == "TX"  # 契約代碼
+    assert first_row[2] == "202507"  # 到期月份(週別)
+    assert first_row[3] == "18000"  # 開盤價
+    assert first_row[7] == "1000"  # 成交量
 
     # 4. Query options_analytics (IF it were implemented)
     # If 'options_analytics' table were created and populated from 'sample_options_delta_20250711.csv':
@@ -145,6 +167,7 @@ def test_full_elt_pipeline_flow(elt_test_environment):
 
     conn.close()
 
+
 # Note on P2 extensibility for options_delta:
 # The current p2_elt_pipeline/run_elt.py's Transformer logic is hardcoded for one specific schema (daily_futures).
 # To properly test the 'sample_options_delta_20250711.csv' transformation, P2's run_elt.py would need:
@@ -152,5 +175,5 @@ def test_full_elt_pipeline_flow(elt_test_environment):
 # 2. Logic to create/populate a different table (e.g., 'options_analytics') based on that schema.
 # The test is written to pass with current P2, with commented-out assertions for a future, more robust P2.
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main([__file__])

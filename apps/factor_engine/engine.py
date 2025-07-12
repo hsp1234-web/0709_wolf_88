@@ -7,12 +7,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-# import pandas_ta as ta # Pandas TA 通过 accessor (df.ta) 使用，通常不需要在此直接导入
+from apps.daily_market_analyzer.db_manager import DBManager
 
+# import pandas_ta as ta # Pandas TA 通过 accessor (df.ta) 使用，通常不需要在此直接导入
 # (空一行)
 # 本地應用/庫導入
-from core.logger import get_logger # 移到頂部，但在 __future__ 之後
-from apps.daily_market_analyzer.db_manager import DBManager
+from core.logger import get_logger  # 移到頂部，但在 __future__ 之後
 
 logger = get_logger(__name__)
 
@@ -21,11 +21,13 @@ logger = get_logger(__name__)
 """
 # 本模組定義了 FactorEngine 類別，用於計算各種市場分析因子。
 
+
 class FactorEngine:
     """
     因子引擎核心類別。
     負責從資料庫讀取市場數據，計算分析因子，並回傳結果。
     """
+
     def __init__(self, db_manager: DBManager):
         """
         初始化因子引擎。
@@ -68,9 +70,7 @@ class FactorEngine:
         self, dataframe: pd.DataFrame, n_days: int = 20
     ) -> pd.Series | None:
         if dataframe.empty or "close" not in dataframe.columns:
-            logger.warning(
-                "DataFrame 為空或缺少 'close' 欄位，無法計算價格波動率。"
-            )
+            logger.warning("DataFrame 為空或缺少 'close' 欄位，無法計算價格波動率。")
             return None
         dataframe["log_return"] = np.log(
             dataframe["close"].astype(float) / dataframe["close"].astype(float).shift(1)
@@ -83,9 +83,7 @@ class FactorEngine:
         self, dataframe: pd.DataFrame, n_days: int = 20
     ) -> pd.Series | None:
         if dataframe.empty or "volume" not in dataframe.columns:
-            logger.warning(
-                "DataFrame 為空或缺少 'volume' 欄位，無法計算成交量波動率。"
-            )
+            logger.warning("DataFrame 為空或缺少 'volume' 欄位，無法計算成交量波動率。")
             return None
         dataframe["volume_change_rate"] = (
             dataframe["volume"].astype(float).pct_change(fill_method=None)
@@ -109,7 +107,8 @@ class FactorEngine:
         try:
             if not hasattr(dataframe, "ta"):
                 logger.error(
-                    "DataFrame 缺少 'ta' 擴展。Pandas TA 可能未正確加載或與 Pandas 版本不兼容。"
+                    "DataFrame 缺少 'ta' 擴展。"
+                    "Pandas TA 可能未正確加載或與 Pandas 版本不兼容。"
                 )
                 return None
             # pandas_ta 需要在環境中被安裝，即使這裡沒有顯式 import pandas_ta as ta
@@ -136,25 +135,28 @@ class FactorEngine:
                 raw_yields_df["date"] = raw_yields_df["date"].dt.tz_localize("UTC")
             else:
                 raw_yields_df["date"] = raw_yields_df["date"].dt.tz_convert("UTC")
+
             def format_term(term_str):
                 if "Yr" in term_str:
                     return term_str.replace(" Yr", "Y")
                 elif "Mo" in term_str:
                     return term_str.replace(" Mo", "M")
                 return term_str
+
             raw_yields_df["term_formatted"] = raw_yields_df["term"].apply(format_term)
             yields_pivot_df = raw_yields_df.pivot_table(
                 index="date", columns="term_formatted", values="yield"
             )
-            logger.info(f"成功從 TreasuryYields_Daily 讀取並轉換了 {len(yields_pivot_df)} 筆殖利率數據。")
+            logger.info(
+                f"成功從 TreasuryYields_Daily 讀取並轉換了 "
+                f"{len(yields_pivot_df)} 筆殖利率數據。"
+            )
             return yields_pivot_df
         except Exception as e:
             logger.error(f"讀取公債殖利率數據失敗: {e}", exc_info=True)
             return pd.DataFrame()
 
-    def calculate_yield_spreads(
-        self, yields_dataframe: pd.DataFrame
-    ) -> pd.DataFrame:
+    def calculate_yield_spreads(self, yields_dataframe: pd.DataFrame) -> pd.DataFrame:
         if yields_dataframe.empty:
             logger.warning("殖利率數據為空，無法計算利差。")
             return pd.DataFrame()
@@ -167,10 +169,8 @@ class FactorEngine:
             calculation_successful = True
             logger.info("已計算 spread_10y_2y。")
         else:
-            logger.warning(
-                "缺少 '10Y' 或 '2Y' 殖利率數據，無法計算 spread_10y_2y。"
-            )
-            if "spread_10y_2y" not in spreads_df.columns: # 避免重複添加空列
+            logger.warning("缺少 '10Y' 或 '2Y' 殖利率數據，無法計算 spread_10y_2y。")
+            if "spread_10y_2y" not in spreads_df.columns:  # 避免重複添加空列
                 spreads_df["spread_10y_2y"] = np.nan
         if "10Y" in yields_dataframe.columns and "3M" in yields_dataframe.columns:
             yield_10y = pd.to_numeric(yields_dataframe["10Y"], errors="coerce")
@@ -179,22 +179,20 @@ class FactorEngine:
             calculation_successful = True
             logger.info("已計算 spread_10y_3m。")
         else:
-            logger.warning(
-                "缺少 '10Y' 或 '3M' 殖利率數據，無法計算 spread_10y_3m。"
-            )
-            if "spread_10y_3m" not in spreads_df.columns: # 避免重複添加空列
+            logger.warning("缺少 '10Y' 或 '3M' 殖利率數據，無法計算 spread_10y_3m。")
+            if "spread_10y_3m" not in spreads_df.columns:  # 避免重複添加空列
                 spreads_df["spread_10y_3m"] = np.nan
 
-        if not calculation_successful and not yields_dataframe.empty: # 檢查是否 dataframe 本身非空但無任何利差計算成功
-             logger.warning(
-                "未能成功計算任何利差，因為缺少必要的殖利率期限數據。"
-            )
-        elif calculation_successful: # 只有在至少一個利差計算成功時才記錄此訊息
-            valid_spreads_count = len(spreads_df.dropna(how='all'))
+        if (
+            not calculation_successful and not yields_dataframe.empty
+        ):  # 檢查是否 dataframe 本身非空但無任何利差計算成功
+            logger.warning("未能成功計算任何利差，因為缺少必要的殖利率期限數據。")
+        elif calculation_successful:  # 只有在至少一個利差計算成功時才記錄此訊息
+            valid_spreads_count = len(spreads_df.dropna(how="all"))
             if valid_spreads_count > 0:
-                 logger.info(f"成功計算了 {valid_spreads_count} 筆有效的利差數據。")
+                logger.info(f"成功計算了 {valid_spreads_count} 筆有效的利差數據。")
             else:
-                 logger.info("已嘗試計算利差，但結果均為 NaN。")
+                logger.info("已嘗試計算利差，但結果均為 NaN。")
 
         return spreads_df
 
@@ -217,9 +215,7 @@ class FactorEngine:
             hyg_close, lqd_close, left_index=True, right_index=True, how="inner"
         )
         if merged_prices.empty:
-            logger.warning(
-                f"{hyg_ticker} 和 {lqd_ticker} 沒有共同交易日期。"
-            )
+            logger.warning(f"{hyg_ticker} 和 {lqd_ticker} 沒有共同交易日期。")
             return pd.DataFrame()
         merged_prices["hyg_close"] = pd.to_numeric(
             merged_prices["hyg_close"], errors="coerce"
@@ -229,13 +225,18 @@ class FactorEngine:
         )
         proxy_df["HYG_LQD_price_ratio"] = merged_prices["hyg_close"] / merged_prices[
             "lqd_close"
-        ].replace(0, np.nan) # 避免除以零
-        proxy_df.dropna(subset=["HYG_LQD_price_ratio"], inplace=True) # 移除因除以零或 NaN 產生的空值
+        ].replace(0, np.nan)  # 避免除以零
+        proxy_df.dropna(
+            subset=["HYG_LQD_price_ratio"], inplace=True
+        )  # 移除因除以零或 NaN 產生的空值
         if proxy_df.empty:
             logger.warning("計算出的 HYG/LQD 價格比率數據為空。")
             return pd.DataFrame()
         logger.info(f"成功計算了 {len(proxy_df)} 筆 HYG/LQD 價格比率數據。")
         return proxy_df
 
+
 if __name__ == "__main__":
-    logger.info("因子引擎 (FactorEngine) 已定義。此檔案主要作為模組導入，不建議直接執行。")
+    logger.info(
+        "因子引擎 (FactorEngine) 已定義。此檔案主要作為模組導入，不建議直接執行。"
+    )

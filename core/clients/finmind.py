@@ -1,12 +1,14 @@
 # core/clients/finmind.py
 # 此模組包含與 FinMind API 互動的客戶端邏輯。
 from __future__ import annotations
+
 import os
-import requests
-import pandas as pd
-from io import StringIO
 from datetime import datetime
-from typing import Optional, Dict, Any, List # Ensure List is imported
+from io import StringIO
+from typing import Any, Dict, List, Optional  # Ensure List is imported
+
+import pandas as pd
+import requests
 
 from .base import BaseAPIClient
 
@@ -66,14 +68,14 @@ class FinMindClient(BaseAPIClient):
             raise ValueError("請求 FinMind API 時，params 參數不得為空。")
 
         request_params = params.copy()
-        request_params["token"] = (
-            self.api_key
-        )
+        request_params["token"] = self.api_key
 
         if not self.base_url:
-            raise ValueError("FinMindClient: base_url is not set, cannot make a request.")
+            raise ValueError(
+                "FinMindClient: base_url is not set, cannot make a request."
+            )
 
-        current_url = ( # Renamed url to current_url to avoid confusion if self.base_url is used later directly
+        current_url = (  # Renamed url to current_url to avoid confusion if self.base_url is used later directly
             f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
             if endpoint
             else self.base_url
@@ -86,8 +88,12 @@ class FinMindClient(BaseAPIClient):
         try:
             # Ensure current_url is not None before calling get, though the check for self.base_url should cover this.
             if not current_url:
-                 raise ValueError("FinMindClient: Calculated URL is empty, cannot make a request.")
-            response: requests.Response = self._session.get(current_url, params=request_params)
+                raise ValueError(
+                    "FinMindClient: Calculated URL is empty, cannot make a request."
+                )
+            response: requests.Response = self._session.get(
+                current_url, params=request_params
+            )
             response.raise_for_status()  # type: ignore[no-untyped-call]
 
             content_type = response.headers.get("Content-Type", "")
@@ -162,7 +168,7 @@ class FinMindClient(BaseAPIClient):
                 "使用 FinMindClient.fetch_data 時，必須在 kwargs 中提供 'start_date' 參數。"
             )
 
-        params: Dict[str,Any] = { # Add type hint for params
+        params: Dict[str, Any] = {  # Add type hint for params
             "dataset": dataset,
             "data_id": symbol,
             "start_date": start_date,
@@ -189,10 +195,9 @@ class FinMindClient(BaseAPIClient):
             end_date=end_date,
         )
 
+
 if __name__ == "__main__":
-    print(
-        "--- FinMindClient 重構後測試 (直接執行 core/clients/finmind.py) ---"
-    )
+    print("--- FinMindClient 重構後測試 (直接執行 core/clients/finmind.py) ---")
     try:
         client = FinMindClient()
         print("FinMindClient 初始化成功。")
@@ -240,7 +245,7 @@ if __name__ == "__main__":
 
         try:
             print("\n測試 fetch_data 缺少 'dataset'...")
-            client.fetch_data(symbol="2330", start_date="2024-01-01") # Missing dataset
+            client.fetch_data(symbol="2330", start_date="2024-01-01")  # Missing dataset
         except ValueError as ve:
             print(f"成功捕獲錯誤 (符合預期): {ve}")
 

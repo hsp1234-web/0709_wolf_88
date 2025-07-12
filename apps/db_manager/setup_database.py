@@ -1,6 +1,7 @@
 # apps/db_manager/setup_database.py
-import duckdb
 from pathlib import Path
+
+import duckdb
 
 # --- 資料庫檔案設定 ---
 # 根據【核心架構原則】，所有腳本應具備路徑獨立性。
@@ -80,7 +81,8 @@ CREATE TABLE IF NOT EXISTS hourly_time_series (
 
 # --- SQL 指令：為表格添加註解 ---
 COMMENT_ON_TABLE_SQL = """
-COMMENT ON TABLE hourly_time_series IS '儲存【普羅米修斯之火】專案所需的小時級別金融時間序列數據。模板化指標欄位 (如 [商品代號]_obv_1h) 將在後續計畫中根據具體需求擴充。';
+COMMENT ON TABLE hourly_time_series IS '儲存【普羅米修斯之火】專案所需的小時級別金融時間序列數據。'
+'模板化指標欄位 (如 [商品代號]_obv_1h) 將在後續計畫中根據具體需求擴充。';
 """
 
 
@@ -113,6 +115,7 @@ def setup_database():
         if con:
             con.close()
             print("--- [完成] 資料庫連接已關閉。---")
+
 
 if __name__ == "__main__":
     setup_database()

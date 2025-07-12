@@ -1,21 +1,25 @@
-import pytest
 import os
+import shutil  # For cleaning up test directories/files if needed
 import sqlite3
-import shutil # For cleaning up test directories/files if needed
-from unittest.mock import patch # For more complex patching if main() calls other funcs
-
-# Add project root to sys.path
 import sys
-PROJECT_ROOT_FROM_TEST_P1 = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+from unittest.mock import patch  # For more complex patching if main() calls other funcs
+
+import pytest
+
+from pipelines.p1_explorer.run import (
+    get_header_fingerprint,
+)
+from pipelines.p1_explorer.run import main as p1_explorer_main
+
+PROJECT_ROOT_FROM_TEST_P1 = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..")
+)
 if PROJECT_ROOT_FROM_TEST_P1 not in sys.path:
     sys.path.insert(0, PROJECT_ROOT_FROM_TEST_P1)
 
-# Import the main function from p1_explorer
-from pipelines.p1_explorer.run import main as p1_explorer_main  # noqa: E402
-from pipelines.p1_explorer.run import get_header_fingerprint  # noqa: E402 # For verifying fingerprints
-
 # Define the path to the fixture files
-FIXTURES_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
+FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
+
 
 @pytest.fixture
 def p1_test_environment(tmp_path):
@@ -32,21 +36,18 @@ def p1_test_environment(tmp_path):
     # Ensure the parent directory for the db exists, as p1_explorer_main expects it
     os.makedirs(temp_db_path.parent, exist_ok=True)
 
-
     # Copy necessary files from tests/fixtures to temp_input_dir
     fixture_files_to_copy = [
-        'sample_daily_ohlc_20250711.zip',
-        'sample_options_delta_20250711.csv',
-        'corrupted.zip',
-        'no_data_response.html' # P1 should ideally ignore .html files or non-data files
+        "sample_daily_ohlc_20250711.zip",
+        "sample_options_delta_20250711.csv",
+        "corrupted.zip",
+        "no_data_response.html",  # P1 should ideally ignore .html files or non-data files
     ]
     for f_name in fixture_files_to_copy:
         shutil.copy(os.path.join(FIXTURES_DIR, f_name), temp_input_dir / f_name)
 
-    return {
-        "input_dir": str(temp_input_dir),
-        "db_path": str(temp_db_path)
-    }
+    return {"input_dir": str(temp_input_dir), "db_path": str(temp_db_path)}
+
 
 def test_p1_explorer_scan_fixtures(p1_test_environment):
     """
@@ -68,15 +69,17 @@ def test_p1_explorer_scan_fixtures(p1_test_environment):
     # Assuming p1_explorer_main uses argparse and can be called with args:
     test_args = ["--input-dir", input_dir, "--db-path", db_path]
 
-    with patch('sys.argv', ['pipelines/p1_explorer/run.py'] + test_args):
+    with patch("sys.argv", ["pipelines/p1_explorer/run.py"] + test_args):
         p1_explorer_main()
 
     # Assertions:
-    assert os.path.exists(db_path) # Database should be created
+    assert os.path.exists(db_path)  # Database should be created
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT format_fingerprint, header, encoding, file_count, first_seen_file FROM schema_registry")
+    cursor.execute(
+        "SELECT format_fingerprint, header, encoding, file_count, first_seen_file FROM schema_registry"
+    )
     results = cursor.fetchall()
     conn.close()
 
@@ -86,7 +89,9 @@ def test_p1_explorer_scan_fixtures(p1_test_environment):
     #    Encoding: likely 'ms950' or 'big5' for TAIFEX data, or 'utf-8' if generated so.
     #    The p1_explorer tries 'ms950', 'big5', 'utf-8', 'utf-8-sig'
     #    The sample zip was created with UTF-8 content.
-    expected_ohlc_header = "交易日期,契約代碼,到期月份(週別),開盤價,最高價,最低價,收盤價,成交量"
+    expected_ohlc_header = (
+        "交易日期,契約代碼,到期月份(週別),開盤價,最高價,最低價,收盤價,成交量"
+    )
     expected_ohlc_fingerprint = get_header_fingerprint(expected_ohlc_header)
 
     # 2. From sample_options_delta_20250711.csv
@@ -97,7 +102,9 @@ def test_p1_explorer_scan_fixtures(p1_test_environment):
 
     # Verify results
     # 現在我們期望 sample_options_delta_20250711.csv 也被正確處理
-    assert len(results) == 2, "Should register exactly two valid formats (ohlc.zip and options_delta.csv)."
+    assert len(results) == 2, (
+        "Should register exactly two valid formats (ohlc.zip and options_delta.csv)."
+    )
 
     registered_fingerprints = [row[0] for row in results]
     assert expected_ohlc_fingerprint in registered_fingerprints
@@ -105,24 +112,27 @@ def test_p1_explorer_scan_fixtures(p1_test_environment):
 
     for row in results:
         fingerprint, header, encoding, file_count, first_seen_file = row
-        assert file_count == 1 # Each format seen once
+        assert file_count == 1  # Each format seen once
 
         if fingerprint == expected_ohlc_fingerprint:
             assert header == expected_ohlc_header
             # The sample_daily_ohlc_20250711.zip contains daily_20250711.csv.
             # The first_seen_file in p1_explorer is the name of the outer file (the zip).
-            assert first_seen_file == 'sample_daily_ohlc_20250711.zip'
-            assert encoding.lower() == 'utf-8' # Since our CSV inside ZIP was UTF-8
+            assert first_seen_file == "sample_daily_ohlc_20250711.zip"
+            assert encoding.lower() == "utf-8"  # Since our CSV inside ZIP was UTF-8
         elif fingerprint == expected_options_fingerprint:
             assert header == expected_options_header
-            assert first_seen_file == 'sample_options_delta_20250711.csv'
-            assert encoding.lower() == 'utf-8' # Since our CSV was UTF-8
+            assert first_seen_file == "sample_options_delta_20250711.csv"
+            assert encoding.lower() == "utf-8"  # Since our CSV was UTF-8
         else:
-            pytest.fail(f"Unexpected fingerprint found: {fingerprint}. Expected one of {expected_ohlc_fingerprint} or {expected_options_fingerprint}")
+            pytest.fail(
+                f"Unexpected fingerprint found: {fingerprint}. Expected one of {expected_ohlc_fingerprint} or {expected_options_fingerprint}"
+            )
 
     # Corrupted.zip should not result in a schema.
     # no_data_response.html should not result in a schema.
     # This is implicitly checked by `assert len(results) == 2`.
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     pytest.main([__file__])

@@ -1,14 +1,17 @@
 # 檔案路徑: core/analysis/data_engine.py
-import pandas as pd
 from datetime import datetime
-from typing import Dict, Any
-import duckdb
 from pathlib import Path
+from typing import Any, Dict
+
+import duckdb
+import pandas as pd
+
+from core.clients.fred import FredClient
+from core.clients.taifex_db import TaifexDBClient
 
 # 假設這些是我們已經存在的客戶端
 from core.clients.yfinance import YFinanceClient
-from core.clients.fred import FredClient
-from core.clients.taifex_db import TaifexDBClient
+
 
 class DataEngine:
     """
@@ -16,7 +19,13 @@ class DataEngine:
     負責協調所有數據客戶端，計算多維度指標，
     並生成一份「高密度市場狀態快照」。
     """
-    def __init__(self, yf_client: YFinanceClient, fred_client: FredClient, taifex_client: TaifexDBClient):
+
+    def __init__(
+        self,
+        yf_client: YFinanceClient,
+        fred_client: FredClient,
+        taifex_client: TaifexDBClient,
+    ):
         """
         透過依賴注入初始化，傳入所有需要的數據客戶端。
         """
@@ -57,7 +66,7 @@ class DataEngine:
         :param data_df: (pandas.DataFrame) 包含單行待寫入數據的 DataFrame。
         """
         # 使用 'append' 模式將 DataFrame 寫入表格
-        self.db_con.append('hourly_time_series', data_df)
+        self.db_con.append("hourly_time_series", data_df)
         print(f"CACHE WRITE: 已將 {data_df['timestamp'].iloc[0]} 的數據寫入快取。")
 
     def _calculate_technicals(self, ohlcv: pd.DataFrame) -> Dict[str, Any]:
@@ -67,14 +76,16 @@ class DataEngine:
         """
         technicals = {}
         # 範例：計算20日均線
-        if 'Close' in ohlcv.columns and len(ohlcv) >= 20:
-            technicals['MA20'] = round(ohlcv['Close'].rolling(window=20).mean().iloc[-1], 2)
+        if "Close" in ohlcv.columns and len(ohlcv) >= 20:
+            technicals["MA20"] = round(
+                ohlcv["Close"].rolling(window=20).mean().iloc[-1], 2
+            )
         else:
-            technicals['MA20'] = None
+            technicals["MA20"] = None
 
         # TODO: 實現 RSI, MACD, BBands 等指標計算
-        technicals['RSI_14D'] = 70 # 暫用假數據
-        technicals['RSI_status'] = '超買' # 暫用假數據
+        technicals["RSI_14D"] = 70  # 暫用假數據
+        technicals["RSI_status"] = "超買"  # 暫用假數據
 
         return technicals
 
@@ -86,24 +97,32 @@ class DataEngine:
             hyg_data = self.yf_client.get_history("HYG", period="1d")
             ief_data = self.yf_client.get_history("IEF", period="1d")
 
-            if hyg_data.empty or 'Close' not in hyg_data.columns or hyg_data['Close'].iloc[-1] is None:
+            if (
+                hyg_data.empty
+                or "Close" not in hyg_data.columns
+                or hyg_data["Close"].iloc[-1] is None
+            ):
                 print("警告: 無法獲取 HYG 的最新收盤價。")
-                return float('nan')
-            if ief_data.empty or 'Close' not in ief_data.columns or ief_data['Close'].iloc[-1] is None:
+                return float("nan")
+            if (
+                ief_data.empty
+                or "Close" not in ief_data.columns
+                or ief_data["Close"].iloc[-1] is None
+            ):
                 print("警告: 無法獲取 IEF 的最新收盤價。")
-                return float('nan')
+                return float("nan")
 
-            hyg_price = hyg_data['Close'].iloc[-1]
-            ief_price = ief_data['Close'].iloc[-1]
+            hyg_price = hyg_data["Close"].iloc[-1]
+            ief_price = ief_data["Close"].iloc[-1]
 
             if ief_price == 0:
                 print("警告: IEF 價格為零，無法計算信用利差。")
-                return float('nan')
+                return float("nan")
 
             return round(hyg_price / ief_price, 4)
         except Exception as e:
             print(f"計算近似信用利差時發生錯誤: {e}")
-            return float('nan')
+            return float("nan")
 
     def _calculate_proxy_move(self) -> float:
         """
@@ -111,16 +130,18 @@ class DataEngine:
         """
         try:
             tlt_data = self.yf_client.get_history("TLT", period="60d")
-            if tlt_data.empty or 'Close' not in tlt_data.columns or len(tlt_data) < 21: # Need at least 20 periods + 1 for pct_change
+            if (
+                tlt_data.empty or "Close" not in tlt_data.columns or len(tlt_data) < 21
+            ):  # Need at least 20 periods + 1 for pct_change
                 print("警告: TLT 數據不足以計算代理波動率。")
-                return float('nan')
+                return float("nan")
 
-            daily_returns = tlt_data['Close'].pct_change()
+            daily_returns = tlt_data["Close"].pct_change()
             proxy_move = daily_returns.rolling(window=20).std().iloc[-1]
             return round(proxy_move, 4)
         except Exception as e:
             print(f"計算代理債市波動率時發生錯誤: {e}")
-            return float('nan')
+            return float("nan")
 
     def _calculate_gold_copper_ratio(self) -> float:
         """
@@ -130,24 +151,32 @@ class DataEngine:
             gld_data = self.yf_client.get_history("GLD", period="1d")
             copper_data = self.yf_client.get_history("HG=F", period="1d")
 
-            if gld_data.empty or 'Close' not in gld_data.columns or gld_data['Close'].iloc[-1] is None:
+            if (
+                gld_data.empty
+                or "Close" not in gld_data.columns
+                or gld_data["Close"].iloc[-1] is None
+            ):
                 print("警告: 無法獲取 GLD 的最新收盤價。")
-                return float('nan')
-            if copper_data.empty or 'Close' not in copper_data.columns or copper_data['Close'].iloc[-1] is None:
+                return float("nan")
+            if (
+                copper_data.empty
+                or "Close" not in copper_data.columns
+                or copper_data["Close"].iloc[-1] is None
+            ):
                 print("警告: 無法獲取 HG=F 的最新收盤價。")
-                return float('nan')
+                return float("nan")
 
-            gld_price = gld_data['Close'].iloc[-1]
-            copper_price = copper_data['Close'].iloc[-1]
+            gld_price = gld_data["Close"].iloc[-1]
+            copper_price = copper_data["Close"].iloc[-1]
 
             if copper_price == 0:
                 print("警告: 銅價為零，無法計算金銅比。")
-                return float('nan')
+                return float("nan")
 
             return round(gld_price / copper_price, 4)
         except Exception as e:
             print(f"計算金銅比時發生錯誤: {e}")
-            return float('nan')
+            return float("nan")
 
     def generate_snapshot(self, dt: datetime):
         # 1. 首先，嘗試從快取讀取數據
@@ -172,23 +201,61 @@ class DataEngine:
             # 為了演示，這裡我們回傳一個假資料
             data = {
                 "timestamp": [dt],
-                "spy_open": [None], "spy_high": [None], "spy_low": [None], "spy_close": [500.0], "spy_volume": [None],
-                "qqq_close": [None], "tlt_close": [None], "btc_usd_close": [None], "nq_f_close": [None],
-                "es_f_close": [None], "ym_f_close": [None], "cl_f_close": [None], "gc_f_close": [None],
-                "si_f_close": [None], "zb_f_close": [None], "zn_f_close": [None], "zt_f_close": [None],
-                "zf_f_close": [None], "gld_close": [None], "shy_close": [None], "iei_close": [None],
-                "aapl_close": [None], "msft_close": [None], "nvda_close": [None], "goog_close": [None],
-                "tsm_close": [None], "601318_ss_close": [None], "688981_ss_close": [None], "0981_hk_close": [None],
-                "spy_rsi_14_1h": [None], "spy_macd_signal_1h": [None], "spy_bbands_width_pct_1h": [None],
-                "spy_vwap_1h": [None], "spy_atr_14_1h": [None], "spy_vwap_deviation_pct_1h": [None],
-                "spy_momentum_1h_100": [None], "spy_bollinger_band_upper_1h": [None],
-                "spy_bollinger_band_lower_1h": [None], "spy_bb_middle_band_20h": [None],
-                "spy_bb_upper_band_20h": [None], "spy_bb_lower_band_20h": [None],
-                "spy_bb_band_width_pct_20h": [None], "spy_bb_percent_b_20h": [None], "spy_gex_total": [None],
-                "spy_gex_flip_level": [None], "spy_max_pain": [None], "spy_call_wall_strike": [None],
-                "spy_put_wall_strike": [None], "spy_pc_ratio_volume": [None], "spy_pc_ratio_oi": [None],
-                "spy_iv_atm_1m": [None], "spy_skew_quantified": [None], "spy_vanna_exposure": [None],
-                "spy_charm_exposure": [None], "vvix_close": [None]
+                "spy_open": [None],
+                "spy_high": [None],
+                "spy_low": [None],
+                "spy_close": [500.0],
+                "spy_volume": [None],
+                "qqq_close": [None],
+                "tlt_close": [None],
+                "btc_usd_close": [None],
+                "nq_f_close": [None],
+                "es_f_close": [None],
+                "ym_f_close": [None],
+                "cl_f_close": [None],
+                "gc_f_close": [None],
+                "si_f_close": [None],
+                "zb_f_close": [None],
+                "zn_f_close": [None],
+                "zt_f_close": [None],
+                "zf_f_close": [None],
+                "gld_close": [None],
+                "shy_close": [None],
+                "iei_close": [None],
+                "aapl_close": [None],
+                "msft_close": [None],
+                "nvda_close": [None],
+                "goog_close": [None],
+                "tsm_close": [None],
+                "601318_ss_close": [None],
+                "688981_ss_close": [None],
+                "0981_hk_close": [None],
+                "spy_rsi_14_1h": [None],
+                "spy_macd_signal_1h": [None],
+                "spy_bbands_width_pct_1h": [None],
+                "spy_vwap_1h": [None],
+                "spy_atr_14_1h": [None],
+                "spy_vwap_deviation_pct_1h": [None],
+                "spy_momentum_1h_100": [None],
+                "spy_bollinger_band_upper_1h": [None],
+                "spy_bollinger_band_lower_1h": [None],
+                "spy_bb_middle_band_20h": [None],
+                "spy_bb_upper_band_20h": [None],
+                "spy_bb_lower_band_20h": [None],
+                "spy_bb_band_width_pct_20h": [None],
+                "spy_bb_percent_b_20h": [None],
+                "spy_gex_total": [None],
+                "spy_gex_flip_level": [None],
+                "spy_max_pain": [None],
+                "spy_call_wall_strike": [None],
+                "spy_put_wall_strike": [None],
+                "spy_pc_ratio_volume": [None],
+                "spy_pc_ratio_oi": [None],
+                "spy_iv_atm_1m": [None],
+                "spy_skew_quantified": [None],
+                "spy_vanna_exposure": [None],
+                "spy_charm_exposure": [None],
+                "vvix_close": [None],
             }
             new_data_df = pd.DataFrame(data)
 
@@ -198,7 +265,9 @@ class DataEngine:
             # e. 返回這筆剛從 API 獲取的新數據
             return new_data_df
 
-    def get_hourly_series(self, ticker: str, column: str, start_date: str, end_date: str) -> "pd.Series":
+    def get_hourly_series(
+        self, ticker: str, column: str, start_date: str, end_date: str
+    ) -> "pd.Series":
         """
         從 DuckDB 獲取指定時間範圍內的小時級數據。
         """
@@ -206,7 +275,7 @@ class DataEngine:
         result_df = self.db_con.execute(query, [start_date, end_date]).fetch_df()
 
         if result_df.empty:
-            return pd.Series(dtype='float64')
+            return pd.Series(dtype="float64")
 
-        result_df = result_df.set_index('timestamp')
-        return result_df[f'{ticker}_{column}']
+        result_df = result_df.set_index("timestamp")
+        return result_df[f"{ticker}_{column}"]

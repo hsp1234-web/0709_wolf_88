@@ -1,7 +1,9 @@
 # In apps/visualization/plot_sma_crossover.py
+from pathlib import Path
+
 import pandas as pd
 import plotly.graph_objects as go
-from pathlib import Path
+
 
 def generate_plot(csv_path: Path, output_html_path: Path):
     """
@@ -21,42 +23,70 @@ def generate_plot(csv_path: Path, output_html_path: Path):
         return
 
     # 步驟 1: 讀取數據
-    df = pd.read_csv(csv_path, index_col='timestamp', parse_dates=True)
+    df = pd.read_csv(csv_path, index_col="timestamp", parse_dates=True)
 
     # 步驟 2: 建立圖表物件
     fig = go.Figure()
 
     # 步驟 3: 繪製主要線條
-    fig.add_trace(go.Scatter(x=df.index, y=df['spy_close'], mode='lines', name='SPY 收盤價', line=dict(color='black', width=1)))
-    fig.add_trace(go.Scatter(x=df.index, y=df['short_sma'], mode='lines', name='20H SMA', line=dict(color='blue', width=1)))
-    fig.add_trace(go.Scatter(x=df.index, y=df['long_sma'], mode='lines', name='50H SMA', line=dict(color='orange', width=1)))
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["spy_close"],
+            mode="lines",
+            name="SPY 收盤價",
+            line=dict(color="black", width=1),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["short_sma"],
+            mode="lines",
+            name="20H SMA",
+            line=dict(color="blue", width=1),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["long_sma"],
+            mode="lines",
+            name="50H SMA",
+            line=dict(color="orange", width=1),
+        )
+    )
 
     # 步驟 4: 繪製買賣信號標記
-    buy_signals = df[df['signal'] == 1.0]
-    sell_signals = df[df['signal'] == -1.0]
+    buy_signals = df[df["signal"] == 1.0]
+    sell_signals = df[df["signal"] == -1.0]
 
-    fig.add_trace(go.Scatter(
-        x=buy_signals.index,
-        y=buy_signals['short_sma'],
-        mode='markers',
-        name='買進信號 (黃金交叉)',
-        marker=dict(color='green', symbol='triangle-up', size=10)
-    ))
-    fig.add_trace(go.Scatter(
-        x=sell_signals.index,
-        y=sell_signals['short_sma'],
-        mode='markers',
-        name='賣出信號 (死亡交叉)',
-        marker=dict(color='red', symbol='triangle-down', size=10)
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=buy_signals.index,
+            y=buy_signals["short_sma"],
+            mode="markers",
+            name="買進信號 (黃金交叉)",
+            marker=dict(color="green", symbol="triangle-up", size=10),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=sell_signals.index,
+            y=sell_signals["short_sma"],
+            mode="markers",
+            name="賣出信號 (死亡交叉)",
+            marker=dict(color="red", symbol="triangle-down", size=10),
+        )
+    )
 
     # 步驟 5: 設定圖表樣式
     fig.update_layout(
-        title='SPY 小時線 SMA 交叉信號視覺化',
-        xaxis_title='日期',
-        yaxis_title='價格 (USD)',
-        legend_title='圖例',
-        template='plotly_white'
+        title="SPY 小時線 SMA 交叉信號視覺化",
+        xaxis_title="日期",
+        yaxis_title="價格 (USD)",
+        legend_title="圖例",
+        template="plotly_white",
     )
 
     # 步驟 6: 儲存為 HTML

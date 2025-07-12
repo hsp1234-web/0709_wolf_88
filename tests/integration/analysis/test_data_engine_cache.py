@@ -1,32 +1,40 @@
 # 檔案路徑: tests/integration/analysis/test_data_engine_cache.py
+import os  # 導入 os 模組
+from datetime import datetime
+from unittest.mock import patch
+
+import pandas as pd
 import pytest
 import requests_cache
-import os # 導入 os 模組
-from unittest.mock import MagicMock # <--- 修正導入 (已存在，確認無誤)
-import pandas as pd
-import fredapi # <--- 導入 fredapi 以便 spy
-from datetime import datetime
 
-from core.clients.fred import FredClient
 from core.analysis.data_engine import DataEngine
+from core.clients.fred import FredClient
 
 # 獲取 API 金鑰
-FRED_API_KEY = os.environ.get("FRED_API_KEY_TEST_ONLY") # 使用不同的環境變數名稱以示區隔
+FRED_API_KEY = os.environ.get(
+    "FRED_API_KEY_TEST_ONLY"
+)  # 使用不同的環境變數名稱以示區隔
+
 
 @pytest.fixture(scope="module")
 def real_fred_client():
     """創建一個使用暫存快取的真實客戶端實例。"""
     if not FRED_API_KEY:
-        pytest.skip("FRED_API_KEY_TEST_ONLY 環境變數未設定，跳過此整合測試。") # <--- 如果沒有金鑰則跳過
-    session = requests_cache.CachedSession('test_cache', backend='sqlite', expire_after=300)
+        pytest.skip(
+            "FRED_API_KEY_TEST_ONLY 環境變數未設定，跳過此整合測試。"
+        )  # <--- 如果沒有金鑰則跳過
+    session = requests_cache.CachedSession(
+        "test_cache", backend="sqlite", expire_after=300
+    )
     # FredClient 現在接受 api_key 參數，並且我們已修改其 __init__
     return FredClient(api_key=FRED_API_KEY, session=session)
+
 
 # 清理快取
 @pytest.fixture(autouse=True)
 def cleanup_cache(real_fred_client):
     # 如果 real_fred_client 被跳過，它不會被執行，所以這裡需要一個保護
-    if hasattr(real_fred_client, 'session') and real_fred_client.session:
+    if hasattr(real_fred_client, "session") and real_fred_client.session:
         real_fred_client.session.cache.clear()
     else:
         # 如果 real_fred_client fixture 被跳過，那麼 real_fred_client 可能是一個 SkipMarker 或類似物件
@@ -37,36 +45,46 @@ def cleanup_cache(real_fred_client):
 @pytest.fixture
 def temp_db_data_engine():
     """一個使用內存 DuckDB 的 DataEngine 實ли，確保測試隔離。"""
-    from core.config import config
-    from core.clients.yfinance import YFinanceClient
+    import duckdb
+
     from core.clients.fred import FredClient
     from core.clients.taifex_db import TaifexDBClient
-    import duckdb
+    from core.clients.yfinance import YFinanceClient
+
     yf_client = YFinanceClient()
     fred_client = FredClient(api_key="fake_key")
     taifex_client = TaifexDBClient()
 
-    engine = DataEngine(yf_client=yf_client, fred_client=fred_client, taifex_client=taifex_client)
-    engine.db_con = duckdb.connect(database=':memory:')
+    engine = DataEngine(
+        yf_client=yf_client, fred_client=fred_client, taifex_client=taifex_client
+    )
+    engine.db_con = duckdb.connect(database=":memory:")
     engine.db_con.execute(CREATE_HOURLY_TABLE_SQL)
 
     yield engine
 
     engine.close()
 
-from unittest.mock import patch
 
-@patch('core.analysis.data_engine.DataEngine._calculate_technicals')
-@patch('core.analysis.data_engine.DataEngine._calculate_approx_credit_spread')
-@patch('core.analysis.data_engine.DataEngine._calculate_proxy_move')
-@patch('core.analysis.data_engine.DataEngine._calculate_gold_copper_ratio')
-@patch('core.clients.yfinance.YFinanceClient.fetch_data') # Mock API 客戶端
-def test_cache_miss_and_write(mock_fetch_data, mock_gold_copper_ratio, mock_proxy_move, mock_credit_spread, mock_technicals, temp_db_data_engine):
+
+@patch("core.analysis.data_engine.DataEngine._calculate_technicals")
+@patch("core.analysis.data_engine.DataEngine._calculate_approx_credit_spread")
+@patch("core.analysis.data_engine.DataEngine._calculate_proxy_move")
+@patch("core.analysis.data_engine.DataEngine._calculate_gold_copper_ratio")
+@patch("core.clients.yfinance.YFinanceClient.fetch_data")  # Mock API 客戶端
+def test_cache_miss_and_write(
+    mock_fetch_data,
+    mock_gold_copper_ratio,
+    mock_proxy_move,
+    mock_credit_spread,
+    mock_technicals,
+    temp_db_data_engine,
+):
     """
     測試案例：當快取中沒有數據時，應觸發 API 呼叫，並將結果寫回資料庫。
     """
     # Arrange (安排)
-    mock_fetch_data.return_value = pd.DataFrame({'Close': [500.0]})
+    mock_fetch_data.return_value = pd.DataFrame({"Close": [500.0]})
     dt = datetime(2025, 7, 12)
 
     # Act (行動)
@@ -75,25 +93,29 @@ def test_cache_miss_and_write(mock_fetch_data, mock_gold_copper_ratio, mock_prox
     # Assert (斷言)
     assert not result1.empty
 
-    db_result = temp_db_data_engine.db_con.execute("SELECT * FROM hourly_time_series WHERE timestamp = ?", [dt]).fetch_df()
+    db_result = temp_db_data_engine.db_con.execute(
+        "SELECT * FROM hourly_time_series WHERE timestamp = ?", [dt]
+    ).fetch_df()
     assert not db_result.empty
-    assert db_result['spy_close'].iloc[0] == 500.0
+    assert db_result["spy_close"].iloc[0] == 500.0
 
 
-@patch('core.clients.yfinance.YFinanceClient.fetch_data') # Mock API 客戶端
+@patch("core.clients.yfinance.YFinanceClient.fetch_data")  # Mock API 客戶端
 def test_cache_hit(mock_fetch_data, temp_db_data_engine):
     """
     測試案例：當數據已存在於快取中，不應再次觸發 API 呼叫。
     """
     # Arrange (安排)
-    mock_fetch_data.return_value = pd.DataFrame({'Close': [500.0]})
+    mock_fetch_data.return_value = pd.DataFrame({"Close": [500.0]})
     dt = datetime(2025, 7, 12)
 
     # 第一次寫入
-    with patch('core.analysis.data_engine.DataEngine._calculate_technicals'), \
-         patch('core.analysis.data_engine.DataEngine._calculate_approx_credit_spread'), \
-         patch('core.analysis.data_engine.DataEngine._calculate_proxy_move'), \
-         patch('core.analysis.data_engine.DataEngine._calculate_gold_copper_ratio'):
+    with (
+        patch("core.analysis.data_engine.DataEngine._calculate_technicals"),
+        patch("core.analysis.data_engine.DataEngine._calculate_approx_credit_spread"),
+        patch("core.analysis.data_engine.DataEngine._calculate_proxy_move"),
+        patch("core.analysis.data_engine.DataEngine._calculate_gold_copper_ratio"),
+    ):
         temp_db_data_engine.generate_snapshot(dt)
 
     mock_fetch_data.reset_mock()
@@ -104,6 +126,7 @@ def test_cache_hit(mock_fetch_data, temp_db_data_engine):
     # Assert (斷言)
     assert mock_fetch_data.call_count == 0
     assert not result2.empty
+
 
 CREATE_HOURLY_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS hourly_time_series (

@@ -1,11 +1,12 @@
 # core/clients/nyfed.py
 # 此模組包含從紐約聯儲 (NY Fed) 下載和解析一級交易商持有量數據的客戶端邏輯。
 
-import requests
-import pandas as pd
-from io import BytesIO
 import traceback  # 保留 traceback 以便在開發或詳細日誌模式下使用
-from typing import List, Dict, Any, Optional
+from io import BytesIO
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
+import requests
 
 from .base import BaseAPIClient  # 導入 BaseAPIClient
 
@@ -242,7 +243,7 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
             pd.DataFrame: 包含 'Date' 和 'Total_Positions' (單位：實際數值) 的時間序列數據。
                           如果未能從任何來源獲取數據，則返回空的 DataFrame。
         """
-        force_refresh = kwargs.get('force_refresh', False)
+        force_refresh = kwargs.get("force_refresh", False)
 
         # 忽略 symbol，因為此客戶端總是獲取所有配置的數據
         if symbol:  # 只是為了避免 linter 報未使用參數的警告
@@ -251,7 +252,9 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
             )
 
         all_data_frames: List[pd.DataFrame] = []
-        print(f"資訊：NYFedClient 開始獲取所有一級交易商數據 (強制刷新={force_refresh})...")
+        print(
+            f"資訊：NYFedClient 開始獲取所有一級交易商數據 (強制刷新={force_refresh})..."
+        )
 
         # 使用 _get_request_context 控制整個 fetch_data 過程的快取行為
         # 注意：對於 NYFedClient，它下載多個檔案。
@@ -259,7 +262,9 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
         # 如果 force_refresh=False，則每個檔案都會獨立判斷是否使用快取。
         with self._get_request_context(force_refresh=force_refresh):
             for config in self.data_configs:
-                print(f"\n資訊：NYFedClient 處理配置: {config.get('notes', config['url'])}")
+                print(
+                    f"\n資訊：NYFedClient 處理配置: {config.get('notes', config['url'])}"
+                )
                 # _download_excel_to_dataframe 內部使用 self._session，
                 # 其快取行為已由外層的 _get_request_context 控制
                 df_raw = self._download_excel_to_dataframe(config)
@@ -323,7 +328,10 @@ if __name__ == "__main__":
             print(f"第三次執行 (強制刷新) 成功，獲取 {len(data_third_run)} 筆數據。")
 
         # 基本的健全性檢查
-        if not (data_first_run.equals(data_second_run) and data_first_run.equals(data_third_run)):
+        if not (
+            data_first_run.equals(data_second_run)
+            and data_first_run.equals(data_third_run)
+        ):
             print("\n警告：不同執行之間的數據不一致，請檢查！")
             print(f"第一次 vs 第二次是否相等: {data_first_run.equals(data_second_run)}")
             print(f"第一次 vs 第三次是否相等: {data_first_run.equals(data_third_run)}")
@@ -345,6 +353,6 @@ if __name__ == "__main__":
         print(f"執行 NYFedClient 測試期間發生未預期錯誤: {e}")
         traceback.print_exc()
     finally:
-        client.close_session() # 確保關閉 session
+        client.close_session()  # 確保關閉 session
 
     print("\n--- NYFedClient 快取整合後測試結束 ---")

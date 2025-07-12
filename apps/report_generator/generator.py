@@ -1,13 +1,15 @@
 # apps/report_generator/generator.py
+import sys  # For sys.exit
+from datetime import datetime
+from pathlib import Path
+from typing import Any  # For type hints
+
 import duckdb
 import pandas as pd
-from pathlib import Path
-from datetime import datetime
 import pytz  # 確保導入 pytz 以便在 __main__ 中使用
-import sys # For sys.exit
-from typing import Any # For type hints
 
-from core.logger import get_logger # 移到頂部
+from core.logger import get_logger  # 移到頂部
+
 logger = get_logger(__name__)
 
 # 導入 Plotly - 直接導入，如果失敗則讓 ImportError 自然拋出
@@ -37,7 +39,9 @@ class ReportGenerator:
         if not all(c.isalnum() or c == "_" for c in cleaned_timeframe):
             logger.error(f"Timeframe 驗證失敗: '{timeframe}' 包含無效字符。")
             raise ValueError(f"Timeframe '{timeframe}' 包含無效字符。")
-        logger.debug(f"Timeframe '{timeframe}' 驗證通過，清理後為 '{cleaned_timeframe}'.")
+        logger.debug(
+            f"Timeframe '{timeframe}' 驗證通過，清理後為 '{cleaned_timeframe}'."
+        )
         return cleaned_timeframe
 
     def _fetch_data(
@@ -95,7 +99,8 @@ class ReportGenerator:
                 ohlcv_df["timestamp"] = pd.to_datetime(ohlcv_df["timestamp"])
         except duckdb.CatalogException as ce:
             logger.error(
-                f"OHLCV 資料表 '{ohlcv_table_name}' (用於 timeframe '{timeframe}') 不存在於資料庫 {self.db_path} 中: {ce}", exc_info=True
+                f"OHLCV 資料表 '{ohlcv_table_name}' (用於 timeframe '{timeframe}') 不存在於資料庫 {self.db_path} 中: {ce}",
+                exc_info=True,
             )
             return None, None, None
         except ValueError as ve:
@@ -130,7 +135,10 @@ class ReportGenerator:
                     f"未找到 {stock_id} 在 {start_date_str} 至 {end_date_str} 的 Chimera 日信號數據 (將不顯示信號)。"
                 )
         except Exception as e:
-            logger.warning(f"讀取 Chimera 日信號數據時發生錯誤: {e} (將不顯示信號)。", exc_info=True)
+            logger.warning(
+                f"讀取 Chimera 日信號數據時發生錯誤: {e} (將不顯示信號)。",
+                exc_info=True,
+            )
             chimera_df = None
 
         pc_ratio_product_to_fetch = None
@@ -164,10 +172,11 @@ class ReportGenerator:
                     logger.info(
                         f"未找到 {pc_ratio_product_to_fetch} 在 {start_date_str} 至 {end_date_str} 的 P/C Ratio 數據。"
                     )
-                    pc_ratio_df = None # 確保即使查詢成功但無數據時也設為 None
+                    pc_ratio_df = None  # 確保即使查詢成功但無數據時也設為 None
             except Exception as e:
                 logger.warning(
-                    f"讀取 P/C Ratio ({pc_ratio_product_to_fetch}) 數據時發生錯誤: {e}", exc_info=True
+                    f"讀取 P/C Ratio ({pc_ratio_product_to_fetch}) 數據時發生錯誤: {e}",
+                    exc_info=True,
                 )
                 pc_ratio_df = None
 
@@ -193,10 +202,10 @@ class ReportGenerator:
         row_heights = [0.6, 0.2, 0.2] if has_pc_ratio_data else [0.7, 0.3]
 
         subplot_titles = ["K線與信號", "成交量"]
-        pc_product_id_for_title = "Market" # Default value
+        pc_product_id_for_title = "Market"  # Default value
         if has_pc_ratio_data and pc_ratio_df is not None:
             if "product_id" in pc_ratio_df.columns and not pc_ratio_df.empty:
-                 pc_product_id_for_title = pc_ratio_df["product_id"].iloc[0]
+                pc_product_id_for_title = pc_ratio_df["product_id"].iloc[0]
             subplot_titles.append(f"Put/Call Ratio ({pc_product_id_for_title})")
 
         fig = make_subplots(
@@ -394,7 +403,7 @@ class ReportGenerator:
         fig.update_yaxes(title_text="股價", row=1, col=1)
         fig.update_yaxes(title_text="成交量", row=2, col=1)
         if has_pc_ratio_data and pc_ratio_df is not None:
-            pc_product_id_for_y_title = "Market" # Default
+            pc_product_id_for_y_title = "Market"  # Default
             if "product_id" in pc_ratio_df.columns and not pc_ratio_df.empty:
                 pc_product_id_for_y_title = pc_ratio_df["product_id"].iloc[0]
             fig.update_yaxes(
@@ -413,9 +422,9 @@ class ReportGenerator:
         output_dir: Path,
     ) -> Path | None:
         report_file_path = None
-        con = None # Initialize con to None for finally block
+        con = None  # Initialize con to None for finally block
         try:
-            con = self._connect_db() # _connect_db now raises on failure
+            con = self._connect_db()  # _connect_db now raises on failure
             ohlcv_df, chimera_df, pc_ratio_df = self._fetch_data(
                 con, stock_id, start_date_str, end_date_str, timeframe
             )
@@ -437,17 +446,23 @@ class ReportGenerator:
                 fig.write_html(str(report_file_path))
                 logger.info(f"報告已儲存至: {report_file_path} (HTML 格式)")
             else:
-                logger.warning(f"Plotly 圖表物件 ({timeframe}) 未成功創建，無法儲存報告。")
+                logger.warning(
+                    f"Plotly 圖表物件 ({timeframe}) 未成功創建，無法儲存報告。"
+                )
 
             return report_file_path
         except Exception as e:
-            logger.error(f"生成報告 {stock_id} ({timeframe}) 時發生錯誤: {e}", exc_info=True)
+            logger.error(
+                f"生成報告 {stock_id} ({timeframe}) 時發生錯誤: {e}", exc_info=True
+            )
             return None
         finally:
             if con:
                 try:
                     con.close()
-                    logger.debug(f"資料庫連接已在 generate_report (stock: {stock_id}) 中關閉。")
+                    logger.debug(
+                        f"資料庫連接已在 generate_report (stock: {stock_id}) 中關閉。"
+                    )
                 except Exception as e_close:
                     logger.error(f"關閉資料庫連接時發生錯誤: {e_close}", exc_info=True)
 
@@ -465,10 +480,10 @@ if __name__ == "__main__":
         except OSError as e:
             logger.warning(f"刪除舊測試資料庫失敗: {e}")
 
-
     test_output_dir = Path(test_output_dir_name)
     if test_output_dir.exists():
         import shutil
+
         logger.info(f"正在刪除舊的測試輸出目錄: {test_output_dir}")
         try:
             shutil.rmtree(test_output_dir)
@@ -481,11 +496,10 @@ if __name__ == "__main__":
         # Test cannot proceed if output dir cannot be created
         sys.exit(1)
 
-
     db_connection_main_test = None
     try:
         db_connection_main_test = duckdb.connect(str(test_db_file))
-        with db_connection_main_test as con: # Use context manager for connection
+        with db_connection_main_test as con:  # Use context manager for connection
             con.execute(
                 """
             CREATE TABLE IF NOT EXISTS ohlcv_1d (
@@ -499,7 +513,7 @@ if __name__ == "__main__":
                 (datetime(2023, 1, 3), "TEST_STOCK_D", 12.5, 12.5, 11, 11.5, 800),
                 (
                     datetime(2023, 1, 1),
-                    "0050", # Storing as "0050" for ohlcv, ReportGenerator handles .TW mapping
+                    "0050",  # Storing as "0050" for ohlcv, ReportGenerator handles .TW mapping
                     120.0,
                     122.0,
                     119.0,
@@ -538,7 +552,7 @@ if __name__ == "__main__":
                 ),
                 (
                     datetime(2023, 1, 1).date(),
-                    "0050.TW", # stock_id in chimera should match the requested one
+                    "0050.TW",  # stock_id in chimera should match the requested one
                     "價漲量增",
                     "法人買超",
                     "價漲量增_法人買超",
@@ -627,14 +641,18 @@ if __name__ == "__main__":
             logger.error("0050.TW 日線 (1d) 報告生成失敗。")
 
     except Exception as e:
-        logger.error(f"ReportGenerator (Plotly 版本) __main__ 測試時發生錯誤: {e}", exc_info=True)
+        logger.error(
+            f"ReportGenerator (Plotly 版本) __main__ 測試時發生錯誤: {e}", exc_info=True
+        )
     finally:
         if db_connection_main_test:
             try:
                 db_connection_main_test.close()
                 logger.debug("主測試資料庫連接已關閉。")
             except Exception as e_close_main:
-                logger.error(f"關閉主測試資料庫連接時發生錯誤: {e_close_main}", exc_info=True)
+                logger.error(
+                    f"關閉主測試資料庫連接時發生錯誤: {e_close_main}", exc_info=True
+                )
 
         logger.info(
             f"測試完畢。如果需要，請手動檢查或刪除測試資料庫 '{test_db_file}' 和輸出目錄 '{test_output_dir_name}'。"

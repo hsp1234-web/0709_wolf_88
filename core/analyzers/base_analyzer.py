@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 
 import pandas as pd
 
+
 class BaseAnalyzer(ABC):
     """
     所有分析器應用的抽象基礎類 (Abstract Base Class)。
@@ -83,7 +84,9 @@ class BaseAnalyzer(ABC):
             self.logger.info("結果保存成功。")
 
         except Exception as e:
-            self.logger.error(f"分析流程 '{self.analyzer_name}' 發生嚴重錯誤：{e}", exc_info=True)
+            self.logger.error(
+                f"分析流程 '{self.analyzer_name}' 發生嚴重錯誤：{e}", exc_info=True
+            )
             # 可以在此處添加失敗通知等邏輯
             raise  # 重新拋出異常，讓上層調用者知道發生了問題
         finally:

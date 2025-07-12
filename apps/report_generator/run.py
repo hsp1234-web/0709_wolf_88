@@ -1,7 +1,7 @@
 # apps/report_generator/run.py
 import argparse
-import sys
 import os
+import sys
 from pathlib import Path
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
@@ -12,7 +12,8 @@ except NameError:
     project_root = Path(os.getcwd()).resolve()
 except Exception as e:
     print(
-        f"緊急錯誤: 在確定專案根目錄時發生初始錯誤 (apps/report_generator/run.py): {e}", file=sys.stderr
+        f"緊急錯誤: 在確定專案根目錄時發生初始錯誤 (apps/report_generator/run.py): {e}",
+        file=sys.stderr,
     )
     project_root = Path(".").resolve()
 
@@ -20,6 +21,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from core.logger import get_logger
+
 logger = get_logger(__name__)
 
 logger.debug(f"專案根目錄設定為: {project_root} (日誌來自 report_generator/run.py)")
@@ -81,9 +83,10 @@ def main():
         logger.error(f"創建輸出目錄 {output_path} 失敗: {e}", exc_info=True)
         sys.exit(1)
 
-
     try:
-        generator = ReportGenerator(db_path=args.db_path) # ReportGenerator 內部也應使用 logger
+        generator = ReportGenerator(
+            db_path=args.db_path
+        )  # ReportGenerator 內部也應使用 logger
         report_path = generator.generate_report(
             stock_id=args.stock_id,
             start_date_str=args.start_date,
@@ -100,7 +103,10 @@ def main():
             )
             sys.exit(0)  # 以成功碼退出
     except ImportError as ie:
-        logger.error(f"發生導入錯誤: {ie}. 請確保已安裝所有必要的套件 (例如 plotly)。", exc_info=True)
+        logger.error(
+            f"發生導入錯誤: {ie}. 請確保已安裝所有必要的套件 (例如 plotly)。",
+            exc_info=True,
+        )
         sys.exit(1)
     except Exception as e:
         logger.error(

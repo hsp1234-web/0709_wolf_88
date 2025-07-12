@@ -1,17 +1,22 @@
 # tests/unit/core/clients/test_fred.py
 # 針對 core.clients.fred 模組的單元測試。
 
-import pytest
-import pandas as pd
-from pandas.testing import assert_frame_equal
 from unittest.mock import patch
 
+import pandas as pd
+import pytest
+from pandas.testing import assert_frame_equal
+
 # 更新導入以反映重構後的客戶端
-from core.clients.fred import FredClient # Corrected import name
+from core.clients.fred import FredClient  # Corrected import name
+
 # FRED_API_HOST, FRED_OBSERVATIONS_ENDPOINT are not defined in the new client, remove imports
 
 # 測試用的 API Key
-TEST_FRED_API_KEY = "test_fred_api_key_456" # This will be used by mocked get_fred_api_key
+TEST_FRED_API_KEY = (
+    "test_fred_api_key_456"  # This will be used by mocked get_fred_api_key
+)
+
 
 @pytest.fixture
 def mock_get_fred_api_key():
@@ -19,12 +24,14 @@ def mock_get_fred_api_key():
     with patch("core.clients.fred.get_fred_api_key") as mock_get_key:
         yield mock_get_key
 
+
 @pytest.fixture
 def fred_client_fixture(mock_get_fred_api_key):
     """提供一個 FredClient 實例，並 mock get_fred_api_key。"""
     mock_get_fred_api_key.return_value = TEST_FRED_API_KEY
     client = FredClient()
     return client
+
 
 # This fixture is problematic as FredClient now gets key from get_fred_api_key
 # @pytest.fixture
@@ -36,7 +43,7 @@ def fred_client_fixture(mock_get_fred_api_key):
 #         os.environ["FRED_API_KEY"] = original_key
 
 
-class TestFredClientInitialization: # Renamed for consistency
+class TestFredClientInitialization:  # Renamed for consistency
     """測試 FredClient 的初始化過程。"""
 
     # This test is invalid as FredClient() doesn't take api_key argument directly.
@@ -53,21 +60,27 @@ class TestFredClientInitialization: # Renamed for consistency
         assert client.api_key == "env_key_for_fred"
         # BaseAPIClient's base_url is set, but less relevant for fredapi library itself
         assert client.base_url == "https://api.stlouisfed.org/fred"
-        assert hasattr(client, "_fred_official_client") # Check if fredapi lib instance created
+        assert hasattr(
+            client, "_fred_official_client"
+        )  # Check if fredapi lib instance created
 
     def test_init_no_key_raises_value_error(self, mock_get_fred_api_key):
         mock_get_fred_api_key.side_effect = ValueError("FRED API Key 未設定 (mocked)")
-        with pytest.raises(ValueError, match=r"FredClient 初始化失敗: FRED API Key 未設定 \(mocked\)"): # Used raw string
+        with pytest.raises(
+            ValueError, match=r"FredClient 初始化失敗: FRED API Key 未設定 \(mocked\)"
+        ):  # Used raw string
             FredClient()
 
 
 # FredClient now uses the fredapi library, so we mock fredapi.Fred.get_series
-@patch("fredapi.Fred.get_series") # Correct patch target
-class TestFredClientFetchData: # Renamed for consistency
+@patch("fredapi.Fred.get_series")  # Correct patch target
+class TestFredClientFetchData:  # Renamed for consistency
     """測試 FredClient.fetch_data 方法。"""
 
     def test_fetch_data_success(
-        self, mock_fred_get_series, fred_client_fixture: FredClient # Corrected fixture name
+        self,
+        mock_fred_get_series,
+        fred_client_fixture: FredClient,  # Corrected fixture name
     ):
         """測試成功獲取並處理觀測數據。"""
         series_id = "DGS10"
@@ -103,12 +116,16 @@ class TestFredClientFetchData: # Renamed for consistency
     ):
         """測試 FRED API 返回空 Series。"""
         series_id = "EMPTYSERIES"
-        mock_fred_get_series.return_value = pd.Series(dtype=float, name=series_id) # Empty series
+        mock_fred_get_series.return_value = pd.Series(
+            dtype=float, name=series_id
+        )  # Empty series
 
         result_df = fred_client_fixture.fetch_data(symbol=series_id)
 
-        expected_df = pd.DataFrame(columns=['Date', series_id]).set_index('Date')
-        assert_frame_equal(result_df, expected_df, check_dtype=False) # Empty DFs might have object dtype for index
+        expected_df = pd.DataFrame(columns=["Date", series_id]).set_index("Date")
+        assert_frame_equal(
+            result_df, expected_df, check_dtype=False
+        )  # Empty DFs might have object dtype for index
 
     def test_fetch_data_fred_api_exception(
         self, mock_fred_get_series, fred_client_fixture: FredClient
@@ -119,9 +136,8 @@ class TestFredClientFetchData: # Renamed for consistency
 
         result_df = fred_client_fixture.fetch_data(symbol=series_id)
 
-        expected_df = pd.DataFrame(columns=['Date', series_id]).set_index('Date')
+        expected_df = pd.DataFrame(columns=["Date", series_id]).set_index("Date")
         assert_frame_equal(result_df, expected_df, check_dtype=False)
-
 
     def test_fetch_data_all_fred_params_passed_correctly_to_fredapi(
         self, mock_fred_get_series, fred_client_fixture: FredClient
@@ -138,7 +154,7 @@ class TestFredClientFetchData: # Renamed for consistency
             "sort_order": "desc",
             "aggregation_method": "avg",
             "frequency": "q",
-            "units": "lin"
+            "units": "lin",
         }
         # fredapi returns a series, even if empty due to params
         mock_fred_get_series.return_value = pd.Series(dtype=float, name=series_id)

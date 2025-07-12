@@ -2,8 +2,9 @@
 # 此模組包含與 Financial Modeling Prep (FMP) API 互動的客戶端邏輯。
 
 import os
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
-from typing import Optional, List, Dict, Any
 import requests  # For requests.exceptions
 
 from .base import BaseAPIClient
@@ -122,7 +123,7 @@ class FMPClient(BaseAPIClient):
             response = super()._perform_request(
                 endpoint=endpoint_path_template, params=final_params, method="GET"
             )
-            json_response = response.json() # 解析 JSON
+            json_response = response.json()  # 解析 JSON
 
             # 檢查 FMP API 特有的錯誤訊息格式 (雖然 BaseAPIClient.raise_for_status() 會處理 HTTP 錯誤)
             # 但 FMP 有時在 200 OK 內返回錯誤

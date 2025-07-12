@@ -1,13 +1,14 @@
 # tests/unit/core/clients/test_yfinance.py
 # 針對 core.clients.yfinance 模組的單元測試。
 
-import pytest
+from unittest.mock import MagicMock, patch
+
 import pandas as pd
-from pandas.testing import assert_frame_equal
-from unittest.mock import patch, MagicMock
+import pytest
 
 # from datetime import datetime # 可能不需要了
 import requests  # 導入 requests 以修復 NameError
+from pandas.testing import assert_frame_equal
 
 # 更新導入以反映重構後的客戶端
 from core.clients.yfinance import YFinanceClient
@@ -311,7 +312,9 @@ class TestYFinanceClientFetchMultipleSymbolsData:
     def test_fetch_multiple_invalid_symbols_type(
         self, yfinance_client_fixture: YFinanceClient
     ):
-        result_df = yfinance_client_fixture.fetch_multiple_symbols_data(symbols="NOTALIST")  # type: ignore
+        result_df = yfinance_client_fixture.fetch_multiple_symbols_data(
+            symbols="NOTALIST"
+        )  # type: ignore
         assert result_df.empty
 
 

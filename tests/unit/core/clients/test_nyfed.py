@@ -1,15 +1,16 @@
 # tests/unit/core/clients/test_nyfed.py
 # 針對 core.clients.nyfed 模組的單元測試。
 
-import pytest
-import pandas as pd
-from pandas.testing import assert_frame_equal
-from unittest.mock import patch, MagicMock
 from io import BytesIO
+from unittest.mock import MagicMock, patch
+
+import pandas as pd
+import pytest
 import requests  # 用於 requests.exceptions
+from pandas.testing import assert_frame_equal
 
 # 更新導入以反映重構後的客戶端
-from core.clients.nyfed import NYFedClient, NYFED_DATA_CONFIGS  # 導入新的 Client
+from core.clients.nyfed import NYFED_DATA_CONFIGS, NYFedClient  # 導入新的 Client
 
 
 # 輔助函數和 mock 數據保持不變
@@ -104,9 +105,7 @@ class TestNYFedClientDownloadExcel:
         with patch.object(
             nyfed_client_fixture._session, "get", return_value=mock_response
         ) as mock_actual_get:
-            df = nyfed_client_fixture._download_excel_to_dataframe(
-                mock_test_config_sbn
-            )
+            df = nyfed_client_fixture._download_excel_to_dataframe(mock_test_config_sbn)
 
             mock_actual_get.assert_called_once_with(
                 mock_test_config_sbn["url"], timeout=60
@@ -120,21 +119,19 @@ class TestNYFedClientDownloadExcel:
         mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 404
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
-            "Simulated 404 Error", response=mock_response # HTTPError 需要 response 參數
+            "Simulated 404 Error",
+            response=mock_response,  # HTTPError 需要 response 參數
         )
 
         with patch.object(
             nyfed_client_fixture._session, "get", return_value=mock_response
         ) as mock_actual_get:
-            df = nyfed_client_fixture._download_excel_to_dataframe(
-                mock_test_config_sbn
-            )
+            df = nyfed_client_fixture._download_excel_to_dataframe(mock_test_config_sbn)
             assert df is None
             mock_actual_get.assert_called_once_with(
                 mock_test_config_sbn["url"], timeout=60
             )
             mock_response.raise_for_status.assert_called_once()
-
 
     def test_download_request_exception(self, nyfed_client_fixture: NYFedClient):
         with patch.object(
@@ -142,9 +139,7 @@ class TestNYFedClientDownloadExcel:
             "get",
             side_effect=requests.exceptions.ConnectionError("Connection failed"),
         ) as mock_actual_get:
-            df = nyfed_client_fixture._download_excel_to_dataframe(
-                mock_test_config_sbn
-            )
+            df = nyfed_client_fixture._download_excel_to_dataframe(mock_test_config_sbn)
             assert df is None
             mock_actual_get.assert_called_once_with(
                 mock_test_config_sbn["url"], timeout=60
@@ -155,14 +150,15 @@ class TestNYFedClientDownloadExcel:
         mock_response.status_code = 200
         mock_response.content = b"This is not a valid excel file"
 
-        with patch.object(
-            nyfed_client_fixture._session, "get", return_value=mock_response
-        ) as mock_actual_get, patch( # 也 mock pandas.read_excel
-            "pandas.read_excel", side_effect=ValueError("Excel parse error")
-        ) as mock_read_excel:
-            df = nyfed_client_fixture._download_excel_to_dataframe(
-                mock_test_config_sbn
-            )
+        with (
+            patch.object(
+                nyfed_client_fixture._session, "get", return_value=mock_response
+            ) as mock_actual_get,
+            patch(  # 也 mock pandas.read_excel
+                "pandas.read_excel", side_effect=ValueError("Excel parse error")
+            ) as mock_read_excel,
+        ):
+            df = nyfed_client_fixture._download_excel_to_dataframe(mock_test_config_sbn)
             assert df is None
             mock_actual_get.assert_called_once_with(
                 mock_test_config_sbn["url"], timeout=60

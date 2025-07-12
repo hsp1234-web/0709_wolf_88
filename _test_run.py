@@ -1,25 +1,56 @@
 import asyncio
-from core.engines.robust_acquisition_engine import RobustDataAcquisitionEngine, DB_FILE # 導入 DB_FILE
+import os  # 用於稍後清理檔案
 import time
-import os # 用於稍後清理檔案
+
+from core.engines.robust_acquisition_engine import (  # 導入 DB_FILE
+    DB_FILE,
+    RobustDataAcquisitionEngine,
+)
 
 print("--- [最終作戰計畫 004：全功能驗證] ---")
 
 target_tickers = [
-    'NQ=F', 'ES=F', 'YM=F', '^VIX', '^DJI', '^SPX', '^IXIC',
-    '^TWII', '^HSI', '000001.SS', 'DX-Y.NYB', 'ZB=F', 'ZN=F',
-    'ZT=F', 'ZF=F', '^TNX', 'TLT', 'SHY', 'IEI', 'CL=F', 'GC=F',
-    'SI=F', 'GLD', 'AAPL', 'MSFT', 'NVDA', 'GOOG', 'TSM',
-    '601318.SS', '688981.SS', '0981.HK', 'BTC-USD',
-    'INVALID_TICKER_FOR_TEST' # 加入一個無效標的來測試智慧降級
+    "NQ=F",
+    "ES=F",
+    "YM=F",
+    "^VIX",
+    "^DJI",
+    "^SPX",
+    "^IXIC",
+    "^TWII",
+    "^HSI",
+    "000001.SS",
+    "DX-Y.NYB",
+    "ZB=F",
+    "ZN=F",
+    "ZT=F",
+    "ZF=F",
+    "^TNX",
+    "TLT",
+    "SHY",
+    "IEI",
+    "CL=F",
+    "GC=F",
+    "SI=F",
+    "GLD",
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "GOOG",
+    "TSM",
+    "601318.SS",
+    "688981.SS",
+    "0981.HK",
+    "BTC-USD",
+    "INVALID_TICKER_FOR_TEST",  # 加入一個無效標的來測試智慧降級
 ]
 
 # 0. 清理舊的資料庫和快取檔案 (如果存在)，以確保測試的純淨性
-if os.path.exists(DB_FILE): # 直接使用導入的 DB_FILE
+if os.path.exists(DB_FILE):  # 直接使用導入的 DB_FILE
     os.remove(DB_FILE)
     print(f"已移除舊的資料庫檔案: {DB_FILE}")
-if os.path.exists('permanent_api_cache.sqlite'):
-    os.remove('permanent_api_cache.sqlite')
+if os.path.exists("permanent_api_cache.sqlite"):
+    os.remove("permanent_api_cache.sqlite")
     print("已移除舊的 API 快取檔案: permanent_api_cache.sqlite")
 
 
@@ -45,7 +76,7 @@ print(f"第二次執行耗時: {end_time_2 - start_time_2:.2f} 秒")
 print("\n--- 測試手動清除與重新獲取 'AAPL' 的快取 ---")
 # 由於 force_recache 目前是全局清除，我們只用一個 ticker 列表來驗證其效果
 # 創建一個新的引擎實例，只包含 AAPL，以模擬單獨重新獲取
-engine.force_recache(ticker_or_tickers=['AAPL']) # 清除全局快取
+engine.force_recache(ticker_or_tickers=["AAPL"])  # 清除全局快取
 print("全局快取已清除。現在嘗試重新獲取 AAPL...")
 
 # 重新初始化一個只包含 AAPL 的引擎，或者直接讓主引擎再次運行 AAPL
@@ -54,12 +85,12 @@ print("全局快取已清除。現在嘗試重新獲取 AAPL...")
 # 或者修改主引擎的 tickers 列表 (不推薦直接修改正在運行的實例的內部狀態進行這種測試)
 # 這裡我們選擇創建一個新的、只包含 AAPL 的引擎實例
 print("創建一個僅包含 AAPL 的新引擎實例進行重新獲取測試...")
-recache_engine = RobustDataAcquisitionEngine(tickers=['AAPL'])
+recache_engine = RobustDataAcquisitionEngine(tickers=["AAPL"])
 start_time_recache = time.time()
 asyncio.run(recache_engine.run())
 end_time_recache = time.time()
 print(f"AAPL 快取清除後重新獲取耗時: {end_time_recache - start_time_recache:.2f} 秒")
-recache_engine.close() # 關閉此臨時引擎的連接
+recache_engine.close()  # 關閉此臨時引擎的連接
 
 # 5. 最終驗證資料庫內容
 print("\n--- 從 DuckDB 最終驗證已儲存數據 ---")
@@ -78,12 +109,15 @@ try:
     """).fetchdf()
     print(summary)
     if not summary.empty:
-        print(f"\n總計 {summary['count'].sum()} 筆數據記錄 (考慮 UPSERT 後的 최종計數) 已儲存於 {DB_FILE}") # 使用導入的 DB_FILE
+        print(
+            f"\n總計 {summary['count'].sum()} 筆數據記錄 (考慮 UPSERT 後的 최종計數) "
+            f"已儲存於 {DB_FILE}"
+        )  # 使用導入的 DB_FILE
     else:
-        print(f"{DB_FILE} 中沒有數據。") # 使用導入的 DB_FILE
+        print(f"{DB_FILE} 中沒有數據。")  # 使用導入的 DB_FILE
 except Exception as e:
     print(f"查詢 DuckDB 數據時發生錯誤: {e}")
 finally:
-    engine.close() # 關閉主引擎的連接
+    engine.close()  # 關閉主引擎的連接
 
 print("\n--- [全功能驗證完畢] ---")
