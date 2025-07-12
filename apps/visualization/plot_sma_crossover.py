@@ -23,7 +23,7 @@ def generate_plot(csv_path: Path, output_html_path: Path):
         return
 
     # 步驟 1: 讀取數據
-    df = pd.read_csv(csv_path, index_col="timestamp", parse_dates=True)
+    df = pd.read_csv(csv_path, index_col="datetime", parse_dates=True)
 
     # 步驟 2: 建立圖表物件
     fig = go.Figure()

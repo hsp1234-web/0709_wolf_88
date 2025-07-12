@@ -69,10 +69,18 @@ def test_data_engine_logic(mock_clients):
     【實驗室測試】
     驗證 DataEngine 的核心計算邏輯。
     """
-    # 1. 準備 (Arrange): 使用模擬客戶端初始化數據引擎
+    # 1. 準備 (Arrange): 建立一個模擬的 DuckDB 連線
+    mock_db_conn = MagicMock()
+    # 模擬快取未命中
+    mock_db_conn.execute.return_value.fetch_df.return_value = pd.DataFrame()
+
+    # 使用模擬客戶端和模擬 DB 連線初始化數據引擎
     mock_yf, mock_fred, mock_taifex = mock_clients
     engine = DataEngine(
-        yf_client=mock_yf, fred_client=mock_fred, taifex_client=mock_taifex
+        yf_client=mock_yf,
+        fred_client=mock_fred,
+        taifex_client=mock_taifex,
+        db_connection=mock_db_conn,
     )
 
     # 2. 執行 (Act): 生成快照
@@ -84,11 +92,13 @@ def test_data_engine_logic(mock_clients):
     assert snapshot["timestamp"].iloc[0] == dt
     assert snapshot["spy_close"].iloc[0] == 500.0
 
-    # 驗證快取
-    cached_snapshot = engine.generate_snapshot(dt)
-    assert not cached_snapshot.empty
-    assert cached_snapshot["timestamp"].iloc[0] == dt
-    assert cached_snapshot["spy_close"].iloc[0] == 500.0
+    # 驗證快取查詢被呼叫
+    mock_db_conn.execute.assert_called_with(
+        "SELECT * FROM hourly_time_series WHERE timestamp = ?", [dt]
+    )
+
+    # 驗證快取寫入被呼叫
+    mock_db_conn.append.assert_called_once()
 
 
 def test_calculate_approx_credit_spread_with_mock_data(mock_clients):

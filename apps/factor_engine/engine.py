@@ -7,7 +7,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from apps.daily_market_analyzer.db_manager import DBManager
+from core.db.db_manager import DBManager
 
 # import pandas_ta as ta # Pandas TA 通过 accessor (df.ta) 使用，通常不需要在此直接导入
 # (空一行)
