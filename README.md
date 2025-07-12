@@ -1,13 +1,12 @@
-# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.4.0**
+# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.5.0**
 
 ## **一、 專案概覽與目的**
 
-【普羅米修斯之火】是一個專為進階量化研究與金融市場分析而設計的 Python 框架。本專案旨在提供一個從多樣化數據源獲取金融數據、進行複雜指標計算、**回測交易策略**、並將結果視覺化的完整解決方案。其核心設計強調模組化、可擴展性以及數據處理的穩健性。
+【普羅米修斯之火】是一個專為進階量化研究與金融市場分析而設計的 Python 框架。本專案旨在提供一個從多樣化數據源獲取金融數據、進行複雜指標計算、回測交易策略、並將結果視覺化的完整解決方案。其核心設計強調模組化、可擴展性以及數據處理的穩健性。
 
-**最近更新（作戰計畫 027：「賦予衡量價值的能力」）：**
-*   **回測引擎**: 引入了全新的向量化回測引擎 `Backtester`，能夠根據因子產生的信號進行績效評估。
-*   **框架整合**: 建立了標準的回測執行管線，整合了因子引擎與回測引擎。
-*   **品質保證**: 執行了全面的回歸掃描，修復了多個模組的導入錯誤與測試邏輯，確保了系統的穩定性。
+**最近更新（作戰計畫 031：「壓力指數實戰驗證」）：**
+*   **實戰驗證**: 成功執行了端到端的壓力指數計算，驗證了 `FredClient` 與 `NYFedClient` 在真實 API 環境下的數據獲取與整合能力。
+*   **管線修復**: 修復了壓力指數計算管線中的導入錯誤與結果回傳邏輯，確保了管線的穩定運行。
 
 ## **二、 技術棧 (Technology Stack)**
 
@@ -26,6 +25,8 @@
     *   DuckDB (`^1.3.2`)
 *   **設定檔管理:**
     *   PyYAML (`^6.0.2`)
+*   **視覺化**:
+    *   Plotly (`^6.2.0`)
 *   **測試與品質保證:**
     *   Pytest (`^8.4.1`)
     *   Pytest-Mock (`^3.14.1`)
@@ -41,7 +42,6 @@
 │   ├── analysis_pipeline
 │   │   └── run.py
 │   ├── backtesting_engine
-│   │   ├── __init__.py
 │   │   ├── engine.py
 │   │   └── run.py
 │   ├── db_manager
@@ -86,6 +86,9 @@
 │   ├── config.py
 │   ├── constants.py
 │   └── logger.py
+├── output
+│   ├── sma_crossover_chart.html
+│   └── sma_crossover_result.csv
 ├── pipelines
 │   ├── p0_downloader
 │   │   └── run.py
@@ -122,39 +125,60 @@
 3.  **配置 Poetry 虛擬環境** (推薦 `poetry config virtualenvs.in-project true`)。
 4.  **安裝依賴**: `poetry install`。
 5.  **激活虛擬環境**: `poetry shell` (或使用 `poetry run <command>`)。
-6.  **設定 API 金鑰**: 某些功能 (如 `DataEngine`) 需要 API 金鑰。請參考 `config.yml.template` (如果有的話) 或相關模組文件，在 `config.yml` 中配置所需金鑰。
+6.  **設定 API 金鑰**:
+    *   **FRED API 金鑰**: 為了運行壓力指數計算 (`apps/run_stress_index.py`)，您**必須**在 `config.yml` 中提供一個有效的 FRED API 金鑰。
+        ```yaml
+        # In config.yml
+        api_keys:
+          fred: "YOUR_REAL_FRED_API_KEY_HERE"
+        ```
+    *   ⚠️ **安全警告**：`config.yml` 檔案包含敏感金鑰，**絕對不可**提交到任何版本控制系統（如 Git）。請確保它已被列在 `.gitignore` 檔案中。
 
 ## **五、 主要功能執行與測試**
 
-### **5.1 執行回測**
+### **5.1 數據回填與快取**
 
-新的回測引擎可以評估交易策略的歷史績效。
+此管線用於填充 DuckDB 資料庫，供其他模組使用。
 
-*   **執行 SMA 交叉策略回測**:
+*   **執行數據回填**:
+    ```bash
+    poetry run python pipelines/p3_backfill_hourly_data/run.py
+    ```
+*   **說明**: 此腳本會使用 `YFinanceClient` (無需金鑰) 獲取 SPY 的小時級數據，並存儲在根目錄的 `prometheus_fire.duckdb` 檔案中。
+
+### **5.2 執行 SMA 策略回測與視覺化**
+
+這是一個完整的無金鑰工作流程，用於驗證因子計算、回測和視覺化功能。
+
+1.  **計算因子並執行回測**:
     ```bash
     poetry run python apps/backtesting_engine/run.py
     ```
+    *   **說明**: 此腳本會從 DuckDB 讀取數據，計算 SMA 交叉信號，執行回測，打印績效報告，並將詳細結果儲存到 `output/sma_crossover_result.csv`。
+
+2.  **生成視覺化圖表**:
+    ```bash
+    poetry run python apps/visualization/plot_sma_crossover.py
+    ```
+    *   **說明**: 此腳本會讀取上一步生成的 CSV 檔案，並在 `output` 目錄下創建一個名為 `sma_crossover_chart.html` 的互動式圖表。
+
+### **5.3 執行壓力指數計算**
+
+此功能依賴於您在 `config.yml` 中設定的 FRED API 金鑰。
+
+*   **執行計算**:
+    ```bash
+    poetry run python apps/run_stress_index.py
+    ```
 *   **預期輸出**:
-    您將在終端機看到類似以下的績效報告：
+    終端機將顯示詳細的數據獲取和計算過程，並在最後打印出計算結果：
     ```
-    --- 啟動回測管線 ---
-    [1/3] 正在從因子引擎獲取交易信號...
-    [2/3] 正在初始化並運行回測引擎...
-    --- 開始執行回測模擬 ---
-    ✔ 回測模擬完成。
-    [3/3] 正在計算並展示績效報告...
-    --- 正在計算績效指標 ---
-    ✔ 績效指標計算完成。
-
-    --- SMA 交叉策略回測績效報告 ---
-    總回報率 (Total Return): 15.28%
-    夏普比率 (Sharpe Ratio): 0.85
-    最大回撤 (Max Drawdown): -12.34%
-    ---------------------------------
+    INFO - ✅ 壓力指數計算成功。
+    INFO -    最新壓力指數值: -0.74
     ```
-    *(註：報告中的數值為示意，實際結果會因數據而異。)*
+    *(註：數值為示意，實際結果會因市場數據而異。)*
 
-### **5.2 測試**
+### **5.4 測試**
 *   **運行所有測試**:
     ```bash
     poetry run pytest
@@ -163,28 +187,22 @@
 
 ## **六、 版本歷史與變更日誌**
 
-### **v0.4.0 (對應作戰計畫 027)**
-*   **新功能**:
-    *   **回測引擎**:
-        *   `apps/backtesting_engine/engine.py`: 新增 `Backtester` 類別，提供向量化回測功能，可計算總回報率、夏普比率和最大回撤。
-        *   `apps/backtesting_engine/run.py`: 新增回測執行器，整合 `sma_crossover_factor` 因子與 `Backtester`，提供完整的策略回測管線。
+### **v0.5.0 (對應作戰計畫 031)**
+*   **功能驗證**:
+    *   **壓力指數**: 成功執行了端到端的壓力指數計算，驗證了 `FredClient` 和 `NYFedClient` 在真實 API 環境下的功能。
 *   **修復與改進**:
-    *   **測試穩定性**:
-        *   暫時跳過了 `test_p1_explorer.py` 和 `test_p2_elt_pipeline.py` 中因缺少 `sample_options_delta_20250711.csv` fixture 檔案而失敗的測試。
-        *   修復了 `apps/factor_engine/engine.py` 中對 `DBManager` 的錯誤導入路徑。
-        *   移除了已失效且無法運作的 `apps/news_client` 模組，解決了相關的 `ignition_test` 失敗。
-        *   修復了 `tests/unit/analysis/test_data_engine.py` 中的 `CatalogException`，透過修改 `DataEngine` 的 `__init__` 方法以接受模擬的資料庫連線，增強了測試的隔離性。
-*   **專案結構**:
-    *   將 `apps/backtesting_engine/main.py` 重命名為 `run.py`，使其命名與其他 app 執行腳本一致。
+    *   `apps/run_stress_index.py`: 添加了路徑校正樣板碼，解決了模組導入錯誤。
+    *   `core/pipelines/steps/financial_steps.py`: 重構了 `CalculateStressIndexStep`，使其能夠調用 `StressIndexCalculator` 並返回真實的計算結果。
+    *   `apps/run_stress_index.py`: 更新了主函數以正確解析和打印計算出的壓力指數值。
 
-### **v0.3.0 (先前版本)**
-*   整合了真實 `^MOVE` 指數數據，並修復了 `test_data_engine_caching` 整合測試。
+### **v0.4.0 (先前版本)**
+*   引入了回測引擎，建立了 SMA 交叉策略的回測管線，並修復了多個測試問題。
 
 ## **七、 已知限制與技術債務**
 
-*   **Fixture 檔案遺失**: `tests/fixtures/sample_options_delta_20250711.csv` 檔案缺失，導致依賴此檔案的兩個整合測試 (`test_p1_explorer` 和 `test_p2_elt_pipeline`) 被暫時跳過。需要補充此測試資料才能恢復完整的測試覆蓋。
+*   **Fixture 檔案遺失**: `tests/fixtures/sample_options_delta_20250711.csv` 檔案缺失，導致依賴此檔案的兩個整合測試被暫時跳過。
 *   **`FredClient` 應急快取**: `core/clients/fred.py` 中的 `_emergency_cache` 是一個臨時解決方案，用以確保整合測試的通過。
-*   **測試覆蓋率**: 雖然進行了大量修復，但整體測試覆蓋率仍有提升空間，特別是在 `apps` 層級。
+*   **測試覆蓋率**: 雖然進行了大量修復，但整體測試覆蓋率仍有提升空間。
 
 ## **八、 開發者指引**
 *   遵循 PEP 8 程式碼風格。
