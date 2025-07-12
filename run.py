@@ -15,6 +15,8 @@ try:
     from apps.run_stress_index import main as run_stress_index
     from apps.run_fmp_test import main as run_fmp_test
     from pipelines.p4_daily_macro_etl.run_etl import run as run_daily_macro_etl
+    from core.db.db_manager import DBManager
+    import pandas as pd
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -83,6 +85,55 @@ def build_daily_data(
         run_daily_macro_etl,
         force_download=force_download,
     )
+
+
+@app.command()
+def verify_daily_data(ctx: typer.Context):
+    """驗證每日宏觀數據是否已成功載入數據庫。"""
+    log_manager = ctx.obj
+    task_name = "每日宏觀數據驗證"
+    log_manager.log("BATTLE", f"--- [啟動任務：{task_name}] ---")
+
+    table_name = "daily_macro_market_data"
+
+    try:
+        with DBManager() as db_manager:
+            log_manager.log("INFO", f"正在連接到數據庫: {db_manager.db_path}")
+
+            # 檢查表格是否存在
+            tables_df = db_manager.connection.execute("SHOW TABLES").fetchdf()
+            if table_name not in tables_df['name'].values:
+                log_manager.log("ERROR", f"數據表 '{table_name}' 不存在於數據庫中。")
+                print(f"❌ 驗證失敗：數據表 '{table_name}' 不存在。")
+                raise typer.Exit(code=1)
+
+            log_manager.log("INFO", f"正在查詢數據表: {table_name}")
+            data_df = db_manager.connection.table(table_name).to_df()
+
+        if data_df.empty:
+            log_manager.log("WARNING", f"數據表 '{table_name}' 為空。")
+            print(f"⚠️ 驗證警告：數據表 '{table_name}' 為空。")
+            raise typer.Exit()
+
+        total_rows = len(data_df)
+        min_date = pd.to_datetime(data_df['Date']).min().strftime('%Y-%m-%d')
+        max_date = pd.to_datetime(data_df['Date']).max().strftime('%Y-%m-%d')
+
+        # 打印驗證報告
+        print("\n--- 📊 每日宏觀數據驗證報告 ---")
+        print(f"✅ 數據表 '{table_name}' 存在且可查詢。")
+        print(f"🔢 總行數: {total_rows}")
+        print(f"📅 數據時間範圍: 從 {min_date} 到 {max_date}")
+        print("\n--- 預覽前 5 行數據 ---")
+        print(data_df.head(5).to_string())
+        print("---------------------------------")
+
+        log_manager.log("SUCCESS", f"--- [任務完成：{task_name}] ---")
+
+    except Exception as e:
+        log_manager.log("ERROR", f"執行 {task_name} 時發生錯誤: {e}")
+        print(f"❌ 驗證失敗：執行過程中發生錯誤: {e}")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
