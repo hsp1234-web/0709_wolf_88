@@ -40,6 +40,77 @@ class DataEngine:
 
         return technicals
 
+    def _calculate_approx_credit_spread(self) -> float:
+        """
+        計算近似信用利差 (HYG價格 / IEF價格)。
+        """
+        try:
+            hyg_data = self.yf_client.get_history("HYG", period="1d")
+            ief_data = self.yf_client.get_history("IEF", period="1d")
+
+            if hyg_data.empty or 'Close' not in hyg_data.columns or hyg_data['Close'].iloc[-1] is None:
+                print("警告: 無法獲取 HYG 的最新收盤價。")
+                return float('nan')
+            if ief_data.empty or 'Close' not in ief_data.columns or ief_data['Close'].iloc[-1] is None:
+                print("警告: 無法獲取 IEF 的最新收盤價。")
+                return float('nan')
+
+            hyg_price = hyg_data['Close'].iloc[-1]
+            ief_price = ief_data['Close'].iloc[-1]
+
+            if ief_price == 0:
+                print("警告: IEF 價格為零，無法計算信用利差。")
+                return float('nan')
+
+            return round(hyg_price / ief_price, 4)
+        except Exception as e:
+            print(f"計算近似信用利差時發生錯誤: {e}")
+            return float('nan')
+
+    def _calculate_proxy_move(self) -> float:
+        """
+        計算代理債市波動率 (TLT 60天日線數據的20天滾動標準差)。
+        """
+        try:
+            tlt_data = self.yf_client.get_history("TLT", period="60d")
+            if tlt_data.empty or 'Close' not in tlt_data.columns or len(tlt_data) < 21: # Need at least 20 periods + 1 for pct_change
+                print("警告: TLT 數據不足以計算代理波動率。")
+                return float('nan')
+
+            daily_returns = tlt_data['Close'].pct_change()
+            proxy_move = daily_returns.rolling(window=20).std().iloc[-1]
+            return round(proxy_move, 4)
+        except Exception as e:
+            print(f"計算代理債市波動率時發生錯誤: {e}")
+            return float('nan')
+
+    def _calculate_gold_copper_ratio(self) -> float:
+        """
+        計算金銅比 (GLD價格 / HG=F價格)。
+        """
+        try:
+            gld_data = self.yf_client.get_history("GLD", period="1d")
+            copper_data = self.yf_client.get_history("HG=F", period="1d")
+
+            if gld_data.empty or 'Close' not in gld_data.columns or gld_data['Close'].iloc[-1] is None:
+                print("警告: 無法獲取 GLD 的最新收盤價。")
+                return float('nan')
+            if copper_data.empty or 'Close' not in copper_data.columns or copper_data['Close'].iloc[-1] is None:
+                print("警告: 無法獲取 HG=F 的最新收盤價。")
+                return float('nan')
+
+            gld_price = gld_data['Close'].iloc[-1]
+            copper_price = copper_data['Close'].iloc[-1]
+
+            if copper_price == 0:
+                print("警告: 銅價為零，無法計算金銅比。")
+                return float('nan')
+
+            return round(gld_price / copper_price, 4)
+        except Exception as e:
+            print(f"計算金銅比時發生錯誤: {e}")
+            return float('nan')
+
     def generate_snapshot(self, ticker: str, as_of_date: str) -> Dict[str, Any]:
         """
         生成指定標的與日期的市場狀態快照。
@@ -80,6 +151,11 @@ class DataEngine:
             "macro_section": {
                 "VIX": latest_vix,
                 "MOVE_Index": latest_move, # <--- 使用新指標
+            },
+            "approx_indicators": {
+                "approx_credit_spread": self._calculate_approx_credit_spread(),
+                "proxy_move": self._calculate_proxy_move(),
+                "gold_copper_ratio": self._calculate_gold_copper_ratio(),
             },
             # TODO: 添加期權市場、市場內部結構等部分
         }

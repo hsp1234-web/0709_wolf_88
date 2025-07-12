@@ -29,10 +29,10 @@ class FredClient(BaseAPIClient):
         final_api_key: Optional[str] = None
         if api_key:
             final_api_key = api_key
-            print(f"資訊：FredClient 初始化時偵測到直接傳入的 API 金鑰。")
+            print("資訊：FredClient 初始化時偵測到直接傳入的 API 金鑰。")
         else:
             try:
-                print(f"資訊：FredClient 初始化時未直接傳入 API 金鑰，嘗試從設定檔獲取...")
+                print("資訊：FredClient 初始化時未直接傳入 API 金鑰，嘗試從設定檔獲取...")
                 final_api_key = get_fred_api_key()
             except ValueError as e:
                 print(f"錯誤：無法初始化 FredClient。{e}")
@@ -49,7 +49,7 @@ class FredClient(BaseAPIClient):
         # 如果測試時傳入了特定的 session (例如 mock)，則使用它覆蓋 BaseAPIClient 預設創建的 session。
         if session:
             self._session = session
-            print(f"資訊：FredClient 已使用傳入的 session 物件。")
+            print("資訊：FredClient 已使用傳入的 session 物件。")
 
         # 使用最終確定的金鑰初始化官方 fredapi 實例
         # self.api_key 已由 super().__init__ 設定
