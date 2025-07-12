@@ -1,12 +1,13 @@
-# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.5.0**
+# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.7.0**
 
 ## **一、 專案概覽與目的**
 
 【普羅米修斯之火】是一個專為進階量化研究與金融市場分析而設計的 Python 框架。本專案旨在提供一個從多樣化數據源獲取金融數據、進行複雜指標計算、回測交易策略、並將結果視覺化的完整解決方案。其核心設計強調模組化、可擴展性以及數據處理的穩健性。
 
-**最近更新（作戰計畫 031：「壓力指數實戰驗證」）：**
-*   **實戰驗證**: 成功執行了端到端的壓力指數計算，驗證了 `FredClient` 與 `NYFedClient` 在真實 API 環境下的數據獲取與整合能力。
-*   **管線修復**: 修復了壓力指數計算管線中的導入錯誤與結果回傳邏輯，確保了管線的穩定運行。
+**最近更新 (作戰計畫 032 & 033):**
+*   **FMPClient 實戰驗證**: 成功整合並執行了 `FMPClient` 的端到端測試，驗證了獲取真實市場數據（如歷史股價）的能力。
+*   **FinMindClient 實戰驗證**: 成功整合並執行了 `FinMindClient` 的端到端測試，驗證了獲取台灣市場特定數據（如三大法人買賣超）的能力。
+*   **配置與腳本標準化**: 建立了標準化的 API 金鑰配置與驗證腳本執行流程，為未來新增數據客戶端奠定了基礎。
 
 ## **二、 技術棧 (Technology Stack)**
 
@@ -59,6 +60,8 @@
 │   │   └── run.py
 │   ├── visualization
 │   │   └── plot_sma_crossover.py
+│   ├── run_fmp_test.py
+│   ├── run_finmind_test.py
 │   ├── run_gold_layer.py
 │   └── run_stress_index.py
 ├── core
@@ -126,17 +129,36 @@
 4.  **安裝依賴**: `poetry install`。
 5.  **激活虛擬環境**: `poetry shell` (或使用 `poetry run <command>`)。
 6.  **設定 API 金鑰**:
-    *   **FRED API 金鑰**: 為了運行壓力指數計算 (`apps/run_stress_index.py`)，您**必須**在 `config.yml` 中提供一個有效的 FRED API 金鑰。
+    *   為了運行所有數據獲取功能，您**必須**在 `config.yml` 中提供有效的 API 金鑰/Token。
         ```yaml
         # In config.yml
         api_keys:
           fred: "YOUR_REAL_FRED_API_KEY_HERE"
+          fmp: "YOUR_REAL_FMP_API_KEY_HERE"
+          finmind: "YOUR_REAL_FINMIND_API_TOKEN_HERE"
         ```
     *   ⚠️ **安全警告**：`config.yml` 檔案包含敏感金鑰，**絕對不可**提交到任何版本控制系統（如 Git）。請確保它已被列在 `.gitignore` 檔案中。
 
 ## **五、 主要功能執行與測試**
 
-### **5.1 數據回填與快取**
+### **5.1 數據客戶端實戰驗證**
+
+這些腳本用於驗證各個數據客戶端與真實 API 的連通性。請確保已在 `config.yml` 中設定對應的金鑰。
+
+1.  **驗證 FRED & NYFED (壓力指數)**:
+    ```bash
+    poetry run python apps/run_stress_index.py
+    ```
+2.  **驗證 FMP (以獲取 Apple 股價為例)**:
+    ```bash
+    poetry run python apps/run_fmp_test.py
+    ```
+3.  **驗證 FinMind (以獲取台積電三大法人買賣超為例)**:
+    ```bash
+    poetry run python apps/run_finmind_test.py
+    ```
+
+### **5.2 數據回填與快取**
 
 此管線用於填充 DuckDB 資料庫，供其他模組使用。
 
@@ -146,7 +168,7 @@
     ```
 *   **說明**: 此腳本會使用 `YFinanceClient` (無需金鑰) 獲取 SPY 的小時級數據，並存儲在根目錄的 `prometheus_fire.duckdb` 檔案中。
 
-### **5.2 執行 SMA 策略回測與視覺化**
+### **5.3 執行 SMA 策略回測與視覺化**
 
 這是一個完整的無金鑰工作流程，用於驗證因子計算、回測和視覺化功能。
 
@@ -162,22 +184,6 @@
     ```
     *   **說明**: 此腳本會讀取上一步生成的 CSV 檔案，並在 `output` 目錄下創建一個名為 `sma_crossover_chart.html` 的互動式圖表。
 
-### **5.3 執行壓力指數計算**
-
-此功能依賴於您在 `config.yml` 中設定的 FRED API 金鑰。
-
-*   **執行計算**:
-    ```bash
-    poetry run python apps/run_stress_index.py
-    ```
-*   **預期輸出**:
-    終端機將顯示詳細的數據獲取和計算過程，並在最後打印出計算結果：
-    ```
-    INFO - ✅ 壓力指數計算成功。
-    INFO -    最新壓力指數值: -0.74
-    ```
-    *(註：數值為示意，實際結果會因市場數據而異。)*
-
 ### **5.4 測試**
 *   **運行所有測試**:
     ```bash
@@ -186,6 +192,24 @@
 *   **目前測試狀態**: 109 個通過, 16 個跳過 (基於最近一次完整測試運行)。
 
 ## **六、 版本歷史與變更日誌**
+
+### **v0.7.0 (對應作戰計畫 033)**
+*   **功能驗證**:
+    *   **FinMindClient**: 成功執行了端到端的實戰驗證，確認可獲取台灣市場數據。
+*   **新增功能**:
+    *   新增 `apps/run_finmind_test.py` 作為 FinMindClient 的標準驗證腳本。
+*   **配置**:
+    *   在 `config.yml` 中新增 `finmind` API Token 的配置項。
+
+### **v0.6.0 (對應作戰計畫 032)**
+*   **功能驗證**:
+    *   **FMPClient**: 成功執行了端到端的實戰驗證，確認可獲取美國市場股價數據。
+*   **新增功能**:
+    *   新增 `apps/run_fmp_test.py` 作為 FMPClient 的標準驗證腳本。
+*   **配置**:
+    *   在 `config.yml` 中新增 `fmp` API Key 的配置項。
+*   **修復**:
+    *   修正了驗證腳本中 `config` 模組的導入方式，從 `load_config` 函數改為直接使用 `config` 實例。
 
 ### **v0.5.0 (對應作戰計畫 031)**
 *   **功能驗證**:
