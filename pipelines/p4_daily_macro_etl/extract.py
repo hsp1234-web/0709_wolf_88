@@ -19,7 +19,10 @@ logger = logging.getLogger(__name__)
 
 
 def run_extraction(
-    force_download: bool = False, fred_api_key: Optional[str] = None
+    force_download: bool = False,
+    fred_api_key: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
 ) -> Dict[str, pd.DataFrame]:
     """
     核心數據提取函式。
@@ -31,6 +34,8 @@ def run_extraction(
         force_download (bool): 若為 True，則強制從網路重新下載所有數據，忽略快取。
         fred_api_key (Optional[str]): 用於認證 FRED API 的金鑰。如果未提供，
                                      會嘗試從 `core.config` 獲取。
+        start_date (Optional[str]): 數據提取的開始日期 (YYYY-MM-DD)。
+        end_date (Optional[str]): 數據提取的結束日期 (YYYY-MM-DD)。
 
     Returns:
         Dict[str, pd.DataFrame]: 一個字典，鍵為數據源或指標的描述性名稱，
@@ -60,7 +65,11 @@ def run_extraction(
             for series_id, description in fred_series_to_fetch.items():
                 try:
                     logger.info(f"正在從 FRED 提取: {description} ({series_id})")
-                    df = fred_client.fetch_data(symbol=series_id)
+                    df = fred_client.fetch_data(
+                        symbol=series_id,
+                        observation_start=start_date,
+                        observation_end=end_date,
+                    )
                     if not df.empty:
                         raw_data[f"FRED_{series_id}"] = df
                         logger.info(f"成功提取並儲存 {len(df)} 筆 {series_id} 數據。")
@@ -90,14 +99,21 @@ def run_extraction(
         for symbol, description in yfinance_symbols_to_fetch.items():
             try:
                 logger.info(f"正在從 yfinance 提取: {description} ({symbol})")
-                # yfinance client 的快取是內建的，我們的 session 控制不了
-                # force_download 在此處主要作為一個標記
-                df = yfinance_client.fetch_data(symbol=symbol, period="max")
+
+                # 決定 yfinance 的提取參數
+                fetch_params = {"symbol": symbol}
+                if start_date and end_date:
+                    fetch_params["start_date"] = start_date
+                    fetch_params["end_date"] = end_date
+                else:
+                    fetch_params["period"] = "max"
+
+                df = yfinance_client.fetch_data(**fetch_params)
                 if not df.empty:
                     raw_data[f"YFINANCE_{symbol}"] = df
                     logger.info(f"成功提取並儲存 {len(df)} 筆 {symbol} 數據。")
                 else:
-                    logger.warning(f"從 yfinance 提取 {symbol} 時返回了空的 DataFrame。")
+                    logger.warning(f"在指定期間內從 yfinance 提取 {symbol} 時返回了空的 DataFrame。")
             except Exception as e:
                 logger.error(f"從 yfinance 提取 {symbol} 失敗: {e}", exc_info=True)
     except Exception as e:

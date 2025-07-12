@@ -77,6 +77,16 @@ def build_daily_data(
         "-f",
         help="強制從網路重新下載所有數據，忽略本地快取。",
     ),
+    start_date: str = typer.Option(
+        None,
+        "--start-date",
+        help="數據提取的開始日期 (YYYY-MM-DD)。",
+    ),
+    end_date: str = typer.Option(
+        None,
+        "--end-date",
+        help="數據提取的結束日期 (YYYY-MM-DD)。",
+    ),
 ):
     """執行 P4 每日宏觀數據 ETL 管線。"""
     execute_task(
@@ -84,6 +94,8 @@ def build_daily_data(
         "每日宏觀數據ETL",
         run_daily_macro_etl,
         force_download=force_download,
+        start_date=start_date,
+        end_date=end_date,
     )
 
 
