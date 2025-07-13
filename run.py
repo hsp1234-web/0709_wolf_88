@@ -15,6 +15,7 @@ try:
     from apps.run_stress_index import main as run_stress_index
     from apps.run_fmp_test import main as run_fmp_test
     from pipelines.p4_daily_macro_etl.run_etl import run as run_daily_macro_etl
+    from pipelines.p5_hourly_price_etl.run_etl import run as run_hourly_price_etl
     from core.db.db_manager import DBManager
     import pandas as pd
 except ImportError as e:
@@ -96,6 +97,26 @@ def build_daily_data(
         force_download=force_download,
         start_date=start_date,
         end_date=end_date,
+    )
+
+
+@app.command()
+def build_hourly_data(
+    ctx: typer.Context,
+    mode: str = typer.Option(
+        "update",
+        "--mode",
+        "-m",
+        help="執行模式，可選值為 'backfill' 或 'update'。",
+        case_sensitive=False,
+    ),
+):
+    """執行 P5 小時級價格數據 ETL 管線。"""
+    execute_task(
+        ctx.obj,
+        f"小時級價格數據ETL ({mode}模式)",
+        run_hourly_price_etl,
+        mode=mode,
     )
 
 
