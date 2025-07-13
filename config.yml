@@ -8,7 +8,7 @@
 # 建議將此檔案加入 .gitignore，並在部署環境中手動創建或透過 CI/CD 注入。
 api_keys:
   # 請在此處填入您的 FRED API 金鑰
-  fred: "c85a224a0e0d72a7bccb471c0021eb7b"
+  fred: "c7353f4a5a215d620584862833534e3e"
 
   # 其他未來可能用到的金鑰
   fmp: "YOUR_REAL_FMP_API_KEY_HERE" # <-- 在此處新增您的 FMP 金鑰

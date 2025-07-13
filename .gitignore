@@ -32,6 +32,9 @@ reports/
 .idea/
 *.swp
 
+# Configuration files
+config.yml
+
 # 忽略在測試期間產生的臨時資料庫和日誌檔案
 apps/**/tests/*.duckdb
 apps/**/tests/*.log

@@ -1,5 +1,6 @@
 import typer
 from pipelines import p1_yfinance_etl
+from pipelines import p2_fred_etl
 
 app = typer.Typer()
 
@@ -10,6 +11,13 @@ def run_yfinance_etl_task():
     """
     target_tickers = ["SPY", "QQQ", "AAPL", "GOOG", "MSFT"]
     p1_yfinance_etl.run_pipeline(target_tickers)
+
+@app.command(name="run-fred-etl")
+def run_fred_etl_task():
+    """
+    【數據管線】執行 P2: 從 FRED 獲取宏觀經濟數據。
+    """
+    p2_fred_etl.run()
 
 @app.command()
 def test():
