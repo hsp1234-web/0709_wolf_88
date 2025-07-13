@@ -1,6 +1,7 @@
 from core.queue.base import BaseQueue
 from core.logger import LogManager
 from apps.factor_engine.sma_crossover_factor import calculate_sma_crossover
+from core.db.results_saver import save_result # 導入儲存函數
 
 class BacktestingService:
     def __init__(self, queue: BaseQueue, log_manager: LogManager):
@@ -22,7 +23,14 @@ class BacktestingService:
                 try:
                     # === 將參數動態傳入計算函數 ===
                     result = calculate_sma_crossover(symbol=symbol, **params)
+                    # 將任務參數附加到結果中，以便儲存
+                    result['params'] = params
                     self.log.log("DATA", f"  [計算結果] {result}")
+
+                    # === 儲存結果至資料庫 ===
+                    save_result(result)
+                    self.log.log("INFO", f"  [結果已儲存] 任務 {task_id}")
+
                 except Exception as e:
                     self.log.log("ERROR", f"  [計算失敗] 任務 {task_id} 發生錯誤: {e}")
 

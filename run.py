@@ -17,6 +17,7 @@ try:
     # 導入新的應用函數
     from apps.backtest_worker_app import run_worker
     from apps.tools.task_adder_app import add_tasks
+    from apps.tools.show_results import show_results # 導入新函數
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -82,6 +83,13 @@ def cli_add_test_tasks(ctx: typer.Context):
     log_manager: LogManager = ctx.obj
     log_manager.log("INFO", "CLI: 正在新增測試任務...")
     add_tasks(log_manager)
+
+# 新增檢視結果命令
+@app.command(name="show-results")
+def cli_show_results(ctx: typer.Context):
+    """查詢並顯示所有已儲存的回測結果。"""
+    log_manager: LogManager = ctx.obj
+    show_results(log_manager)
 
 if __name__ == "__main__":
     try:
