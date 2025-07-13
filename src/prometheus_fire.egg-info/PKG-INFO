@@ -17,11 +17,7 @@ Requires-Dist: pytz>=2025.2
 Requires-Dist: psutil>=6.0.0
 Requires-Dist: fredapi>=0.5.2
 Provides-Extra: dev
-Requires-Dist: vectorbt>=0.28.0; extra == "dev"
-Requires-Dist: pydantic>=2.11.7; extra == "dev"
 Requires-Dist: typer[all]>=0.16.0; extra == "dev"
-Requires-Dist: openpyxl>=3.1.5; extra == "dev"
 Requires-Dist: pytest>=8.4.1; extra == "dev"
 Requires-Dist: pytest-mock>=3.14.1; extra == "dev"
 Requires-Dist: ruff>=0.12.3; extra == "dev"
-Requires-Dist: pytest-timeout>=2.4.0; extra == "dev"

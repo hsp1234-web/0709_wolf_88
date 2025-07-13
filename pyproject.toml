@@ -1,7 +1,4 @@
-# ==============================================================================
-#  【普羅米修斯之火】專案配置文件 (v1.1 - src-layout)
-# ==============================================================================
-
+# pyproject.toml
 [project]
 name = "prometheus-fire"
 version = "1.0.0"
@@ -25,19 +22,15 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "vectorbt>=0.28.0",
-    "pydantic>=2.11.7",
     "typer[all]>=0.16.0",
-    "openpyxl>=3.1.5",
     "pytest>=8.4.1",
     "pytest-mock>=3.14.1",
-    "ruff>=0.12.3",
-    "pytest-timeout>=2.4.0"
+    "ruff>=0.12.3"
 ]
 
-# [TOOL SECTIONS]
+# --- 關鍵修正：告知打包工具原始碼位置 ---
 [tool.setuptools.packages.find]
-where = ["src"] # <-- 關鍵變更：告訴打包工具我們的程式碼在 src 目錄下
+where = ["src"]
 
 [tool.ruff]
 line-length = 88
@@ -45,6 +38,6 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 
+# --- 關鍵修正：告知 Pytest 原始碼位置 ---
 [tool.pytest.ini_options]
-pythonpath = ["src"] # <-- 關鍵變更：告訴 pytest 我們的程式碼在 src 目錄下
-timeout = 300
+pythonpath = ["src"]
