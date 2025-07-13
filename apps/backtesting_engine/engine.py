@@ -1,82 +1,84 @@
-# In apps/backtesting_engine/engine.py
+# apps/backtesting_engine/engine.py
+from typing import Dict
+
 import numpy as np
 import pandas as pd
+import vectorbt as vbt
 
 
-class Backtester:
+class BacktestingEngine:
     """
-    一個簡單的向量化回測引擎。
-    接收價格數據與交易信號，計算策略的歷史績效。
+    回測引擎，專門負責執行交易策略的回測並產出標準化的績效報告。
+    它封裝了 vectorbt 的核心邏輯，提供一個簡潔的接口。
     """
 
-    def __init__(
-        self,
-        price_series: pd.Series,
-        signal_series: pd.Series,
-        initial_capital: float = 100000.0,
-    ):
+    def run(
+        self, price_data: pd.Series, signals: pd.Series
+    ) -> Dict[str, float | int] | None:
         """
-        初始化回測器。
-        :param price_series: 包含資產收盤價的時間序列。
-        :param signal_series: 包含交易信號 (1: 買進, -1: 賣出, 0: 持有) 的時間序列。
-        :param initial_capital: 初始資金。
+        執行回測並返回一個標準化的績效報告。
+
+        :param price_data: 包含價格時間序列的 Pandas Series，索引為日期時間。
+        :param signals: 包含交易信號的 Pandas Series (1: 進場, -1: 出場)，
+                        索引必須與 price_data 對齊。
+        :return: 一個包含關鍵績效指標 (KPIs) 的字典，如果回測失敗則返回 None。
         """
-        self.price_series = price_series
-        self.signal_series = signal_series
-        self.initial_capital = initial_capital
-        self.results = None
+        if not isinstance(price_data, pd.Series) or not isinstance(
+            signals, pd.Series
+        ):
+            print("錯誤：price_data 和 signals 必須是 Pandas Series。")
+            return None
 
-    def run(self):
-        """執行回測模擬。"""
-        print("--- 開始執行回測模擬 ---")
-        # 結合價格與信號
-        combined_df = pd.DataFrame(
-            {"price": self.price_series, "signal": self.signal_series}
-        ).dropna()
+        if not price_data.index.equals(signals.index):
+            print("錯誤：價格數據和信號的索引必須完全匹配。")
+            # 在更複雜的系統中，可以嘗試重新對齊索引
+            # signals = signals.reindex(price_data.index, method='ffill').fillna(0)
+            return None
 
-        # 計算策略每日報酬率
-        # 假設我們在信號出現的下一根 K 棒開盤時交易，此處簡化為持有到下一期
-        combined_df["returns"] = np.log(
-            combined_df["price"] / combined_df["price"].shift(1)
-        )
-        combined_df["strategy_returns"] = combined_df["returns"] * combined_df[
-            "signal"
-        ].shift(1)
+        try:
+            # 將進出場信號轉換為 vbt 所需的布林值格式
+            # 這裡我們假設 1 是進場信號，-1 是出場信號
+            entries = signals == 1
+            exits = signals == -1
 
-        # 計算資產淨值曲線
-        combined_df["cumulative_returns"] = (
-            self.initial_capital * (1 + combined_df["strategy_returns"]).cumprod()
-        )
+            # 使用 vectorbt 的 Portfolio.from_signals 執行回測
+            # 我們設定一些基本參數，例如初始資本和手續費
+            portfolio = vbt.Portfolio.from_signals(
+                close=price_data,
+                entries=entries,
+                exits=exits,
+                init_cash=100_000,  # 初始資金
+                freq="H",  # 假設數據頻率為小時
+                fees=0.001,  # 交易手續費 0.1%
+            )
 
-        self.results = combined_df
-        print("✔ 回測模擬完成。")
-        return self.results
+            # 從回測結果中提取關鍵績效指標 (KPIs)
+            stats = portfolio.stats()
 
-    def get_performance_metrics(self) -> dict:
-        """計算並回傳關鍵績效指標 (KPIs)。"""
-        if self.results is None:
-            raise ValueError("請先運行 run() 方法。")
+            # 將結果格式化為一個標準化的字典
+            # 我們使用 .get() 方法以避免因缺少某些指標而導致的錯誤
+            performance_report = {
+                "total_return_pct": stats.get("Total Return [%]", 0.0),
+                "sharpe_ratio": stats.get("Sharpe Ratio", 0.0),
+                "max_drawdown_pct": stats.get("Max Drawdown [%]", 0.0),
+                "win_rate_pct": stats.get("Win Rate [%]", 0.0),
+                "total_trades": int(stats.get("Total Trades", 0)),
+                "profit_factor": stats.get("Profit Factor", 0.0),
+                "avg_winning_trade_pct": stats.get("Avg Winning Trade [%]", 0.0),
+                "avg_losing_trade_pct": stats.get("Avg Losing Trade [%]", 0.0),
+            }
 
-        print("--- 正在計算績效指標 ---")
-        total_return = (
-            self.results["cumulative_returns"].iloc[-1] / self.initial_capital
-        ) - 1
+            # 將 numpy 類型轉換為 Python 原生類型，以確保兼容性
+            for key, value in performance_report.items():
+                if isinstance(value, (np.floating, float)):
+                    performance_report[key] = float(value)
+                elif isinstance(value, (np.integer, int)):
+                    performance_report[key] = int(value)
 
-        # 計算夏普比率 (假設無風險利率為 0，年化)
-        sharpe_ratio = (
-            self.results["strategy_returns"].mean()
-            / self.results["strategy_returns"].std()
-        ) * np.sqrt(252 * 24)  # 小時級數據
+            print("--- 回測引擎：計算完成 ---")
+            return performance_report
 
-        # 計算最大回撤
-        rolling_max = self.results["cumulative_returns"].cummax()
-        drawdown = (self.results["cumulative_returns"] - rolling_max) / rolling_max
-        max_drawdown = drawdown.min()
-
-        metrics = {
-            "總回報率 (Total Return)": f"{total_return:.2%}",
-            "夏普比率 (Sharpe Ratio)": f"{sharpe_ratio:.2f}",
-            "最大回撤 (Max Drawdown)": f"{max_drawdown:.2%}",
-        }
-        print("✔ 績效指標計算完成。")
-        return metrics
+        except Exception as e:
+            print(f"執行回測時發生錯誤：{e}")
+            # 在實際應用中，這裡應該有更詳細的日誌記錄
+            return None

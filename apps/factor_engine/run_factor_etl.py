@@ -120,7 +120,8 @@ def run_etl(log_manager):
             all_factors_to_store.append(current_ticker_factors_df)
             log_manager.log(
                 "INFO",
-                f"為 {ticker} 計算並準備了 {len(current_ticker_factors_df)} 筆因子數據。",
+                f"為 {ticker} 計算並準備了 "
+                f"{len(current_ticker_factors_df)} 筆因子數據。",
             )
         else:
             log_manager.log("INFO", f"未能為 {ticker} 計算出任何因子數據。")
@@ -177,7 +178,8 @@ def run_etl(log_manager):
         if not final_factors_df.empty:
             log_manager.log(
                 "INFO",
-                f"ETL 流程總共計算出 {len(final_factors_df)} 筆因子數據，準備寫入資料庫...",
+                f"ETL 流程總共計算出 {len(final_factors_df)} 筆因子數據，"
+                "準備寫入資料庫...",
             )
             db_manager.insert_factors(final_factors_df)
             log_manager.log("INFO", "所有因子數據已成功寫入 FactorStore_Daily。")

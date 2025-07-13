@@ -1,6 +1,7 @@
+import os
 import subprocess
 import sys
-import os
+
 
 def run_command(command, check=True):
     """
@@ -29,7 +30,7 @@ def run_command(command, check=True):
             print(f"--- 命令執行失敗，返回碼: {return_code} ---")
             return False
 
-        print(f"--- 命令執行成功 ---")
+        print("--- 命令執行成功 ---")
         return True
 
     except FileNotFoundError:

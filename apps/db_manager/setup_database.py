@@ -81,8 +81,9 @@ CREATE TABLE IF NOT EXISTS hourly_time_series (
 
 # --- SQL 指令：為表格添加註解 ---
 COMMENT_ON_TABLE_SQL = """
-COMMENT ON TABLE hourly_time_series IS '儲存【普羅米修斯之火】專案所需的小時級別金融時間序列數據。'
-'模板化指標欄位 (如 [商品代號]_obv_1h) 將在後續計畫中根據具體需求擴充。';
+COMMENT ON TABLE hourly_time_series IS
+'儲存【普羅米修斯之火】專案所需的小時級別金融時間序列數據。
+模板化指標欄位 (如 [商品代號]_obv_1h) 將在後續計畫中根據具體需求擴充。';
 """
 
 

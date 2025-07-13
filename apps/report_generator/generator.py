@@ -63,7 +63,8 @@ class ReportGenerator:
         )
         self.log_manager.log(
             "INFO",
-            f"原始 stock_id (用於報告和 Chimera): '{stock_id}', 內部查詢 ohlcv 使用的 product_id: '{internal_stock_id_for_ohlcv}'",
+            f"原始 stock_id (用於報告和 Chimera): '{stock_id}', "
+            f"內部查詢 ohlcv 使用的 product_id: '{internal_stock_id_for_ohlcv}'",
         )
 
         try:
@@ -71,7 +72,8 @@ class ReportGenerator:
             ohlcv_table_name = f"ohlcv_{valid_timeframe}"
             self.log_manager.log(
                 "INFO",
-                f"正在從資料表 '{ohlcv_table_name}' 讀取 {timeframe} OHLCV 數據 (product_id: {internal_stock_id_for_ohlcv})...",
+                f"正在從資料表 '{ohlcv_table_name}' 讀取 {timeframe} OHLCV 數據 "
+                f"(product_id: {internal_stock_id_for_ohlcv})...",
             )
 
             query_ohlcv = f"""
@@ -87,12 +89,14 @@ class ReportGenerator:
             if ohlcv_df.empty:
                 self.log_manager.log(
                     "WARNING",
-                    f"未找到 {internal_stock_id_for_ohlcv} (原始 {stock_id}) 在 {start_date_str} 至 {end_date_str} ({timeframe} 週期) 的 OHLCV 數據。",
+                    f"未找到 {internal_stock_id_for_ohlcv} (原始 {stock_id}) "
+                    f"在 {start_date_str} 至 {end_date_str} ({timeframe} 週期) 的 OHLCV 數據。",
                 )
                 return None, None, None
             self.log_manager.log(
                 "INFO",
-                f"成功讀取 {len(ohlcv_df)} 筆 {internal_stock_id_for_ohlcv} (原始 {stock_id}) 的 {timeframe} OHLCV 數據。",
+                f"成功讀取 {len(ohlcv_df)} 筆 {internal_stock_id_for_ohlcv} "
+                f"(原始 {stock_id}) 的 {timeframe} OHLCV 數據。",
             )
             ohlcv_df["timestamp"] = pd.to_datetime(ohlcv_df["timestamp"])
         except (duckdb.CatalogException, ValueError) as e:
@@ -100,7 +104,12 @@ class ReportGenerator:
             return None, None, None
 
         try:
-            query_chimera = "SELECT date, stock_id, price_volume_label, institutional_flow_label, composite_signal FROM chimera_daily_signals WHERE stock_id = ? AND date BETWEEN ? AND ?"
+            query_chimera = (
+                "SELECT date, stock_id, price_volume_label, "
+                "institutional_flow_label, composite_signal "
+                "FROM chimera_daily_signals "
+                "WHERE stock_id = ? AND date BETWEEN ? AND ?"
+            )
             chimera_df = con.execute(
                 query_chimera, [stock_id, start_date_str, end_date_str]
             ).fetchdf()
@@ -115,7 +124,11 @@ class ReportGenerator:
 
         if stock_id in ["0050.TW", "TXO"]:
             try:
-                query_pc_ratio = "SELECT trading_date, product_id, pc_volume_ratio, pc_oi_ratio FROM taifex_pc_ratios WHERE product_id = 'TXO' AND trading_date BETWEEN ? AND ?"
+                query_pc_ratio = (
+                    "SELECT trading_date, product_id, pc_volume_ratio, pc_oi_ratio "
+                    "FROM taifex_pc_ratios "
+                    "WHERE product_id = 'TXO' AND trading_date BETWEEN ? AND ?"
+                )
                 pc_ratio_df = con.execute(
                     query_pc_ratio, [start_date_str, end_date_str]
                 ).fetchdf()
@@ -254,7 +267,8 @@ class ReportGenerator:
                 if ohlcv_df is None or ohlcv_df.empty:
                     self.log_manager.log(
                         "WARNING",
-                        f"股票 {stock_id} ({timeframe}) 在指定日期範圍內無 OHLCV 數據，無法生成報告。",
+                        f"股票 {stock_id} ({timeframe}) 在指定日期範圍內無 OHLCV "
+                        "數據，無法生成報告。",
                     )
                     return None
 
@@ -263,7 +277,11 @@ class ReportGenerator:
                 )
                 if fig:
                     output_dir.mkdir(parents=True, exist_ok=True)
-                    filename = f"{stock_id}_{timeframe}_{start_date_str.replace('-', '')}_{end_date_str.replace('-', '')}_report.html"
+                    filename = (
+                        f"{stock_id}_{timeframe}_"
+                        f"{start_date_str.replace('-', '')}_"
+                        f"{end_date_str.replace('-', '')}_report.html"
+                    )
                     report_file_path = output_dir / filename
                     fig.write_html(str(report_file_path))
                     self.log_manager.log(
@@ -301,7 +319,8 @@ if __name__ == "__main__":
     try:
         with duckdb.connect(str(test_db_file)) as con:
             con.execute(
-                "CREATE TABLE ohlcv_1d(timestamp TIMESTAMP, product_id VARCHAR, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT);"
+                "CREATE TABLE ohlcv_1d(timestamp TIMESTAMP, product_id VARCHAR, "
+                "open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT);"
             )
             con.executemany(
                 "INSERT INTO ohlcv_1d VALUES (?,?,?,?,?,?,?)",
@@ -312,7 +331,9 @@ if __name__ == "__main__":
                 ],
             )
             con.execute(
-                "CREATE TABLE chimera_daily_signals(date DATE, stock_id VARCHAR, price_volume_label VARCHAR, institutional_flow_label VARCHAR, composite_signal VARCHAR);"
+                "CREATE TABLE chimera_daily_signals(date DATE, stock_id VARCHAR, "
+                "price_volume_label VARCHAR, institutional_flow_label VARCHAR, "
+                "composite_signal VARCHAR);"
             )
             con.executemany(
                 "INSERT INTO chimera_daily_signals VALUES (?,?,?,?,?)",
@@ -334,7 +355,10 @@ if __name__ == "__main__":
                 ],
             )
             con.execute(
-                "CREATE TABLE taifex_pc_ratios(trading_date DATE, product_id VARCHAR, pc_volume_ratio DOUBLE, pc_oi_ratio DOUBLE, total_put_volume BIGINT, total_call_volume BIGINT, total_put_oi BIGINT, total_call_oi BIGINT, calculated_at TIMESTAMPTZ);"
+                "CREATE TABLE taifex_pc_ratios(trading_date DATE, product_id VARCHAR, "
+                "pc_volume_ratio DOUBLE, pc_oi_ratio DOUBLE, "
+                "total_put_volume BIGINT, total_call_volume BIGINT, "
+                "total_put_oi BIGINT, total_call_oi BIGINT, calculated_at TIMESTAMPTZ);"
             )
             con.executemany(
                 "INSERT INTO taifex_pc_ratios VALUES (?,?,?,?,?,?,?,?,?)",

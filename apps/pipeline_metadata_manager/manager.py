@@ -78,12 +78,17 @@ class MetadataManager:
 
     def _initialize_database(self):
         try:
-            self.conn.execute(f"""
+            self.conn.execute(
+                f"""
                 CREATE TABLE IF NOT EXISTS {self.table_name} (
-                    fingerprint TEXT PRIMARY KEY, filename TEXT NOT NULL, filesize INTEGER,
-                    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, etl_version TEXT
+                    fingerprint TEXT PRIMARY KEY,
+                    filename TEXT NOT NULL,
+                    filesize INTEGER,
+                    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    etl_version TEXT
                 )
-            """)
+            """
+            )
             self.log_manager.log(
                 "INFO", f"資料庫表格 '{self.table_name}' 已初始化/確認存在。"
             )
@@ -101,7 +106,8 @@ class MetadataManager:
             exists = result is not None
             self.log_manager.log(
                 "DEBUG",
-                f"指紋 '{fingerprint}' 在表格 '{self.table_name}' 中 {'存在' if exists else '不存在'} 。",
+                f"指紋 '{fingerprint}' 在表格 '{self.table_name}' 中 "
+                f"{'存在' if exists else '不存在'} 。",
             )
             return exists
         except Exception as e:
@@ -124,16 +130,22 @@ class MetadataManager:
         )
         self.log_manager.log(
             "DEBUG",
-            f"準備寫入指紋: {fingerprint}, 檔案: {filename}, 大小: {filesize}, ETL 版本: {resolved_etl_version}",
+            f"準備寫入指紋: {fingerprint}, 檔案: {filename}, 大小: {filesize}, "
+            f"ETL 版本: {resolved_etl_version}",
         )
         try:
             self.conn.execute(
-                f"INSERT INTO {self.table_name} (fingerprint, filename, filesize, etl_version) VALUES (?, ?, ?, ?) ON CONFLICT(fingerprint) DO NOTHING;",
+                f"""
+                INSERT INTO {self.table_name} (fingerprint, filename, filesize, etl_version)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(fingerprint) DO NOTHING;
+                """,
                 [fingerprint, filename, filesize, resolved_etl_version],
             )
             self.log_manager.log(
                 "INFO",
-                f"指紋 '{fingerprint}' (檔案: {filename}) 已嘗試寫入表格 '{self.table_name}'。",
+                f"指紋 '{fingerprint}' (檔案: {filename}) "
+                f"已嘗試寫入表格 '{self.table_name}'。",
             )
             return True
         except Exception as e:
