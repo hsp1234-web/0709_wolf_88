@@ -25,6 +25,7 @@ class BacktestingService:
                     result = calculate_sma_crossover(symbol=symbol, **params)
                     # 將任務參數附加到結果中，以便儲存
                     result['params'] = params
+                    result['batch_id'] = task.get('batch_id') # 從任務中繼承 batch_id
                     self.log.log("DATA", f"  [計算結果] {result}")
 
                     # === 儲存結果至資料庫 ===
@@ -32,7 +33,9 @@ class BacktestingService:
                     self.log.log("INFO", f"  [結果已儲存] 任務 {task_id}")
 
                 except Exception as e:
-                    self.log.log("ERROR", f"  [計算失敗] 任務 {task_id} 發生錯誤: {e}")
+                    import traceback
+                    error_details = traceback.format_exc()
+                    self.log.log("ERROR", f"  [計算失敗] 任務 {task_id} 發生錯誤: {e}\n{error_details}")
 
                 self.queue.task_done(task_id)
                 self.log.log("SUCCESS", f"  [已完成] 任務 {task_id}")
