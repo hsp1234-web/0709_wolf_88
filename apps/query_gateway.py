@@ -10,9 +10,16 @@ TABLE_NAME = "backtest_results"
 def get_results():
     """提供所有回測結果的 API。"""
     conn = duckdb.connect(DB_PATH, read_only=True)
-    results = conn.execute(f"SELECT * FROM {TABLE_NAME}").fetchdf()
-    conn.close()
-    return results.to_dict(orient="records")
+    try:
+        # 檢查資料表是否存在
+        tables = conn.execute("SHOW TABLES").fetchall()
+        if (TABLE_NAME,) not in tables:
+            return [] # 如果不存在，返回空列表
+
+        results = conn.execute(f"SELECT * FROM {TABLE_NAME}").fetchdf()
+        return results.to_dict(orient="records")
+    finally:
+        conn.close()
 
 @app.get("/")
 def read_root():

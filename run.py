@@ -20,6 +20,7 @@ try:
     from apps.tools.task_adder_app import add_tasks
     from apps.tools.show_results import show_results # 導入新函數
     from apps.query_gateway import app as dashboard_app # 導入 dashboard app
+    from apps.tools.clear_results import clear_results
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -104,6 +105,24 @@ def cli_dashboard(
     log_manager: LogManager = ctx.obj
     log_manager.log("INFO", f"正在於 http://{host}:{port} 啟動儀表板...")
     uvicorn.run(dashboard_app, host=host, port=port)
+
+# 新增清理結果命令
+@app.command(name="clear-results")
+def cli_clear_results(
+    ctx: typer.Context,
+    force: bool = typer.Option(False, "--force", help="跳過確認，直接執行清除。")
+):
+    """清除資料庫中所有已儲存的回測結果。"""
+    log_manager: LogManager = ctx.obj
+
+    if not force:
+        # 進行安全確認
+        confirm = typer.confirm("您確定要清除所有回測結果嗎？此操作無法復原。")
+        if not confirm:
+            log_manager.log("INFO", "操作已取消。")
+            raise typer.Abort()
+
+    clear_results(log_manager)
 
 if __name__ == "__main__":
     try:
