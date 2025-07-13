@@ -1,7 +1,6 @@
 # apps/run_fmp_test.py
 # FMPClient 端到端實戰驗證執行腳本
 
-import os
 import sys
 from pathlib import Path
 

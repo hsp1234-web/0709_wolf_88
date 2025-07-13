@@ -1,17 +1,14 @@
 # apps/report_generator/generator.py
-import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import duckdb
 import pandas as pd
+import plotly.graph_objects as go
 import pytz
+from plotly.subplots import make_subplots
 
 from core.logger import LogManager
-
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 
 class ReportGenerator:

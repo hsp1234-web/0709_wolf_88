@@ -2,9 +2,9 @@
 """
 普羅米修斯之火 - 因子提取、轉換、加載 (ETL) 主執行腳本
 """
-import os
 import sys
 from pathlib import Path
+
 import pandas as pd
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
@@ -19,10 +19,11 @@ except NameError:
         sys.path.insert(0, str(project_root))
 # --- 標準化「路徑自我校正」樣板碼 END ---
 
+from apps.factor_engine.engine import FactorEngine
+from core.db.db_manager import DBManager
+
 
 def run_etl(log_manager):
-    from apps.daily_market_analyzer.db_manager import DBManager
-    from apps.factor_engine.engine import FactorEngine
     """
     執行完整的因子提取、計算和儲存流程。
     """

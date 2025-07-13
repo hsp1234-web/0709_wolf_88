@@ -19,6 +19,7 @@ except NameError:
 
 from core.logger import LogManager
 
+
 def run_optimization(log_manager: LogManager):
     """
     模擬執行投資組合優化的核心業務邏輯。

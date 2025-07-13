@@ -4,14 +4,13 @@
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import pandas as pd
 
 from core.clients.finmind import FinMindClient
 from core.clients.fred import FredClient
 from core.clients.yfinance import YFinanceClient
-from core.config import get_fred_api_key
 from core.utils.caching import get_cached_session, temporary_disabled_cache
 
 # 設定日誌

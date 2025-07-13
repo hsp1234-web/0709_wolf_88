@@ -1,9 +1,9 @@
 # apps/run_taifex_prototype_test.py
 # TaifexFileReader 原型實戰驗證腳本 (模擬檔案版)
 
-import os
 import sys
 from pathlib import Path
+
 import pandas as pd
 
 # --- 標準路徑自我校正樣板 ---
@@ -34,11 +34,11 @@ class TaifexFileReader:
         file_path = self.base_path / file_name
         print(f"\n>>> [任務1] 正在嘗試讀取乾淨的 P/C Ratio 檔案: {file_path}")
         if not file_path.exists():
-            print(f"❌ [失敗] 檔案不存在")
+            print("❌ [失敗] 檔案不存在")
             return pd.DataFrame()
         try:
             df = pd.read_csv(file_path, encoding='ms950')
-            print(f"✅ [成功] 成功讀取並解析！")
+            print("✅ [成功] 成功讀取並解析！")
             return df
         except Exception as e:
             print(f"❌ [失敗] 讀取或解析時發生錯誤: {e}")
@@ -49,12 +49,12 @@ class TaifexFileReader:
         file_path = self.base_path / file_name
         print(f"\n>>> [任務2] 正在嘗試讀取需跳過首行的 Delta 值檔案: {file_path}")
         if not file_path.exists():
-            print(f"❌ [失敗] 檔案不存在")
+            print("❌ [失敗] 檔案不存在")
             return pd.DataFrame()
         try:
             # 根據情報，此格式需跳過第一行
             df = pd.read_csv(file_path, encoding='ms950', skiprows=1)
-            print(f"✅ [成功] 成功讀取並解析！")
+            print("✅ [成功] 成功讀取並解析！")
             return df
         except Exception as e:
             print(f"❌ [失敗] 讀取或解析時發生錯誤: {e}")

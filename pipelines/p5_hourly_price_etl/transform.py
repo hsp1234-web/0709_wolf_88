@@ -6,9 +6,8 @@ import logging
 from typing import Dict
 
 import pandas as pd
-import pandas_ta as ta
 import yfinance as yf
-import numpy as np
+
 from core.db.db_manager import DBManager
 
 logger = logging.getLogger(__name__)

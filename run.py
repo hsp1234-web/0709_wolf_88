@@ -1,8 +1,11 @@
 # run.py (v2.0 - 整合 LogManager)
 
-import typer
 import sys
 from pathlib import Path
+
+import duckdb
+import pandas as pd
+import typer
 
 # --- 標準路徑自我校正樣板 ---
 try:
@@ -10,14 +13,14 @@ try:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
-    from core.logger import LogManager
+
     from apps.backtesting_engine.run import main as run_sma_backtest
-    from apps.run_stress_index import main as run_stress_index
     from apps.run_fmp_test import main as run_fmp_test
+    from apps.run_stress_index import main as run_stress_index
+    from core.db.db_manager import DBManager
+    from core.logger import LogManager
     from pipelines.p4_daily_macro_etl.run_etl import run as run_daily_macro_etl
     from pipelines.p5_hourly_price_etl.run_etl import run as run_hourly_price_etl
-    from core.db.db_manager import DBManager
-    import pandas as pd
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -147,7 +150,9 @@ def calculate_hourly_indicators(ctx: typer.Context):
 
         # 2. 計算指標
         log_manager.log("INFO", "正在調用轉換模組計算技術指標...")
-        from pipelines.p5_hourly_price_etl.transform import calculate_technical_indicators
+        from pipelines.p5_hourly_price_etl.transform import (
+            calculate_technical_indicators,
+        )
         data_with_indicators = calculate_technical_indicators(price_df)
         log_manager.log("INFO", "技術指標計算完成。")
 
@@ -191,13 +196,17 @@ def calculate_options_metrics(ctx: typer.Context):
 
         # 2. 計算選擇權指標
         log_manager.log("INFO", "正在調用轉換模組計算選擇權衍生指標...")
-        from pipelines.p5_hourly_price_etl.transform import calculate_options_derived_metrics
+        from pipelines.p5_hourly_price_etl.transform import (
+            calculate_options_derived_metrics,
+        )
         options_metrics_df = calculate_options_derived_metrics(price_df)
         log_manager.log("INFO", "選擇權衍生指標計算完成。")
 
         # 3. 合併並寫回數據庫
         log_manager.log("INFO", "正在調用加載模組將數據合併並寫回數據庫...")
-        from pipelines.p5_hourly_price_etl.load import merge_and_overwrite_with_options_metrics
+        from pipelines.p5_hourly_price_etl.load import (
+            merge_and_overwrite_with_options_metrics,
+        )
         merge_and_overwrite_with_options_metrics(price_df, options_metrics_df)
         log_manager.log("INFO", "數據已成功合併並寫回。")
 

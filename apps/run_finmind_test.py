@@ -1,7 +1,6 @@
 # apps/run_finmind_test.py
 # FinMindClient 端到端實戰驗證執行腳本
 
-import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path

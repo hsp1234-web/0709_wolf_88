@@ -1,132 +1,52 @@
 # ==============================================================================
-#  通用 AI 輔助開發：磐石協議 (The Bedrock Protocol)
-#  專案配置文件：pyproject.toml (v1.1 - 修正版)
-#  功能：定義專案元數據、核心依賴、開發工具與建構系統
+#  【普羅米修斯之火】專案配置文件 (uv 實驗版 v1.0)
+#  功能：定義專案元數據、核心依賴與開發工具
 #  原則：本文件是專案依賴的「唯一真理來源」
 # ==============================================================================
 
-[tool.poetry]
-name = "financial-analysis-agent"
-version = "0.6.0"
-description = "AI-assisted financial data analysis project based on the Bedrock Protocol."
-authors = ["Jules Agent <jules@agent.ai>"]
-readme = "README.md"
-license = "MIT"
-packages = [
-    {include = "core"},
-    {include = "apps"}
+[project]
+name = "prometheus-fire-uv-test"
+version = "0.1.0"
+description = "Feasibility test for the uv toolchain in the Prometheus Fire project."
+requires-python = ">=3.12, <3.14"
+dependencies = [
+    "numpy<2.0",
+    "pandas>=2.3.1",
+    "duckdb>=1.3.2",
+    "pyyaml>=6.0.2",
+    "requests-cache>=1.2.1",
+    "yfinance==0.2.60",
+    "requests>=2.32.4",
+    "urllib3<2.0",
+    "pybreaker>=1.4.0",
+    "plotly>=5.18.0,<5.19.0",
+    "pytz>=2025.2",
+    "psutil>=6.0.0",
+    "fredapi>=0.5.2"
 ]
 
-# --- 核心依賴 (Core Dependencies) ---
-# 構成了專案的計算心臟、數據處理、網路通訊與分析能力
-[tool.poetry.dependencies]
-# ❗️ 關鍵修正：收緊 Python 版本範圍以相容所有套件
-python = ">=3.12, <3.14"
-
-# A. 核心數據科學與計算引擎
-numpy = "<2.0"            # 高效能多維陣列運算基石 (pandas-ta 0.3.14b0 與 numpy 2.x 不兼容)
-pandas = "^2.3.1"           # 高效能 DataFrame 結構，用於操作與分析表格數據
-# scipy = "^1.15.3"           # 提供高級數學演算法，用於複雜金融建模 # Unused
-# numba = "^0.61.2"           # JIT 編譯器，用於加速 Python 和 NumPy 程式碼 # Unused
-
-# B. 數據庫與資料處理
-duckdb = "^1.3.2"           # 高效能嵌入式分析型數據庫，用於極速 SQL 查詢
-# peewee = "^3.18.2"          # 輕量級 ORM，用於結構化數據存儲 # Unused
-# pandas-ta = "0.3.14b0"      # 技術分析指標函式庫 (根據註解選擇此特定版本) # Unused
-# narwhals = "^1.46.0"        # 跨 DataFrame API 的兼容層，具前瞻性 # Unused
-pyyaml = "^6.0.2"           # YAML parser, moved from dev
-requests-cache = "^1.2.1"   # Caching for requests, moved from dev
-
-# C. 數據獲取與網路通訊
-yfinance = "0.2.60"        # 從 Yahoo Finance 獲取金融市場數據 (嘗試更新版本以解決底層錯誤)
-requests = "^2.32.4"        # 標準 HTTP 函式庫，用於通用 API 請求
-# curl_cffi = "^0.11.4"       # 模擬瀏覽器行為，應對反爬蟲機制 # Unused
-# websockets = "^15.0.1"      # 用於接收即時串流數據 # Unused
-urllib3 = "<2.0"  # Moved from dev-dependencies
-pybreaker = "^1.4.0" # Moved from dev-dependencies
-
-# D. 網頁解析與資料提取
-# beautifulsoup4 = "^4.13.4"  # 從 HTML 中提取數據的經典函式庫 # Unused
-
-# E. 統計與模型
-# statsmodels = "^0.14.5"     # 提供豐富的統計模型與測試 # Unused
-
-# G. 資料視覺化
-plotly = ">=5.18.0,<5.19.0"           # 強大的互動式圖表函式庫
-
-# H. 核心工具與輔助
-# python-dateutil = "^2.9.0.post0" # 強大的日期字串解析功能 # Unused
-pytz = "^2025.2"                 # 世界時區資料庫
-# tzdata = "^2025.2"               # 時區問題的標準解決方案之一 # Unused
-psutil = "^6.0.0"                # 跨平台系統監控函式庫
-# frozendict = "^2.4.6"            # 提供不可變的字典類型 # Unused
-fredapi = "^0.5.2"               # FRED API 客戶端
-# openpyxl = "^3.1.5" # Unused
-# setuptools = "^80.9.0" # Unused
-# pydantic = "^2.11.7" # Unused
-# pyarrow = "^20.0.0" # Unused
-# appdirs = "^1.4.4" # Unused
-# importlib-metadata = "^8.7.0" # Unused
-# aiohttp = "^3.12.14" # Unused
-
-
-# --- 開發依賴 (Development Dependencies) ---
-# 用於保證專案品質的基石，應在 [tool.poetry.group.dev.dependencies] 中定義
-vectorbt = "^0.28.0"
-pydantic = "^2.11.7"
-typer = {extras = ["all"], version = "^0.16.0"}
-openpyxl = "^3.1.5"
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.4.1"           # 核心測試框架
-pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件
-types-requests = "*"  # 類型存根 for requests (放寬版本以解決 urllib3 衝突)
-types-PyYAML = "^6.0.12"    # 類型存根 for PyYAML
-types-pytz = "^2024.1.0"     # 類型存根 for pytz
-# pyyaml = "^6.0.2" # Moved to main dependencies
-# requests-cache = "^1.2.1" # Moved to main dependencies
-deptry = "^0.23.0" # Already here, but confirming
-
-# --- 建構系統配置 ---
-# 由 `poetry init` 自動生成，定義專案的建構方式
-# openpyxl = "^3.1.5" # Duplicate / Unused
-# pybreaker = "^1.4.0" # Moved to main
-# requests-cache = "^1.2.1" # Moved to dev
-# urllib3 = "<2.0" # Moved to main
-# deptry = "^0.23.0" # Duplicate
-ruff = "^0.12.3"
-pytest-timeout = "^2.4.0"
-
-[tool.poetry.scripts]
-test = "run_tests:main"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.pytest.ini_options]
-pythonpath = [
-    "."
+[project.optional-dependencies]
+dev = [
+    "vectorbt>=0.28.0",
+    "pydantic>=2.11.7",
+    "typer[all]>=0.16.0",
+    "openpyxl>=3.1.5",
+    "pytest>=8.4.1",
+    "pytest-mock>=3.14.1",
+    "ruff>=0.12.3",
+    "pytest-timeout>=2.4.0"
 ]
-timeout = 300
-
-[tool.mypy]
-python_version = "3.12" # Align with project's Python version
-plugins = ["pydantic.mypy"]
-# Optional: Add Pydantic specific settings here if you want to keep all Mypy related config in one place
-# init_forbid_extra = True
-# init_typed = True
-# warn_required_dynamic_aliases = True
 
 [tool.ruff]
 line-length = 88
 
 [tool.ruff.lint]
-# 啟用 Pyflakes (F), pycodestyle (E, W), isort (I)
 select = ["E", "F", "W", "I"]
-ignore = []
 
-# 允許未使用的變數，但僅限於以 `_` 開頭的變數
-dummy-variable-rgx = "^_+$"
+[tool.pytest.ini_options]
+pythonpath = ["."]
+timeout = 300
 
-[tool.ruff.format]
-quote-style = "double"
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tests*"]

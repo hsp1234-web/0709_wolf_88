@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import hashlib
-import os
 import sys
 from pathlib import Path
 from typing import Optional

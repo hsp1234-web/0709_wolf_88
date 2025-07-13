@@ -2,10 +2,12 @@
 
 import os
 import sqlite3
-from datetime import datetime
-import pytz
-from pathlib import Path
 import sys
+from datetime import datetime
+from pathlib import Path
+
+import pytz
+
 
 class LogManager:
     """
@@ -57,9 +59,9 @@ class LogManager:
             archive_filepath = self.archive_dir / filename
 
             with open(archive_filepath, "w", encoding="utf-8") as f:
-                f.write(f"--- 作戰報告 ---\n")
+                f.write("--- 作戰報告 ---\n")
                 f.write(f"生成時間: {datetime.now(self.taipei_tz).isoformat()}\n")
-                f.write(f"========================================\n\n")
+                f.write("========================================\n\n")
                 for log_item in all_logs:
                     ts_str = datetime.fromisoformat(log_item['timestamp']).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                     f.write(f"[{ts_str}] [{log_item['level']}] {log_item['message']}\n")

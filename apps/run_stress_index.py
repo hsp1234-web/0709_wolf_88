@@ -18,6 +18,7 @@ except NameError:
 from core.pipelines.pipeline import DataPipeline
 from core.pipelines.steps.financial_steps import CalculateStressIndexStep
 
+
 def main(log_manager):
     """配置並運行壓力指數計算管線"""
     log_manager.log("INFO", "Initializing Stress Index Pipeline...")
@@ -34,7 +35,7 @@ def main(log_manager):
         log_manager.log("INFO", "✅ 壓力指數計算成功。")
         log_manager.log("INFO", f"   最新壓力指數值: {result.get('stress_index', 'N/A'):.2f}")
     else:
-        log_manager.log("ERROR", f"❌ 壓力指數計算失敗。")
+        log_manager.log("ERROR", "❌ 壓力指數計算失敗。")
         log_manager.log("ERROR", f"   原因: {result.get('reason', '未知錯誤')}")
 
     log_manager.log("INFO", f"Stress Index Pipeline finished with raw result: {result}")

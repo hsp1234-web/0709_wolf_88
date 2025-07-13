@@ -18,6 +18,7 @@ class BuildGoldLayerStep(BaseETLStep):  # 修正繼承
 
 from core.analysis.stress_index import StressIndexCalculator
 
+
 class CalculateStressIndexStep(BaseETLStep):
     """
     計算市場壓力指數的管線步驟。
@@ -31,7 +32,7 @@ class CalculateStressIndexStep(BaseETLStep):
             stress_index_df = calculator.calculate()
             if not stress_index_df.empty:
                 latest_stress_index = stress_index_df["Stress_Index"].iloc[-1]
-                print(f"--- [Success] Stress index calculated. ---")
+                print("--- [Success] Stress index calculated. ---")
                 print(f"壓力指數當前值: {latest_stress_index:.2f}")
                 return {"status": "success", "stress_index": latest_stress_index}
             else:

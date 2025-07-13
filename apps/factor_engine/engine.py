@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
 import sys
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
 try:
