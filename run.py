@@ -209,6 +209,22 @@ def calculate_options_metrics(ctx: typer.Context):
 
 
 @app.command()
+def view_dashboard(ctx: typer.Context):
+    """生成並檢視互動式市場儀表板。"""
+    log_manager = ctx.obj
+    task_name = "互動式儀表板生成"
+    log_manager.log("BATTLE", f"--- [啟動任務：{task_name}] ---")
+
+    try:
+        from apps.dashboard.run_app import main as run_dashboard_app
+        run_dashboard_app()
+        log_manager.log("SUCCESS", f"--- [任務完成：{task_name}] ---")
+    except Exception as e:
+        log_manager.log("ERROR", f"執行 {task_name} 時發生錯誤: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def verify_daily_data(ctx: typer.Context):
     """驗證每日宏觀數據是否已成功載入數據庫。"""
     log_manager = ctx.obj
