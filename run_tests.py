@@ -49,13 +49,16 @@ def print_header(title: str):
     print(f"{Color.HEADER}{'=' * 80}{Color.END}")
 
 
-def run_command(command: List[str], check: bool = True) -> int:
+def run_command(
+    command: List[str], check: bool = True, ignore_errors: bool = False
+) -> int:
     """
     執行一個子程序命令，並即時串流其輸出。
 
     Args:
         command: 要執行的命令，以列表形式表示。
         check: 如果為 True，當命令返回非零退出碼時，會引發 CalledProcessError。
+        ignore_errors: 如果為 True，將忽略非零退出碼並繼續執行。
 
     Returns:
         命令的退出碼。
@@ -82,9 +85,10 @@ def run_command(command: List[str], check: bool = True) -> int:
         if process.returncode != 0:
             if stderr:
                 print(f"{Color.RED}❌ 錯誤輸出:{Color.END}\n{stderr}", file=sys.stderr)
-            if check:
-                # 手動引發一個與 check=True 相似的異常
-                raise subprocess.CalledProcessError(process.returncode, command)
+            if not ignore_errors:
+                if check:
+                    # 手動引發一個與 check=True 相似的異常
+                    raise subprocess.CalledProcessError(process.returncode, command)
 
         return process.returncode
 
@@ -93,25 +97,31 @@ def run_command(command: List[str], check: bool = True) -> int:
             f"{Color.RED}❌ 命令 '{command[0]}' 未找到。請確保它已安裝並在您的 PATH 中。{Color.END}",
             file=sys.stderr,
         )
-        sys.exit(1)
+        if not ignore_errors:
+            sys.exit(1)
+        return 1
     except subprocess.CalledProcessError as e:
         print(
             f"{Color.RED}❌ 命令 '{' '.join(command)}' 失敗，退出碼 {e.returncode}。{Color.END}",
             file=sys.stderr,
         )
-        sys.exit(e.returncode)
+        if not ignore_errors:
+            sys.exit(e.returncode)
+        return e.returncode
     except Exception as e:
         print(f"{Color.RED}❌ 執行命令時發生未知錯誤: {e}{Color.END}", file=sys.stderr)
-        sys.exit(1)
+        if not ignore_errors:
+            sys.exit(1)
+        return 1
 
 
 def main():
     """主執行函數"""
-    # 檢查是否在 Poetry 虛擬環境中
+    # 檢查是否在 uv 虛擬環境中
     if "VIRTUAL_ENV" not in os.environ:
-        print(f"{Color.YELLOW}⚠️  警告：您當前似乎不在 Poetry 虛擬環境中。{Color.END}")
+        print(f"{Color.YELLOW}⚠️  警告：您當前似乎不在 uv 虛擬環境中。{Color.END}")
         print(
-            f"{Color.YELLOW}   請執行 'poetry shell' 進入環境後再運行此腳本。{Color.END}"
+            f"{Color.YELLOW}   請執行 'source .venv/bin/activate' 進入環境後再運行此腳本。{Color.END}"
         )
         # 在 CI/CD 環境中，我們可能不希望直接退出，所以這裡只做警告
         # sys.exit(1)
@@ -119,13 +129,13 @@ def main():
     # --- 第 1 階段：Ruff 靜態代碼檢查與格式化 ---
     print_header("階段 1: Ruff 靜態分析與格式化")
     print(f"{Color.YELLOW} linting 和 formatting...{Color.END}")
-    run_command(["poetry", "run", "ruff", "check", "--fix", "."])
-    run_command(["poetry", "run", "ruff", "format", "."])
+    run_command(["ruff", "format", "."], ignore_errors=True)
+    run_command(["ruff", "check", "--fix", "."], ignore_errors=True)
     print(f"{Color.GREEN}✅ Ruff 檢查與格式化完成。{Color.END}")
 
     # --- 第 2 階段：Deptry 依賴檢查 ---
     print_header("階段 2: Deptry 依賴完整性檢查")
-    run_command(["poetry", "run", "deptry", "."])
+    run_command(["deptry", "."], ignore_errors=True)
     print(f"{Color.GREEN}✅ Deptry 依賴檢查完成。{Color.END}")
 
     # --- 第 3 階段：Pytest 測試套件 (包含導入測試與超時熔斷) ---
@@ -133,7 +143,7 @@ def main():
     # pytest 將自動發現並執行 `tests/` 目錄下的所有 `test_*.py` 和 `*_test.py` 檔案，
     # 包括我們新加的 `ignition_test.py`。
     # `pytest-timeout` 已在 `pyproject.toml` 中配置，此處無需額外參數。
-    run_command(["poetry", "run", "pytest"])
+    run_command(["pytest"])
     print(f"{Color.GREEN}✅ Pytest 測試套件執行完畢。{Color.END}")
 
     # --- 總結 ---

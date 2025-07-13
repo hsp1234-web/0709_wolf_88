@@ -8,14 +8,14 @@ from unittest.mock import patch  # Added missing import
 import duckdb
 import pytest
 
+from pipelines.p1_explorer.run import main as p1_explorer_main
+from pipelines.p2_elt_pipeline.run_elt import main as p2_elt_main
+
 PROJECT_ROOT_FROM_TEST_P2 = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..")
 )
 if PROJECT_ROOT_FROM_TEST_P2 not in sys.path:
     sys.path.insert(0, PROJECT_ROOT_FROM_TEST_P2)
-
-from pipelines.p1_explorer.run import main as p1_explorer_main
-from pipelines.p2_elt_pipeline.run_elt import main as p2_elt_main
 
 # Define the path to the fixture files
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")

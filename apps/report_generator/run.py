@@ -26,12 +26,30 @@ def main(log_manager: LogManager):
     parser = argparse.ArgumentParser(
         description="視覺化報告生成器：為指定標的生成包含複合信號標記的K線圖報告。"
     )
-    parser.add_argument("--stock-id", required=True, type=str, help="要生成報告的股票代碼。")
-    parser.add_argument("--start-date", required=True, type=str, help="報告開始日期 (YYYY-MM-DD)。")
-    parser.add_argument("--end-date", required=True, type=str, help="報告結束日期 (YYYY-MM-DD)。")
-    parser.add_argument("--timeframe", type=str, default="1d", help="報告的時間週期。預設為 '1d'。")
-    parser.add_argument("--db-path", type=str, default=str(DEFAULT_DB_PATH), help=f"分析資料庫路徑 (預設: {DEFAULT_DB_PATH})")
-    parser.add_argument("--output-dir", type=str, default=str(DEFAULT_OUTPUT_DIR), help=f"報告輸出目錄 (預設: {DEFAULT_OUTPUT_DIR})")
+    parser.add_argument(
+        "--stock-id", required=True, type=str, help="要生成報告的股票代碼。"
+    )
+    parser.add_argument(
+        "--start-date", required=True, type=str, help="報告開始日期 (YYYY-MM-DD)。"
+    )
+    parser.add_argument(
+        "--end-date", required=True, type=str, help="報告結束日期 (YYYY-MM-DD)。"
+    )
+    parser.add_argument(
+        "--timeframe", type=str, default="1d", help="報告的時間週期。預設為 '1d'。"
+    )
+    parser.add_argument(
+        "--db-path",
+        type=str,
+        default=str(DEFAULT_DB_PATH),
+        help=f"分析資料庫路徑 (預設: {DEFAULT_DB_PATH})",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=str(DEFAULT_OUTPUT_DIR),
+        help=f"報告輸出目錄 (預設: {DEFAULT_OUTPUT_DIR})",
+    )
 
     args = parser.parse_args()
     log_manager.log("INFO", f"接收到的參數: {args}")
@@ -59,7 +77,10 @@ def main(log_manager: LogManager):
         if report_path:
             log_manager.log("INFO", f"報告已成功生成並儲存於: {report_path}")
         else:
-            log_manager.log("WARNING", f"報告檔案未實際生成 (股票: {args.stock_id}, 週期: {args.timeframe})。")
+            log_manager.log(
+                "WARNING",
+                f"報告檔案未實際生成 (股票: {args.stock_id}, 週期: {args.timeframe})。",
+            )
     except Exception as e:
         log_manager.log("ERROR", f"生成報告時發生未預期錯誤: {e}")
         sys.exit(1)

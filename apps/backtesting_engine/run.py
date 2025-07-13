@@ -1,16 +1,17 @@
 # In apps/backtesting_engine/run.py
+import os
 import sys
 from pathlib import Path
-import pandas as pd
 
 # 添加路徑以導入模組
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(project_root))
 
-from apps.factor_engine.sma_crossover_factor import calculate_sma_crossover
-from apps.backtesting_engine.engine import Backtester
+import pandas as pd
 
-import os
+from apps.backtesting_engine.engine import Backtester
+from apps.factor_engine.sma_crossover_factor import calculate_sma_crossover
+
 
 def main():
     """
@@ -26,13 +27,13 @@ def main():
         return
 
     # 提取所需序列
-    price_series = factor_result['spy_close']
-    signal_series = factor_result['position'] # 使用 position 而非 signal.diff()
+    price_series = factor_result["spy_close"]
+    signal_series = factor_result["position"]  # 使用 position 而非 signal.diff()
 
     # 步驟 2: 初始化並運行回測引擎
     print("[2/3] 正在初始化並運行回測引擎...")
     backtester = Backtester(price_series, signal_series)
-    results_df = backtester.run() # 獲取回測結果 DataFrame
+    results_df = backtester.run()  # 獲取回測結果 DataFrame
 
     # 步驟 3: 獲取並展示績效
     print("[3/3] 正在計算並展示績效報告...")
@@ -50,12 +51,15 @@ def main():
 
     # 結合因子數據與回測結果
     # 注意：backtester.results 的索引可能與 factor_result 不完全對齊，我們用外部合併
-    final_output_df = pd.concat([factor_result, results_df[['cumulative_returns', 'strategy_returns']]], axis=1)
-    final_output_df.index.name = 'datetime'
+    final_output_df = pd.concat(
+        [factor_result, results_df[["cumulative_returns", "strategy_returns"]]], axis=1
+    )
+    final_output_df.index.name = "datetime"
 
     output_path = output_dir / "sma_crossover_result.csv"
     final_output_df.to_csv(output_path)
     print(f"✔ 結果已儲存至: {output_path}")
+
 
 if __name__ == "__main__":
     main()

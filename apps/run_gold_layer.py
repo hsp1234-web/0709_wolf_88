@@ -34,6 +34,7 @@ def main(log_manager):
 
 if __name__ == "__main__":
     from core.logger import LogManager
+
     output_dir = project_root / "output"
     log_db_path = output_dir / "logs" / "standalone_test.sqlite"
     archive_dir = output_dir / "logs" / "archive"

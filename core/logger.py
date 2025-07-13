@@ -2,20 +2,23 @@
 
 import os
 import sqlite3
-from datetime import datetime
-import pytz
-from pathlib import Path
 import sys
+from datetime import datetime
+from pathlib import Path
+
+import pytz
+
 
 class LogManager:
     """
     後端日誌管理器，負責將日誌寫入 SQLite 並在任務結束時歸檔。
     設計為在後端獨立運作。
     """
+
     def __init__(self, db_path: Path, archive_dir: Path):
         self.db_path = db_path
         self.archive_dir = archive_dir
-        self.taipei_tz = pytz.timezone('Asia/Taipei')
+        self.taipei_tz = pytz.timezone("Asia/Taipei")
 
         os.makedirs(self.db_path.parent, exist_ok=True)
         os.makedirs(self.archive_dir, exist_ok=True)
@@ -28,15 +31,20 @@ class LogManager:
 
     def _setup_database(self):
         with self._conn:
-            self._conn.execute("CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY, timestamp TEXT, level TEXT, message TEXT)")
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY, timestamp TEXT, level TEXT, message TEXT)"
+            )
 
     def log(self, level: str, message: str):
         ts_iso = datetime.now(self.taipei_tz).isoformat()
-        ts_display = datetime.fromisoformat(ts_iso).strftime('%Y-%m-%d %H:%M:%S')
-        print(f"[{ts_display}] [{level}] {message}") # 即時輸出到終端機
+        ts_display = datetime.fromisoformat(ts_iso).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{ts_display}] [{level}] {message}")  # 即時輸出到終端機
         try:
             with self._conn:
-                self._conn.execute("INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)", (ts_iso, level, message))
+                self._conn.execute(
+                    "INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)",
+                    (ts_iso, level, message),
+                )
         except Exception as e:
             print(f"FATAL: LogDB 寫入失敗: {e}", file=sys.stderr)
 
@@ -52,16 +60,18 @@ class LogManager:
                 self.log("INFO", "日誌資料庫為空，無需生成戰報檔案。")
                 return
 
-            ts_file = datetime.now(self.taipei_tz).strftime('%Y%m%d_%H%M%S')
+            ts_file = datetime.now(self.taipei_tz).strftime("%Y%m%d_%H%M%S")
             filename = f"battle_report_{ts_file}.txt"
             archive_filepath = self.archive_dir / filename
 
             with open(archive_filepath, "w", encoding="utf-8") as f:
-                f.write(f"--- 作戰報告 ---\n")
+                f.write("--- 作戰報告 ---\n")
                 f.write(f"生成時間: {datetime.now(self.taipei_tz).isoformat()}\n")
-                f.write(f"========================================\n\n")
+                f.write("========================================\n\n")
                 for log_item in all_logs:
-                    ts_str = datetime.fromisoformat(log_item['timestamp']).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                    ts_str = datetime.fromisoformat(log_item["timestamp"]).strftime(
+                        "%Y-%m-%d %H:%M:%S.%f"
+                    )[:-3]
                     f.write(f"[{ts_str}] [{log_item['level']}] {log_item['message']}\n")
 
             self.log("SUCCESS", f"✅ 作戰報告已成功歸檔至: {archive_filepath}")

@@ -8,8 +8,10 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(project_root))
 
+
 def main():
     from apps.factor_engine.sma_crossover_factor import calculate_sma_crossover
+
     """
     分析管線主執行器。
 

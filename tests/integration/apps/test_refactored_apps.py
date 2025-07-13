@@ -1,11 +1,14 @@
 # tests/integration/apps/test_refactored_apps.py
+import os
 import subprocess
 import sys
-import os
+
 
 def run_app_script(script_name: str):
     """一個輔助函式，用於在正確的虛擬環境中運行應用腳本"""
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    project_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    )
     env = os.environ.copy()
     env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
 

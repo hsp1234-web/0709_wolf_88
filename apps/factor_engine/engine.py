@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
 import sys
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
 
 # --- 標準化「路徑自我校正」樣板碼 START ---
 try:
     current_script_path = Path(__file__).resolve()
-    project_root = current_script_path.parents[2] # apps/factor_engine/engine.py -> project_root
+    project_root = current_script_path.parents[
+        2
+    ]  # apps/factor_engine/engine.py -> project_root
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 except NameError:
@@ -61,7 +64,9 @@ class FactorEngine:
                 result_df = result_df.set_index("datetime")
 
             result_df.columns = [col.lower() for col in result_df.columns]
-            self.log_manager.log("DEBUG", f"成功為 ticker {ticker} 獲取了 {len(result_df)} 筆價格數據。")
+            self.log_manager.log(
+                "DEBUG", f"成功為 ticker {ticker} 獲取了 {len(result_df)} 筆價格數據。"
+            )
             return result_df
         except Exception as e:
             self.log_manager.log("ERROR", f"讀取股票 {ticker} 的價格數據失敗: {e}")
@@ -71,7 +76,9 @@ class FactorEngine:
         self, dataframe: pd.DataFrame, n_days: int = 20
     ) -> pd.Series | None:
         if dataframe.empty or "close" not in dataframe.columns:
-            self.log_manager.log("WARNING", "DataFrame 為空或缺少 'close' 欄位，無法計算價格波動率。")
+            self.log_manager.log(
+                "WARNING", "DataFrame 為空或缺少 'close' 欄位，無法計算價格波動率。"
+            )
             return None
         dataframe["log_return"] = np.log(
             dataframe["close"].astype(float) / dataframe["close"].astype(float).shift(1)
@@ -84,7 +91,9 @@ class FactorEngine:
         self, dataframe: pd.DataFrame, n_days: int = 20
     ) -> pd.Series | None:
         if dataframe.empty or "volume" not in dataframe.columns:
-            self.log_manager.log("WARNING", "DataFrame 為空或缺少 'volume' 欄位，無法計算成交量波動率。")
+            self.log_manager.log(
+                "WARNING", "DataFrame 為空或缺少 'volume' 欄位，無法計算成交量波動率。"
+            )
             return None
         dataframe["volume_change_rate"] = (
             dataframe["volume"].astype(float).pct_change(fill_method=None)
@@ -98,14 +107,22 @@ class FactorEngine:
         self, dataframe: pd.DataFrame, n_days: int = 14
     ) -> pd.Series | None:
         if dataframe.empty or "close" not in dataframe.columns:
-            self.log_manager.log("WARNING", "DataFrame 為空或缺少 'close' 欄位，無法計算 RSI。")
+            self.log_manager.log(
+                "WARNING", "DataFrame 為空或缺少 'close' 欄位，無法計算 RSI。"
+            )
             return None
         if not isinstance(dataframe.index, pd.DatetimeIndex):
-            self.log_manager.log("WARNING", "DataFrame 的索引不是 DatetimeIndex，pandas-ta 可能無法正確計算 RSI。")
+            self.log_manager.log(
+                "WARNING",
+                "DataFrame 的索引不是 DatetimeIndex，pandas-ta 可能無法正確計算 RSI。",
+            )
             return None
         try:
             if not hasattr(dataframe, "ta"):
-                self.log_manager.log("ERROR", "DataFrame 缺少 'ta' 擴展。Pandas TA 可能未正確加載或與 Pandas 版本不兼容。")
+                self.log_manager.log(
+                    "ERROR",
+                    "DataFrame 缺少 'ta' 擴展。Pandas TA 可能未正確加載或與 Pandas 版本不兼容。",
+                )
                 return None
             rsi_series = dataframe.ta.rsi(length=n_days)
             self.log_manager.log("DEBUG", f"計算了 {n_days}日 RSI。")
@@ -142,7 +159,10 @@ class FactorEngine:
             yields_pivot_df = raw_yields_df.pivot_table(
                 index="date", columns="term_formatted", values="yield"
             )
-            self.log_manager.log("INFO", f"成功從 TreasuryYields_Daily 讀取並轉換了 {len(yields_pivot_df)} 筆殖利率數據。")
+            self.log_manager.log(
+                "INFO",
+                f"成功從 TreasuryYields_Daily 讀取並轉換了 {len(yields_pivot_df)} 筆殖利率數據。",
+            )
             return yields_pivot_df
         except Exception as e:
             self.log_manager.log("ERROR", f"讀取公債殖利率數據失敗: {e}")
@@ -175,21 +195,33 @@ class FactorEngine:
             return pd.DataFrame()
 
         merged_prices = pd.merge(
-            hyg_prices_df[['close']], lqd_prices_df[['close']],
-            left_index=True, right_index=True, how="inner", suffixes=('_hyg', '_lqd')
+            hyg_prices_df[["close"]],
+            lqd_prices_df[["close"]],
+            left_index=True,
+            right_index=True,
+            how="inner",
+            suffixes=("_hyg", "_lqd"),
         )
         if merged_prices.empty:
             self.log_manager.log("WARNING", "HYG 和 LQD 沒有共同交易日期。")
             return pd.DataFrame()
 
-        merged_prices["hyg_close"] = pd.to_numeric(merged_prices["close_hyg"], errors="coerce")
-        merged_prices["lqd_close"] = pd.to_numeric(merged_prices["close_lqd"], errors="coerce")
+        merged_prices["hyg_close"] = pd.to_numeric(
+            merged_prices["close_hyg"], errors="coerce"
+        )
+        merged_prices["lqd_close"] = pd.to_numeric(
+            merged_prices["close_lqd"], errors="coerce"
+        )
 
         proxy_df = pd.DataFrame(index=merged_prices.index)
-        proxy_df["HYG_LQD_price_ratio"] = merged_prices["hyg_close"] / merged_prices["lqd_close"].replace(0, np.nan)
+        proxy_df["HYG_LQD_price_ratio"] = merged_prices["hyg_close"] / merged_prices[
+            "lqd_close"
+        ].replace(0, np.nan)
         proxy_df.dropna(inplace=True)
 
-        self.log_manager.log("INFO", f"成功計算了 {len(proxy_df)} 筆 HYG/LQD 價格比率數據。")
+        self.log_manager.log(
+            "INFO", f"成功計算了 {len(proxy_df)} 筆 HYG/LQD 價格比率數據。"
+        )
         return proxy_df
 
 
@@ -199,5 +231,8 @@ if __name__ == "__main__":
     log_db_path = output_dir / "logs" / "standalone_test.sqlite"
     archive_dir = output_dir / "logs" / "archive"
     dummy_logger = LogManager(db_path=log_db_path, archive_dir=archive_dir)
-    dummy_logger.log("INFO", "因子引擎 (FactorEngine) 已定義。此檔案主要作為模組導入，不建議直接執行。")
+    dummy_logger.log(
+        "INFO",
+        "因子引擎 (FactorEngine) 已定義。此檔案主要作為模組導入，不建議直接執行。",
+    )
     dummy_logger.archive_to_file()

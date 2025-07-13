@@ -66,7 +66,6 @@ def temp_db_data_engine():
     engine.close()
 
 
-
 @patch("core.analysis.data_engine.DataEngine._calculate_technicals")
 @patch("core.analysis.data_engine.DataEngine._calculate_approx_credit_spread")
 @patch("core.analysis.data_engine.DataEngine._calculate_proxy_move")

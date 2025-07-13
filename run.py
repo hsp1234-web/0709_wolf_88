@@ -1,8 +1,9 @@
 # run.py (v2.0 - 整合 LogManager)
 
-import typer
 import sys
 from pathlib import Path
+
+import typer
 
 # --- 標準路徑自我校正樣板 ---
 try:
@@ -10,10 +11,10 @@ try:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
-    from core.logger import LogManager
     from apps.backtesting_engine.run import main as run_sma_backtest
-    from apps.run_stress_index import main as run_stress_index
     from apps.run_fmp_test import main as run_fmp_test
+    from apps.run_stress_index import main as run_stress_index
+    from core.logger import LogManager
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -22,8 +23,9 @@ except ImportError as e:
 app = typer.Typer(
     name="prometheus-fire",
     help="【普羅米修斯之火】金融數據與分析框架 - 統一作戰指揮中心",
-    add_completion=False
+    add_completion=False,
 )
+
 
 # 在 Typer App 的回呼中初始化 LogManager
 @app.callback()
@@ -38,6 +40,7 @@ def main(ctx: typer.Context):
     # 將 LogManager 實例儲存在 context 中，供所有指令共享
     ctx.obj = LogManager(db_path=log_db_path, archive_dir=archive_dir)
 
+
 def execute_task(log_manager: LogManager, task_name: str, task_func, **kwargs):
     """統一的任務執行與日誌記錄模板"""
     log_manager.log("BATTLE", f"--- [啟動任務：{task_name}] ---")
@@ -49,27 +52,31 @@ def execute_task(log_manager: LogManager, task_name: str, task_func, **kwargs):
         log_manager.log("ERROR", f"執行 {task_name} 時發生錯誤: {e}")
         raise typer.Exit(code=1)
 
+
 @app.command()
 def sma_backtest(ctx: typer.Context):
     """執行 SMA (簡單移動平均線) 策略回測。"""
     execute_task(ctx.obj, "SMA 策略回測", run_sma_backtest)
+
 
 @app.command()
 def stress_index(ctx: typer.Context):
     """執行壓力指數計算。"""
     execute_task(ctx.obj, "壓力指數計算", run_stress_index)
 
+
 @app.command()
 def fmp_fetch(ctx: typer.Context):
     """執行 FMPClient 端到端實戰驗證。"""
     execute_task(ctx.obj, "FMP 數據獲取驗證", run_fmp_test)
+
 
 if __name__ == "__main__":
     try:
         # 這是 app(...) 的一個技巧，以便能存取到 context
         # https://github.com/tiangolo/typer/issues/152#issuecomment-993332854
         result = app(standalone_mode=False)
-        if result != 0: # 如果命令執行失敗，直接退出
+        if result != 0:  # 如果命令執行失敗，直接退出
             sys.exit(result)
 
         # 只有當命令成功執行後，才執行歸檔

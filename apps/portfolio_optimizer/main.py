@@ -2,6 +2,7 @@
 """
 模擬的投資組合優化器應用主模組
 """
+
 import sys
 from pathlib import Path
 
@@ -19,12 +20,17 @@ except NameError:
 
 from core.logger import LogManager
 
+
 def run_optimization(log_manager: LogManager):
     """
     模擬執行投資組合優化的核心業務邏輯。
     """
-    log_manager.log("INFO", "投資組合優化器：核心業務邏輯 `run_optimization` 已開始執行...")
-    log_manager.log("INFO", "投資組合優化器：核心業務邏輯 `run_optimization` 已成功完成。")
+    log_manager.log(
+        "INFO", "投資組合優化器：核心業務邏輯 `run_optimization` 已開始執行..."
+    )
+    log_manager.log(
+        "INFO", "投資組合優化器：核心業務邏輯 `run_optimization` 已成功完成。"
+    )
     return {"status": "success", "message": "投資組合優化執行完畢"}
 
 

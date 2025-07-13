@@ -63,7 +63,6 @@ def mock_clients():
     return mock_yf, mock_fred, mock_taifex
 
 
-
 def test_data_engine_logic(mock_clients):
     """
     【實驗室測試】

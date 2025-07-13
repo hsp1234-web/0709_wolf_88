@@ -7,9 +7,11 @@ import pandas as pd
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(project_root))
 
+
 def run_backfill(start_date_str, end_date_str):
     from core.analysis.data_engine import DataEngine
     from core.config import config
+
     """
     執行歷史數據回填管線。
 
@@ -59,6 +61,7 @@ def main():
     end_date = pd.Timestamp.now()
     start_date = end_date - pd.Timedelta(days=3)
     run_backfill(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
+
 
 if __name__ == "__main__":
     main()

@@ -1,9 +1,9 @@
 # apps/run_taifex_prototype_test.py
 # TaifexFileReader 原型實戰驗證腳本 (模擬檔案版)
 
-import os
 import sys
 from pathlib import Path
+
 import pandas as pd
 
 # --- 標準路徑自我校正樣板 ---
@@ -18,11 +18,13 @@ except Exception as e:
     sys.exit(1)
 # --- 樣板結束 ---
 
+
 class TaifexFileReader:
     """
     台灣期貨交易所每日 CSV 檔案讀取器 (原型)。
     專為處理從檔案系統讀取數據而設計。
     """
+
     def __init__(self, base_path: str):
         self.base_path = Path(base_path)
         if not self.base_path.exists():
@@ -34,11 +36,11 @@ class TaifexFileReader:
         file_path = self.base_path / file_name
         print(f"\n>>> [任務1] 正在嘗試讀取乾淨的 P/C Ratio 檔案: {file_path}")
         if not file_path.exists():
-            print(f"❌ [失敗] 檔案不存在")
+            print("❌ [失敗] 檔案不存在")
             return pd.DataFrame()
         try:
-            df = pd.read_csv(file_path, encoding='ms950')
-            print(f"✅ [成功] 成功讀取並解析！")
+            df = pd.read_csv(file_path, encoding="ms950")
+            print("✅ [成功] 成功讀取並解析！")
             return df
         except Exception as e:
             print(f"❌ [失敗] 讀取或解析時發生錯誤: {e}")
@@ -49,23 +51,26 @@ class TaifexFileReader:
         file_path = self.base_path / file_name
         print(f"\n>>> [任務2] 正在嘗試讀取需跳過首行的 Delta 值檔案: {file_path}")
         if not file_path.exists():
-            print(f"❌ [失敗] 檔案不存在")
+            print("❌ [失敗] 檔案不存在")
             return pd.DataFrame()
         try:
             # 根據情報，此格式需跳過第一行
-            df = pd.read_csv(file_path, encoding='ms950', skiprows=1)
-            print(f"✅ [成功] 成功讀取並解析！")
+            df = pd.read_csv(file_path, encoding="ms950", skiprows=1)
+            print("✅ [成功] 成功讀取並解析！")
             return df
         except Exception as e:
             print(f"❌ [失敗] 讀取或解析時發生錯誤: {e}")
             return pd.DataFrame()
+
 
 def main():
     """主執行函數"""
     print("--- [開始] TaifexFileReader 模擬環境驗證 ---")
 
     # 使用相對於專案根目錄的路徑，確保在任何環境下都能執行
-    base_data_path = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "taifex_data"
+    base_data_path = (
+        Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "taifex_data"
+    )
 
     try:
         reader = TaifexFileReader(base_path=str(base_data_path))
@@ -83,11 +88,15 @@ def main():
             print(delta_data)
 
     except FileNotFoundError as e:
-        print(f"\n錯誤：初始化失敗，請確認 `tests/fixtures/taifex_data` 目錄及模擬檔案是否已建立。詳細資訊: {e}", file=sys.stderr)
+        print(
+            f"\n錯誤：初始化失敗，請確認 `tests/fixtures/taifex_data` 目錄及模擬檔案是否已建立。詳細資訊: {e}",
+            file=sys.stderr,
+        )
     except Exception as e:
         print(f"\n❌ [災難性失敗] 執行過程中發生未預期的錯誤：{e}", file=sys.stderr)
     finally:
         print("\n--- [結束] TaifexFileReader 模擬環境驗證 ---")
+
 
 if __name__ == "__main__":
     main()
