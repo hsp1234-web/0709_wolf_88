@@ -116,6 +116,45 @@ def overwrite_data_with_indicators(data_with_indicators: pd.DataFrame):
         raise
 
 
+def merge_and_overwrite_with_options_metrics(
+    original_df: pd.DataFrame, options_metrics_df: pd.DataFrame
+):
+    """
+    將選擇權指標合併到原始 DataFrame 中，並用結果覆蓋數據表。
+
+    Args:
+        original_df (pd.DataFrame): 包含價格和技術指標的 DataFrame。
+        options_metrics_df (pd.DataFrame): 僅包含選擇權指標的 DataFrame。
+    """
+    table_name = "hourly_market_data"
+    logger.info(f"--- [Loader] 啟動，準備合併選擇權指標並覆蓋 '{table_name}' ---")
+
+    if options_metrics_df.empty:
+        logger.warning("傳入的選擇權指標 DataFrame 為空，不執行任何操作。")
+        return
+
+    # 合併 DataFrame
+    # 將原始數據的 timestamp 設為索引以進行合併
+    original_df.set_index('timestamp', inplace=True)
+
+    # 使用前向填充來填充缺失的選擇權指標
+    final_df = original_df.join(options_metrics_df).ffill()
+    final_df.reset_index(inplace=True)
+
+    try:
+        with DBManager() as db_manager:
+            db_manager.write_dataframe(
+                df=final_df,
+                table_name=table_name,
+                if_exists="replace",
+                create_index=True,
+            )
+        logger.info(f"--- [Loader] 完成，成功覆蓋 '{table_name}' ---")
+    except Exception as e:
+        logger.error(f"覆蓋數據過程中發生嚴重錯誤: {e}", exc_info=True)
+        raise
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 

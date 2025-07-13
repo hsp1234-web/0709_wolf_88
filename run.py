@@ -165,6 +165,50 @@ def calculate_hourly_indicators(ctx: typer.Context):
 
 
 @app.command()
+def calculate_options_metrics(ctx: typer.Context):
+    """計算 SPY 選擇權衍生數據並將其合併回主數據表。"""
+    log_manager = ctx.obj
+    task_name = "SPY 選擇權衍生數據計算"
+    log_manager.log("BATTLE", f"--- [啟動任務：{task_name}] ---")
+
+    table_name = "hourly_market_data"
+
+    try:
+        # 1. 讀取數據
+        with DBManager() as db_manager:
+            log_manager.log("INFO", f"正在從 '{table_name}' 讀取數據...")
+            try:
+                price_df = db_manager.connection.table(table_name).to_df()
+            except duckdb.CatalogException:
+                log_manager.log("ERROR", f"數據表 '{table_name}' 不存在。請先執行 'build-hourly-data' 和 'calculate-hourly-indicators'。")
+                raise typer.Exit(code=1)
+
+        if price_df.empty:
+            log_manager.log("WARNING", f"數據表 '{table_name}' 為空，沒有數據可供計算。")
+            raise typer.Exit()
+
+        log_manager.log("INFO", f"成功讀取 {len(price_df)} 行數據。")
+
+        # 2. 計算選擇權指標
+        log_manager.log("INFO", "正在調用轉換模組計算選擇權衍生指標...")
+        from pipelines.p5_hourly_price_etl.transform import calculate_options_derived_metrics
+        options_metrics_df = calculate_options_derived_metrics(price_df)
+        log_manager.log("INFO", "選擇權衍生指標計算完成。")
+
+        # 3. 合併並寫回數據庫
+        log_manager.log("INFO", "正在調用加載模組將數據合併並寫回數據庫...")
+        from pipelines.p5_hourly_price_etl.load import merge_and_overwrite_with_options_metrics
+        merge_and_overwrite_with_options_metrics(price_df, options_metrics_df)
+        log_manager.log("INFO", "數據已成功合併並寫回。")
+
+        log_manager.log("SUCCESS", f"--- [任務完成：{task_name}] ---")
+
+    except Exception as e:
+        log_manager.log("ERROR", f"執行 {task_name} 時發生錯誤: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def verify_daily_data(ctx: typer.Context):
     """驗證每日宏觀數據是否已成功載入數據庫。"""
     log_manager = ctx.obj

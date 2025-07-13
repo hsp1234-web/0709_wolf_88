@@ -7,6 +7,9 @@ from typing import Dict
 
 import pandas as pd
 import pandas_ta as ta
+import yfinance as yf
+import numpy as np
+from core.db.db_manager import DBManager
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +173,97 @@ def calculate_technical_indicators(price_df: pd.DataFrame) -> pd.DataFrame:
 
     final_df.reset_index(inplace=True) # 將 timestamp 索引再次轉為欄位
     return final_df
+
+
+def calculate_options_derived_metrics(price_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    為 SPY 計算選擇權衍生指標。
+
+    Args:
+        price_df (pd.DataFrame): 包含基礎價格數據的 DataFrame。
+
+    Returns:
+        pd.DataFrame: 一個僅包含新計算出的選擇權衍生指標的 DataFrame。
+    """
+    logger.info("--- [Options Calculator] 啟動 ---")
+
+    # 1. 獲取 SPY 選擇權鏈
+    spy = yf.Ticker("SPY")
+    try:
+        exp_dates = spy.options
+        if not exp_dates:
+            logger.warning("無法獲取 SPY 選擇權到期日，跳過計算。")
+            return pd.DataFrame()
+
+        # 獲取最近的到期日
+        chain = spy.option_chain(exp_dates[0])
+        calls = chain.calls
+        puts = chain.puts
+    except Exception as e:
+        logger.error(f"獲取 SPY 選擇權鏈時發生錯誤: {e}", exc_info=True)
+        return pd.DataFrame()
+
+    # 2. 獲取無風險利率
+    risk_free_rate = 0.01 # 預設值
+    try:
+        with DBManager() as db:
+            # 檢查日線數據表是否存在
+            tables_df = db.connection.execute("SHOW TABLES").fetchdf()
+            if 'daily_macro_market_data' in tables_df['name'].values:
+                daily_data = db.connection.table("daily_macro_market_data").to_df()
+                if 'DGS3MO' in daily_data.columns and not daily_data['DGS3MO'].empty:
+                    # 使用 .iloc[-1] 獲取最新的非 NaN 值
+                    last_valid_rate = daily_data['DGS3MO'].dropna().iloc[-1]
+                    risk_free_rate = last_valid_rate / 100
+                    logger.info(f"成功獲取無風險利率: {risk_free_rate:.4f}")
+                else:
+                    logger.warning("日線數據表中缺少 'DGS3MO' 欄位或該欄位為空，將使用預設無風險利率。")
+            else:
+                logger.warning("日線數據表 'daily_macro_market_data' 不存在，將使用預設無風險利率。")
+    except Exception as e:
+        logger.error(f"獲取無風險利率時發生未預期錯誤: {e}", exc_info=True)
+        logger.warning("將使用預設無風險利率。")
+
+    # 3. 計算衍生指標
+    # GEX
+    if 'gamma' in calls.columns and 'gamma' in puts.columns:
+        calls['gamma'] = calls['gamma'].fillna(0)
+        puts['gamma'] = puts['gamma'].fillna(0)
+        total_gex = (calls['gamma'] * calls['openInterest'] * 100).sum() - \
+                    (puts['gamma'] * puts['openInterest'] * 100).sum()
+    else:
+        logger.warning("選擇權鏈中缺少 'gamma' 欄位，跳過 GEX 計算。")
+        total_gex = None
+
+    # Max Pain
+    strikes = sorted(list(set(calls['strike']) | set(puts['strike'])))
+    pain = {}
+    for strike in strikes:
+        call_loss = ((calls['strike'] - strike) * calls['openInterest']).clip(lower=0).sum()
+        put_loss = ((strike - puts['strike']) * puts['openInterest']).clip(lower=0).sum()
+        pain[strike] = call_loss + put_loss
+    max_pain_strike = min(pain, key=pain.get)
+
+    # Call/Put Walls
+    call_wall = calls.loc[calls['openInterest'].idxmax()]['strike']
+    put_wall = puts.loc[puts['openInterest'].idxmax()]['strike']
+
+    # P/C Ratios
+    pc_volume_ratio = puts['volume'].sum() / calls['volume'].sum()
+    pc_oi_ratio = puts['openInterest'].sum() / calls['openInterest'].sum()
+
+    # 4. 創建結果 DataFrame
+    options_metrics = pd.DataFrame({
+        'spy_gex_total': [total_gex],
+        'spy_max_pain': [max_pain_strike],
+        'spy_call_wall': [call_wall],
+        'spy_put_wall': [put_wall],
+        'spy_pc_volume_ratio': [pc_volume_ratio],
+        'spy_pc_oi_ratio': [pc_oi_ratio],
+    }, index=[price_df['timestamp'].max()]) # 使用最新的時間戳
+
+    logger.info("--- [Options Calculator] 完成 ---")
+    return options_metrics
 
 
 if __name__ == '__main__':
