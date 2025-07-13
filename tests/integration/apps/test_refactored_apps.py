@@ -6,12 +6,17 @@ import sys
 
 def run_app_script(script_name: str):
     """一個輔助函式，用於在正確的虛擬環境中運行應用腳本"""
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    project_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    )
     env = os.environ.copy()
     env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
 
+    # Convert script path to module path, e.g., src/apps/run_gold_layer.py -> apps.run_gold_layer
+    module_path = script_name.replace("src/", "").replace(".py", "").replace("/", ".")
+
     result = subprocess.run(
-        [sys.executable, script_name],
+        [sys.executable, "-m", module_path],
         capture_output=True,
         text=True,
         check=False,  # We will check the output manually
@@ -23,7 +28,7 @@ def run_app_script(script_name: str):
 
 def test_run_gold_layer_pipeline():
     """測試黃金層數據管線啟動器，並驗證日誌輸出"""
-    output = run_app_script("apps/run_gold_layer.py")
+    output = run_app_script("src/apps/run_gold_layer.py")
 
     # 驗證日誌格式和內容
     assert "INFO" in output
@@ -33,7 +38,7 @@ def test_run_gold_layer_pipeline():
 
 def test_run_stress_index_pipeline():
     """測試壓力指數計算管線啟動器，並驗證日誌輸出"""
-    output = run_app_script("apps/run_stress_index.py")
+    output = run_app_script("src/apps/run_stress_index.py")
 
     # 驗證日誌格式和內容
     assert "INFO" in output

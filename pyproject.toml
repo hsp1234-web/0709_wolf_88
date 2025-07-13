@@ -1,13 +1,11 @@
 # ==============================================================================
-#  【普羅米修斯之火】專案配置文件 (uv 實驗版 v1.0)
-#  功能：定義專案元數據、核心依賴與開發工具
-#  原則：本文件是專案依賴的「唯一真理來源」
+#  【普羅米修斯之火】專案配置文件 (v1.1 - src-layout)
 # ==============================================================================
 
 [project]
-name = "prometheus-fire-uv-test"
-version = "0.1.0"
-description = "Feasibility test for the uv toolchain in the Prometheus Fire project."
+name = "prometheus-fire"
+version = "1.0.0"
+description = "AI-assisted quantitative strategy research system."
 requires-python = ">=3.12, <3.14"
 dependencies = [
     "numpy<2.0",
@@ -37,6 +35,10 @@ dev = [
     "pytest-timeout>=2.4.0"
 ]
 
+# [TOOL SECTIONS]
+[tool.setuptools.packages.find]
+where = ["src"] # <-- 關鍵變更：告訴打包工具我們的程式碼在 src 目錄下
+
 [tool.ruff]
 line-length = 88
 
@@ -44,9 +46,5 @@ line-length = 88
 select = ["E", "F", "W", "I"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = ["src"] # <-- 關鍵變更：告訴 pytest 我們的程式碼在 src 目錄下
 timeout = 300
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["tests*"]

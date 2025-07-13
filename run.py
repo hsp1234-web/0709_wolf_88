@@ -13,7 +13,6 @@ try:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
-
     from apps.backtesting_engine.run import main as run_sma_backtest
     from apps.run_fmp_test import main as run_fmp_test
     from apps.run_stress_index import main as run_stress_index
@@ -29,8 +28,9 @@ except ImportError as e:
 app = typer.Typer(
     name="prometheus-fire",
     help="【普羅米修斯之火】金融數據與分析框架 - 統一作戰指揮中心",
-    add_completion=False
+    add_completion=False,
 )
+
 
 # 在 Typer App 的回呼中初始化 LogManager
 @app.callback()
@@ -45,6 +45,7 @@ def main(ctx: typer.Context):
     # 將 LogManager 實例儲存在 context 中，供所有指令共享
     ctx.obj = LogManager(db_path=log_db_path, archive_dir=archive_dir)
 
+
 def execute_task(log_manager: LogManager, task_name: str, task_func, **kwargs):
     """統一的任務執行與日誌記錄模板"""
     log_manager.log("BATTLE", f"--- [啟動任務：{task_name}] ---")
@@ -56,15 +57,18 @@ def execute_task(log_manager: LogManager, task_name: str, task_func, **kwargs):
         log_manager.log("ERROR", f"執行 {task_name} 時發生錯誤: {e}")
         raise typer.Exit(code=1)
 
+
 @app.command()
 def sma_backtest(ctx: typer.Context):
     """執行 SMA (簡單移動平均線) 策略回測。"""
     execute_task(ctx.obj, "SMA 策略回測", run_sma_backtest)
 
+
 @app.command()
 def stress_index(ctx: typer.Context):
     """執行壓力指數計算。"""
     execute_task(ctx.obj, "壓力指數計算", run_stress_index)
+
 
 @app.command()
 def fmp_fetch(ctx: typer.Context):
@@ -139,11 +143,16 @@ def calculate_hourly_indicators(ctx: typer.Context):
             try:
                 price_df = db_manager.connection.table(table_name).to_df()
             except duckdb.CatalogException:
-                log_manager.log("ERROR", f"數據表 '{table_name}' 不存在。請先執行 'build-hourly-data --mode backfill'。")
+                log_manager.log(
+                    "ERROR",
+                    f"數據表 '{table_name}' 不存在。請先執行 'build-hourly-data --mode backfill'。",
+                )
                 raise typer.Exit(code=1)
 
         if price_df.empty:
-            log_manager.log("WARNING", f"數據表 '{table_name}' 為空，沒有數據可供計算。")
+            log_manager.log(
+                "WARNING", f"數據表 '{table_name}' 為空，沒有數據可供計算。"
+            )
             raise typer.Exit()
 
         log_manager.log("INFO", f"成功讀取 {len(price_df)} 行數據。")
@@ -153,12 +162,14 @@ def calculate_hourly_indicators(ctx: typer.Context):
         from pipelines.p5_hourly_price_etl.transform import (
             calculate_technical_indicators,
         )
+
         data_with_indicators = calculate_technical_indicators(price_df)
         log_manager.log("INFO", "技術指標計算完成。")
 
         # 3. 寫回數據庫
         log_manager.log("INFO", "正在調用加載模組將數據寫回數據庫...")
         from pipelines.p5_hourly_price_etl.load import overwrite_data_with_indicators
+
         overwrite_data_with_indicators(data_with_indicators)
         log_manager.log("INFO", "數據已成功寫回。")
 
@@ -185,11 +196,16 @@ def calculate_options_metrics(ctx: typer.Context):
             try:
                 price_df = db_manager.connection.table(table_name).to_df()
             except duckdb.CatalogException:
-                log_manager.log("ERROR", f"數據表 '{table_name}' 不存在。請先執行 'build-hourly-data' 和 'calculate-hourly-indicators'。")
+                log_manager.log(
+                    "ERROR",
+                    f"數據表 '{table_name}' 不存在。請先執行 'build-hourly-data' 和 'calculate-hourly-indicators'。",
+                )
                 raise typer.Exit(code=1)
 
         if price_df.empty:
-            log_manager.log("WARNING", f"數據表 '{table_name}' 為空，沒有數據可供計算。")
+            log_manager.log(
+                "WARNING", f"數據表 '{table_name}' 為空，沒有數據可供計算。"
+            )
             raise typer.Exit()
 
         log_manager.log("INFO", f"成功讀取 {len(price_df)} 行數據。")
@@ -199,6 +215,7 @@ def calculate_options_metrics(ctx: typer.Context):
         from pipelines.p5_hourly_price_etl.transform import (
             calculate_options_derived_metrics,
         )
+
         options_metrics_df = calculate_options_derived_metrics(price_df)
         log_manager.log("INFO", "選擇權衍生指標計算完成。")
 
@@ -207,6 +224,7 @@ def calculate_options_metrics(ctx: typer.Context):
         from pipelines.p5_hourly_price_etl.load import (
             merge_and_overwrite_with_options_metrics,
         )
+
         merge_and_overwrite_with_options_metrics(price_df, options_metrics_df)
         log_manager.log("INFO", "數據已成功合併並寫回。")
 
@@ -226,6 +244,7 @@ def view_dashboard(ctx: typer.Context):
 
     try:
         from apps.dashboard.run_app import main as run_dashboard_app
+
         run_dashboard_app()
         log_manager.log("SUCCESS", f"--- [任務完成：{task_name}] ---")
     except Exception as e:
@@ -248,7 +267,7 @@ def verify_daily_data(ctx: typer.Context):
 
             # 檢查表格是否存在
             tables_df = db_manager.connection.execute("SHOW TABLES").fetchdf()
-            if table_name not in tables_df['name'].values:
+            if table_name not in tables_df["name"].values:
                 log_manager.log("ERROR", f"數據表 '{table_name}' 不存在於數據庫中。")
                 print(f"❌ 驗證失敗：數據表 '{table_name}' 不存在。")
                 raise typer.Exit(code=1)
@@ -262,8 +281,8 @@ def verify_daily_data(ctx: typer.Context):
             raise typer.Exit()
 
         total_rows = len(data_df)
-        min_date = pd.to_datetime(data_df['Date']).min().strftime('%Y-%m-%d')
-        max_date = pd.to_datetime(data_df['Date']).max().strftime('%Y-%m-%d')
+        min_date = pd.to_datetime(data_df["Date"]).min().strftime("%Y-%m-%d")
+        max_date = pd.to_datetime(data_df["Date"]).max().strftime("%Y-%m-%d")
 
         # 打印驗證報告
         print("\n--- 📊 每日宏觀數據驗證報告 ---")
@@ -287,7 +306,7 @@ if __name__ == "__main__":
         # 這是 app(...) 的一個技巧，以便能存取到 context
         # https://github.com/tiangolo/typer/issues/152#issuecomment-993332854
         result = app(standalone_mode=False)
-        if result != 0: # 如果命令執行失敗，直接退出
+        if result != 0:  # 如果命令執行失敗，直接退出
             sys.exit(result)
 
         # 只有當命令成功執行後，才執行歸檔
