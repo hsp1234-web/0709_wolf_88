@@ -1,172 +1,125 @@
-# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.6.0**
+# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v0.7.0**
 
 ## **一、 專案概覽與目的**
 
-【普羅米修斯之火】是一個專為進階量化研究與金融市場分析而設計的 Python 框架。本專案旨在提供一個從多樣化數據源獲取金融數據、進行複雜指標計算、回測交易策略、並將結果視覺化的完整解決方案。其核心設計強調模組化、可擴展性以及數據處理的穩健性。
+【普羅米修斯之火】是一個模組化、多層次的金融數據分析框架，旨在為量化研究提供從數據獲取、指標計算到視覺化洞察的全鏈路解決方案。本專案的核心是建立一個穩健、可擴展的自動化系統，能夠處理從日線級別的宏觀經濟數據到高頻的小時級市場數據，並將其轉化為可操作的洞察。
 
-**最近更新（作戰計畫 038：「精準指示器系統」實作）：**
-*   **架構升級**: 引入了基於 `Typer` 的統一命令列介面 (`run.py`)，標準化所有應用的執行流程。
-*   **日誌系統**: 實作了 v82.0「精準指示器」日誌系統 (`core/logger.py`)，提供基於 SQLite 的即時日誌記錄與任務結束後的自動歸檔功能。
-*   **全專案重構**: 將所有模組的日誌記錄方式重構為依賴注入模型，以適應新的日誌系統，並修復了相關的所有測試。
+## **二、 核心能力**
 
-## **二、 技術棧 (Technology Stack)**
+本框架目前已具備以下三大核心能力：
+
+### **1. 雙軌數據管線**
+*   **日線級宏觀數據管線 (`p4_daily_macro_etl`)**: 自動化獲取並存儲來自 FRED 等來源的關鍵宏觀經濟指標，為市場分析提供宏觀背景。
+*   **小時級市場數據管線 (`p5_hourly_price_etl`)**: 專注於獲取全球主要資產（指數、期貨、股票等）的小時線 OHLCV 數據，並具備「回填」與「更新」兩種模式，確保持續累積高精度的數據資產。
+
+### **2. 三層數據維度**
+在小時級數據管線的基礎上，我們成功地對數據進行了三層維度的深化：
+*   **第一層 (價格)**: 獲取並儲存了最基礎的 OHLCV 數據。
+*   **第二層 (動能)**: 計算並附加了數十種核心技術指標（如 RSI, MACD, 布林帶等），為市場動能分析提供了豐富的量化依據。
+*   **第三層 (結構)**: 攻克了複雜的選擇權衍生數據，將 GEX（總 Gamma 曝險）、最大痛點等高階指標納入我們的數據庫，為理解市場結構與潛在轉折點提供了獨特的視角。
+
+### **3. 互動式儀表板**
+*   **數據洞察的最終出口 (`view-dashboard`)**: 我們開發了一個獨立的互動式視覺化儀表板，將龐大、抽象的數據庫，轉化為一個直觀、多圖表聯動的市場儀表板。這實現了從數據到洞察的閉環，讓研究者可以快速地檢視市場的價格行為、動能狀態與結構性風險。
+
+## **三、 技術棧 (Technology Stack)**
 
 *   **核心程式語言:** Python (>=3.12, <3.14)
-*   **依賴管理:** Poetry (v1.8.2 或相容版本)
-*   **命令列介面**: Typer (`^0.16.0`)
+*   **依賴管理:** Poetry
+*   **命令列介面**: Typer
 *   **數據處理:**
-    *   Pandas (`^2.3.1`)
-    *   NumPy (`<2.0`)
-    *   Pandas-TA (`0.3.14b0`)
+    *   Pandas, NumPy
+    *   Pandas-TA-OpenBB (用於技術指標計算)
 *   **API 客戶端與網路請求:**
-    *   Requests (`^2.32.4`)
-    *   Requests-Cache (`^1.2.1`)
-    *   FredAPI (`^0.5.2`)
-    *   YFinance (`0.2.60`)
-*   **資料庫**:
-    *   DuckDB (`^1.3.2`)
-    *   SQLite3 (內建，用於日誌系統)
-*   **設定檔管理:**
-    *   PyYAML (`^6.0.2`)
-*   **視覺化**:
-    *   Plotly (`^6.2.0`)
-*   **測試與品質保證:**
-    *   Pytest (`^8.4.1`)
-    *   Pytest-Mock (`^3.14.1`)
-    *   Ruff (用於程式碼檢查與格式化)
+    *   Requests, Requests-Cache
+    *   FredAPI, YFinance
+*   **資料庫**: DuckDB, SQLite3 (用於日誌系統)
+*   **設定檔管理:** PyYAML
+*   **視覺化**: Plotly
+*   **測試與品質保證:** Pytest, Pytest-Mock, Ruff
 
-## **三、 檔案目錄結構 (v0.6.0)**
+## **四、 架構概覽**
 
-以下為專案目前的完整檔案目錄結構 (已移除 `__pycache__` 和臨時檔案)。
+本專案採用一個清晰、模組化的架構，其核心思想如下：
 
-> **[文件化說明]**
-> 關於下表中每一個檔案的詳細功能、職責與執行邏輯，請參閱 **[`PROJECT_FILES_GLOSSARY.md`](./PROJECT_FILES_GLOSSARY.md)** 檔案。
+**統一指揮入口 (`run.py`) -> 模組化管線 (`pipelines/`) -> 核心客戶端與工具 (`core/`) -> 終端應用 (`apps/`)**
 
 ```
 .
 ├── README.md
-├── _test_run.py
+├── PROJECT_FILES_GLOSSARY.md
 ├── apps
-│   ├── analysis_pipeline
-│   │   └── run.py
-│   ├── backtesting_engine
-│   │   ├── engine.py
-│   │   └── run.py
-│   ├── db_manager
-│   │   └── setup_database.py
-│   ├── factor_engine
-│   │   ├── engine.py
-│   │   ├── run_factor_etl.py
-│   │   └── sma_crossover_factor.py
-│   ├── pipeline_metadata_manager
-│   │   └── manager.py
-│   ├── portfolio_optimizer
-│   │   └── main.py
-│   ├── report_generator
-│   │   ├── generator.py
-│   │   └── run.py
-│   ├── visualization
-│   │   └── plot_sma_crossover.py
-│   ├── run_finmind_test.py
-│   ├── run_fmp_test.py
-│   ├── run_gold_layer.py
-│   ├── run_stress_index.py
-│   └── run_taifex_prototype_test.py
+│   ├── dashboard
+│   │   └── run_app.py  # 儀表板生成邏輯
+│   └── ... (其他應用)
 ├── config.yml
 ├── core
-│   ├── analysis
-│   │   ├── data_engine.py
-│   │   └── stress_index.py
-│   ├── analyzers
-│   │   └── base_analyzer.py
-│   ├── clients
-│   │   ├── base.py
-│   │   ├── finmind.py
-│   │   ├── fmp.py
-│   │   ├── fred.py
-│   │   ├── nyfed.py
-│   │   ├── taifex_db.py
-│   │   └── yfinance.py
-│   ├── config.py
-│   ├── constants.py
-│   ├── db
-│   │   └── db_manager.py
-│   ├── engines
-│   │   └── robust_acquisition_engine.py
-│   ├── logger.py
-│   ├── pipelines
-│   │   ├── base_step.py
-│   │   ├── pipeline.py
-│   │   └── steps
-│   └── utils
-│       ├── caching.py
-│       └── path_utils.py
-├── mypy.ini
+│   ├── clients       # 所有第三方 API 客戶端
+│   ├── db            # 數據庫管理
+│   └── ... (其他核心工具)
 ├── output
+│   ├── market_dashboard.html # 儀表板輸出
 │   └── logs
-│       ├── archive
-│       └── standalone_test.sqlite
+│       └── archive     # 作戰報告歸檔
 ├── pipelines
-│   ├── p0_downloader
-│   │   └── run.py
-│   ├── p1_explorer
-│   │   └── run.py
-│   ├── p2_elt_pipeline
-│   │   └── run_elt.py
-│   └── p3_backfill_hourly_data
-│       └── run.py
-├── poetry.lock
+│   ├── p4_daily_macro_etl    # 日線宏觀數據管線
+│   └── p5_hourly_price_etl   # 小時級市場數據管線
 ├── pyproject.toml
-├── pytest.ini
-├── run.py
-├── run_pipeline.sh
-├── run_tests.py
+├── run.py  # 專案統一指揮入口
 └── tests
-    ├── conftest.py
-    ├── fixtures
-    │   ├── corrupted.zip
-    │   ├── no_data_response.html
-    │   └── sample_daily_ohlc_20250711.zip
-    ├── ignition_test.py
-    ├── integration
-    │   ├── analysis
-    │   ├── apps
-    │   └── pipelines
-    ├── test_p0_downloader.py
-    ├── test_p1_explorer.py
-    ├── test_p2_elt_pipeline.py
-    └── unit
-        ├── analysis
-        └── core
+    └── ...
 ```
 
-## **四、 環境設定與執行**
+## **五、 快速上手指南**
 
+### **1. 環境設定**
 本專案使用 [Poetry](https://python-poetry.org/) 進行依賴管理。
-
 1.  **安裝 Poetry** (如果尚未安裝)。
 2.  **克隆專案**。
 3.  **配置 Poetry 虛擬環境** (推薦 `poetry config virtualenvs.in-project true`)。
 4.  **安裝依賴**: `poetry install`。
-5.  **激活虛擬環境**: `poetry shell` (或使用 `poetry run <command>`)。
-6.  **設定 API 金鑰**:
-    *   **FRED API 金鑰**: 為了運行壓力指數計算，您**必須**在 `config.yml` 中提供一個有效的 FRED API 金鑰。
-        ```yaml
-        # In config.yml
-        api_keys:
-          fred: "YOUR_REAL_FRED_API_KEY_HERE"
-        ```
-    *   ⚠️ **安全警告**：`config.yml` 檔案包含敏感金鑰，**絕對不可**提交到任何版本控制系統（如 Git）。請確保它已被列在 `.gitignore` 檔案中。
+5.  **激活虛擬環境**: `poetry shell`。
 
-## **五、 主要功能執行與測試**
+### **2. 金鑰配置**
+*   **FRED API 金鑰**: 為了運行日線宏觀數據管線，您**必須**在 `config.yml` 中提供一個有效的 FRED API 金鑰。
+    ```yaml
+    # In config.yml
+    api_keys:
+      fred: "YOUR_REAL_FRED_API_KEY_HERE"
+    ```
+*   ⚠️ **安全警告**：`config.yml` 檔案包含敏感金鑰，**絕對不可**提交到任何版本控制系統（如 Git）。請確保它已被列在 `.gitignore` 檔案中。
 
-### **5.1 主要功能執行 (v0.6.0 新版 CLI 用法)**
-**[重要]** 從 v0.6.0 開始，所有獨立的應用腳本都已整合至根目錄的 `run.py` 中，透過子命令進行呼叫。
+### **3. 主要指令**
+所有核心功能都已整合至根目錄的 `run.py` 中，透過子命令進行呼叫。
 
 *   **查看所有可用命令**:
     ```bash
     poetry run python run.py --help
     ```
+
+*   **數據管線指令**:
+    *   `poetry run python run.py build-daily-data`: 執行日線宏觀數據的 ETL 流程。
+    *   `poetry run python run.py build-hourly-data --mode backfill`: 首次執行，回填過去兩年的小時級市場數據。
+    *   `poetry run python run.py build-hourly-data --mode update`: 每日執行，僅更新最新的小時級市場數據。
+
+*   **數據深化指令**:
+    *   `poetry run python run.py calculate-hourly-indicators`: 在小時級數據基礎上，計算並附加技術指標。
+    *   `poetry run python run.py calculate-options-metrics`: 在已包含技術指標的數據上，計算並附加選擇權衍生數據。
+
+*   **視覺化指令**:
+    *   `poetry run python run.py view-dashboard`: 生成並自動開啟互動式市場儀表板。
+
+### **4. 測試**
+*   **運行所有測試**:
+    ```bash
+    poetry run pytest
+    ```
+
+## **六、 歷史用法與變更**
+
+<!--
+### **5.1 主要功能執行 (v0.6.0 新版 CLI 用法)**
+**[舊版說明]** 以下為 v0.6.0 版本的說明，部分指令已被新的數據管線指令取代或擴充。
+
 *   **執行 SMA 策略回測**:
     ```bash
     poetry run python run.py sma-backtest
@@ -179,77 +132,18 @@
     ```bash
     poetry run python run.py fmp-fetch
     ```
+-->
 
+<!--
 ### **5.2 (歷史用法 - v0.5.0 及更早版本)**
 
 #### **5.2.1 數據回填與快取 (歷史)**
 *   **執行數據回填**:
     ```bash
-    # [舊命令，v0.6.0 後不推薦]
+    # [舊命令] 此功能已由 build-hourly-data 指令取代。
     poetry run python pipelines/p3_backfill_hourly_data/run.py
     ```
-*   **說明**: 此腳本會使用 `YFinanceClient` (無需金鑰) 獲取 SPY 的小時級數據，並存儲在根目錄的 `prometheus_fire.duckdb` 檔案中。
-
-#### **5.2.2 執行 SMA 策略回測與視覺化 (歷史)**
-1.  **計算因子並執行回測**:
-    ```bash
-    # [舊命令，v0.6.0 後請使用 run.py sma-backtest]
-    poetry run python apps/backtesting_engine/run.py
-    ```
-2.  **生成視覺化圖表**:
-    ```bash
-    # [此腳本暫未整合至 run.py]
-    poetry run python apps/visualization/plot_sma_crossover.py
-    ```
-
-#### **5.2.3 執行壓力指數計算 (歷史)**
-*   **執行計算**:
-    ```bash
-    # [舊命令，v0.6.0 後請使用 run.py stress-index]
-    poetry run python apps/run_stress_index.py
-    ```
-
-### **5.3 測試**
-*   **運行所有測試**:
-    ```bash
-    poetry run pytest
-    ```
-*   **目前測試狀態**: 112 個通過, 16 個跳過 (基於最近一次完整測試運行)。
-
-## **六、 版本歷史與變更日誌**
-
-### **v0.6.0 (2025-07-13) - 作戰計畫 038**
-*   **【重大架構升級】實作統一 CLI 入口與 v82.0 精準指示器日誌系統**
-    *   **背景**: 隨著專案模組增加，舊有的分散式執行方式 (每個 `app` 都有自己的執行腳本) 導致了代碼重複、日誌分散、難以統一管理等問題。為了建立一個更穩健、可擴展的框架，我們引入了中央指揮與控制系統。
-    *   **實作細節**:
-        *   **引入 `Typer`**: 在根目錄下建立 `run.py`，利用 `Typer` 函式庫將其打造為一個功能強大且易於擴展的命令列介面 (CLI) 應用。現在，所有核心功能都作為子命令 (如 `stress-index`, `sma-backtest`) 註冊到 `run.py` 中。
-        *   **建立 `LogManager`**: 在 `core/logger.py` 中，設計並實作了 `LogManager` 類別。此類別在 `run.py` 啟動時被實例化，並透過 `Typer` 的上下文 (`ctx.obj`) 依賴注入到各個子命令對應的任務函數中。
-        *   **日誌持久化與歸檔**: `LogManager` 使用 `SQLite` 作為即時日誌後端 (`output/logs/session.sqlite`)，確保了日誌寫入的高效與安全。在每個任務 (無論成功或失敗) 結束時，`run.py` 的 `finally` 區塊會確保 `LogManager` 的 `archive_to_file` 方法被呼叫，將該次執行的所有日誌轉存為一個帶時間戳的 `.txt` 報告，存放於 `output/logs/archive/`，實現了永久的、人類可讀的作戰紀錄。
-    *   **影響**:
-        *   **開發流程簡化**: 開發者現在只需關注 `apps/` 下的業務邏輯，並將其主函數註冊到 `run.py` 即可，無需再編寫重複的路徑校正和日誌初始化代碼。
-        *   **可追溯性增強**: 所有的操作都有了集中化、永久性的日誌記錄，極大地便利了問題排查和結果審計。
-*   **【全專案重構】日誌系統整合**
-    *   **背景**: 為了配合全新的 `LogManager`，所有先前使用舊版 `get_logger` 的模組都需要進行重構。
-    *   **實作細節**:
-        *   系統性地掃描了 `apps/` 目錄下的所有模組。
-        *   將模組中的主函數 (如 `main`, `run_etl`) 的簽名進行修改，使其能夠接收一個 `log_manager: LogManager` 參數。
-        *   移除了所有 `from core.logger import get_logger` 的引用。
-        *   將所有的 `logger.info(...)` 呼叫替換為 `log_manager.log("INFO", ...)`。
-        *   更新了 `if __name__ == "__main__":` 區塊，在獨立執行時創建一個備用的 `LogManager` 實例，以保持模組的獨立可測試性。
-    *   **影響**:
-        *   統一了整個專案的日誌記錄方式。
-        *   修復了 `ignition_test.py` 中因無法導入 `get_logger` 而導致的大量測試失敗。
-
-### **v0.5.0 (對應作戰計畫 031)**
-*   **功能驗證**:
-    *   **壓力指數**: 成功執行了端到端的壓力指數計算，驗證了 `FredClient` 和 `NYFedClient` 在真實 API 環境下的功能。
-*   **修復與改進**:
-    *   `apps/run_stress_index.py`: 添加了路徑校正樣板碼，解決了模組導入錯誤。
-    *   `core/pipelines/steps/financial_steps.py`: 重構了 `CalculateStressIndexStep`，使其能夠調用 `StressIndexCalculator` 並返回真實的計算結果。
-    *   `apps/run_stress_index.py`: 更新了主函數以正確解析和打印計算出的壓力指數值。
-
-### **v0.4.0 (先前版本)**
-*   引入了回測引擎，建立了 SMA 交叉策略的回測管線，並修復了多個測試問題。
+-->
 
 ## **七、 已知限制與技術債務**
 
