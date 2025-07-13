@@ -22,28 +22,30 @@ class StrategyOptimizer:
 
         try:
             conn = duckdb.connect(self.db_path, read_only=True)
-            # 找出交叉點最多的那一次執行作為最優結果
+
+            # === 第一道防線：檢查資料表是否存在 ===
+            tables = conn.execute("SHOW TABLES").fetchall()
+            table_names = [table[0] for table in tables]
+            if self.table_name not in table_names:
+                self.log.log("WARNING", f"結果資料表 '{self.table_name}' 不存在，優化器跳過本次執行。")
+                conn.close()
+                return
+
+            # === 第二道防線：檢查資料表是否為空 ===
             best_result = conn.execute(
                 f"SELECT params FROM {self.table_name} ORDER BY crossover_points DESC LIMIT 1"
             ).fetchone()
             conn.close()
 
             if not best_result:
-                self.log.log("WARNING", "資料庫中無任何結果可供分析，優化器跳過本次執行。")
+                self.log.log("WARNING", "結果資料表中無任何數據可供分析，優化器跳過本次執行。")
                 return
 
+            # ... (後續邏輯不變) ...
             best_params_str = best_result[0]
-            # The params are stored as a string representation of a dictionary, so we need to evaluate it.
-            # Using json.loads is safer than eval().
-            try:
-                best_params = json.loads(best_params_str.replace("'", "\""))
-            except json.JSONDecodeError:
-                self.log.log("ERROR", f"無法解析參數字串: {best_params_str}")
-                return
-
+            best_params = json.loads(best_params_str)
             self.log.log("SUCCESS", f"找到當前最優參數: {best_params}")
 
-            # === 產生一個進化後的新參數 ===
             mutated_params = {
                 "fast": best_params.get("fast", 5) + 1,
                 "slow": best_params.get("slow", 10) - 1
