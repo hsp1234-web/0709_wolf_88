@@ -88,6 +88,34 @@ def run_load(transformed_df: pd.DataFrame, mode: str):
         raise
 
 
+def overwrite_data_with_indicators(data_with_indicators: pd.DataFrame):
+    """
+    用包含技術指標的新 DataFrame 覆蓋現有的數據表。
+
+    Args:
+        data_with_indicators (pd.DataFrame): 包含價格和指標的完整 DataFrame。
+    """
+    table_name = "hourly_market_data"
+    logger.info(f"--- [Loader] 啟動，準備用指標數據覆蓋 '{table_name}' ---")
+
+    if data_with_indicators.empty:
+        logger.warning("傳入的 DataFrame 為空，覆蓋操作終止。")
+        return
+
+    try:
+        with DBManager() as db_manager:
+            db_manager.write_dataframe(
+                df=data_with_indicators,
+                table_name=table_name,
+                if_exists="replace",
+                create_index=True,
+            )
+        logger.info(f"--- [Loader] 完成，成功覆蓋 '{table_name}' ---")
+    except Exception as e:
+        logger.error(f"覆蓋數據過程中發生嚴重錯誤: {e}", exc_info=True)
+        raise
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 

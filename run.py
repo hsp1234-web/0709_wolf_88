@@ -121,6 +121,50 @@ def build_hourly_data(
 
 
 @app.command()
+def calculate_hourly_indicators(ctx: typer.Context):
+    """從數據庫讀取小時數據，計算技術指標，然後將結果寫回數據庫。"""
+    log_manager = ctx.obj
+    task_name = "小時級數據技術指標計算"
+    log_manager.log("BATTLE", f"--- [啟動任務：{task_name}] ---")
+
+    table_name = "hourly_market_data"
+
+    try:
+        # 1. 讀取數據
+        with DBManager() as db_manager:
+            log_manager.log("INFO", f"正在從 '{table_name}' 讀取數據...")
+            try:
+                price_df = db_manager.connection.table(table_name).to_df()
+            except duckdb.CatalogException:
+                log_manager.log("ERROR", f"數據表 '{table_name}' 不存在。請先執行 'build-hourly-data --mode backfill'。")
+                raise typer.Exit(code=1)
+
+        if price_df.empty:
+            log_manager.log("WARNING", f"數據表 '{table_name}' 為空，沒有數據可供計算。")
+            raise typer.Exit()
+
+        log_manager.log("INFO", f"成功讀取 {len(price_df)} 行數據。")
+
+        # 2. 計算指標
+        log_manager.log("INFO", "正在調用轉換模組計算技術指標...")
+        from pipelines.p5_hourly_price_etl.transform import calculate_technical_indicators
+        data_with_indicators = calculate_technical_indicators(price_df)
+        log_manager.log("INFO", "技術指標計算完成。")
+
+        # 3. 寫回數據庫
+        log_manager.log("INFO", "正在調用加載模組將數據寫回數據庫...")
+        from pipelines.p5_hourly_price_etl.load import overwrite_data_with_indicators
+        overwrite_data_with_indicators(data_with_indicators)
+        log_manager.log("INFO", "數據已成功寫回。")
+
+        log_manager.log("SUCCESS", f"--- [任務完成：{task_name}] ---")
+
+    except Exception as e:
+        log_manager.log("ERROR", f"執行 {task_name} 時發生錯誤: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def verify_daily_data(ctx: typer.Context):
     """驗證每日宏觀數據是否已成功載入數據庫。"""
     log_manager = ctx.obj

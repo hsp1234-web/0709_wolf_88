@@ -6,6 +6,7 @@ import logging
 from typing import Dict
 
 import pandas as pd
+import pandas_ta as ta
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,78 @@ def run_transformation(raw_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
 
     logger.info(f"--- [Transformer] 完成，最終 DataFrame 維度: {final_df.shape} ---")
 
+    return final_df
+
+
+def calculate_technical_indicators(price_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    為 hourly_market_data DataFrame 計算技術指標。
+
+    Args:
+        price_df (pd.DataFrame): 從數據庫讀取的包含純淨價格數據的 DataFrame。
+
+    Returns:
+        pd.DataFrame: 包含原始價格數據和所有新計算出的技術指標的 DataFrame。
+    """
+    logger.info(f"--- [Indicator Calculator] 啟動，準備為 {price_df.shape[0]} 行數據計算指標 ---")
+
+    # 確保 'timestamp' 欄位是 datetime 類型
+    price_df['timestamp'] = pd.to_datetime(price_df['timestamp'])
+    price_df.set_index('timestamp', inplace=True)
+
+    # 獲取所有資產的基礎名稱 (e.g., 'spy' from 'spy_open')
+    assets = sorted(list(set([col.split('_')[0] for col in price_df.columns if '_' in col])))
+
+    all_indicators = []
+
+    for asset in assets:
+        # 檢查是否存在該資產的完整 OHLCV 數據
+        ohlcv_cols = {
+            "open": f"{asset}_open",
+            "high": f"{asset}_high",
+            "low": f"{asset}_low",
+            "close": f"{asset}_close",
+            "volume": f"{asset}_volume"
+        }
+        if not all(col in price_df.columns for col in ohlcv_cols.values()):
+            logger.warning(f"資產 {asset} 缺少完整的 OHLCV 欄位，跳過指標計算。")
+            continue
+
+        logger.info(f"正在為資產 {asset} 計算技術指標...")
+
+        # 創建一個只包含當前資產 OHLCV 的 DataFrame
+        asset_df = price_df[list(ohlcv_cols.values())].copy()
+        asset_df.columns = ["open", "high", "low", "close", "volume"] # pandas-ta 需要標準欄位名
+
+        # 計算指標
+        # RSI
+        asset_df.ta.rsi(length=14, append=True)
+        # MACD
+        asset_df.ta.macd(fast=12, slow=26, signal=9, append=True)
+        # Bollinger Bands
+        asset_df.ta.bbands(length=20, std=2, append=True)
+        # SMA
+        asset_df.ta.sma(length=50, append=True)
+        asset_df.ta.sma(length=200, append=True)
+
+        # 重命名指標欄位以符合我們的規範
+        new_cols = {col: f"{asset}_{col.lower()}_1h" for col in asset_df.columns if col not in ohlcv_cols}
+        asset_df.rename(columns=new_cols, inplace=True)
+
+        # 只保留新計算出的指標欄位
+        indicator_df = asset_df[list(new_cols.values())]
+        all_indicators.append(indicator_df)
+
+    # 合併所有指標到原始 DataFrame
+    if all_indicators:
+        indicators_merged = pd.concat(all_indicators, axis=1)
+        final_df = price_df.join(indicators_merged)
+        logger.info(f"--- [Indicator Calculator] 完成，新增 {len(indicators_merged.columns)} 個指標欄位 ---")
+    else:
+        final_df = price_df
+        logger.warning("--- [Indicator Calculator] 未計算任何指標 ---")
+
+    final_df.reset_index(inplace=True) # 將 timestamp 索引再次轉為欄位
     return final_df
 
 
