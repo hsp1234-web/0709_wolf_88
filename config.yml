@@ -16,8 +16,9 @@ api_keys:
 
 # --- 資料庫設定 ---
 database:
-  path: "data/financial_data.db"
-  # 其他可能的設定，例如: timeout: 30
+  main_db_path: "prometheus_fire.duckdb"
+  # 新增任務佇列資料庫的路徑設定
+  task_queue_db_path: "output/task_queue.db"
 
 # --- 數據獲取設定 ---
 data_acquisition:
