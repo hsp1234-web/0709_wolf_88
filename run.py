@@ -21,6 +21,7 @@ try:
     from apps.tools.show_results import show_results # 導入新函數
     from apps.query_gateway import app as dashboard_app # 導入 dashboard app
     from apps.tools.clear_results import clear_results
+    from apps.optimizer_app import run_optimizer # 導入新函數
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -38,12 +39,14 @@ def main(ctx: typer.Context):
     """
     初始化共享資源，如 LogManager。
     """
+    print("Main callback started")
     output_dir = project_root / "output"
     log_db_path = output_dir / "logs" / "session.sqlite"
     archive_dir = output_dir / "logs" / "archive"
 
     # 將 LogManager 實例儲存在 context 中，供所有指令共享
     ctx.obj = LogManager(db_path=log_db_path, archive_dir=archive_dir)
+    print("Main callback finished")
 
 def execute_task(log_manager: LogManager, task_name: str, task_func, **kwargs):
     """統一的任務執行與日誌記錄模板"""
@@ -123,6 +126,15 @@ def cli_clear_results(
             raise typer.Abort()
 
     clear_results(log_manager)
+
+# 新增策略優化命令
+@app.command(name="optimize")
+def cli_optimizer(ctx: typer.Context):
+    """
+    執行一次策略優化：分析歷史結果並產生一個進化後的新任務。
+    """
+    log_manager: LogManager = ctx.obj
+    run_optimizer(log_manager)
 
 if __name__ == "__main__":
     try:
