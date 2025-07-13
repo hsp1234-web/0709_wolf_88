@@ -22,6 +22,7 @@ try:
     from apps.query_gateway import app as dashboard_app # 導入 dashboard app
     from apps.tools.clear_results import clear_results
     from apps.optimizer_app import run_optimizer # 導入新函數
+    from apps.evolution_app import run_evolution # 導入新函數
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -135,6 +136,15 @@ def cli_optimizer(ctx: typer.Context):
     """
     log_manager: LogManager = ctx.obj
     run_optimizer(log_manager)
+
+# 新增策略演化命令
+@app.command(name="evolve")
+def cli_evolve(ctx: typer.Context):
+    """
+    執行一次策略演化週期，探索更優的策略參數。
+    """
+    log_manager: LogManager = ctx.obj
+    run_evolution(log_manager)
 
 if __name__ == "__main__":
     try:

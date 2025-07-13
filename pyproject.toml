@@ -75,6 +75,7 @@ fredapi = "^0.5.2"               # FRED API 客戶端
 typer = {extras = ["all"], version = "^0.16.0"}
 fastapi = {extras = ["all"], version = "^0.116.1"}
 uvicorn = "^0.35.0"
+deap = "^1.4.3"
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"           # 核心測試框架
 pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件
