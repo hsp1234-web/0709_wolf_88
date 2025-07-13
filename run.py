@@ -14,6 +14,9 @@ try:
     from apps.backtesting_engine.run import main as run_sma_backtest
     from apps.run_stress_index import main as run_stress_index
     from apps.run_fmp_test import main as run_fmp_test
+    # 導入新的應用函數
+    from apps.backtest_worker_app import run_worker
+    from apps.tools.task_adder_app import add_tasks
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -63,6 +66,22 @@ def stress_index(ctx: typer.Context):
 def fmp_fetch(ctx: typer.Context):
     """執行 FMPClient 端到端實戰驗證。"""
     execute_task(ctx.obj, "FMP 數據獲取驗證", run_fmp_test)
+
+# 新增回測工作者命令
+@app.command(name="backtest-worker")
+def cli_run_backtest_worker(ctx: typer.Context):
+    """啟動一個回測服務工作者，持續監聽並執行任務。"""
+    log_manager: LogManager = ctx.obj
+    log_manager.log("INFO", "CLI: 正在啟動回測服務工作者...")
+    run_worker(log_manager)
+
+# 新增測試任務命令
+@app.command(name="add-test-tasks")
+def cli_add_test_tasks(ctx: typer.Context):
+    """向佇列中添加一批用於測試的回測任務。"""
+    log_manager: LogManager = ctx.obj
+    log_manager.log("INFO", "CLI: 正在新增測試任務...")
+    add_tasks(log_manager)
 
 if __name__ == "__main__":
     try:
