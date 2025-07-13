@@ -1,6 +1,7 @@
 # run.py (v2.0 - 整合 LogManager)
 
 import typer
+import uvicorn # 導入 uvicorn
 import sys
 from pathlib import Path
 
@@ -18,6 +19,7 @@ try:
     from apps.backtest_worker_app import run_worker
     from apps.tools.task_adder_app import add_tasks
     from apps.tools.show_results import show_results # 導入新函數
+    from apps.query_gateway import app as dashboard_app # 導入 dashboard app
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -90,6 +92,18 @@ def cli_show_results(ctx: typer.Context):
     """查詢並顯示所有已儲存的回測結果。"""
     log_manager: LogManager = ctx.obj
     show_results(log_manager)
+
+# 新增儀表板命令
+@app.command(name="dashboard")
+def cli_dashboard(
+    ctx: typer.Context,
+    host: str = typer.Option("127.0.0.1", help="綁定主機"),
+    port: int = typer.Option(8000, help="綁定埠號")
+):
+    """啟動網頁儀表板以可視化回測結果。"""
+    log_manager: LogManager = ctx.obj
+    log_manager.log("INFO", f"正在於 http://{host}:{port} 啟動儀表板...")
+    uvicorn.run(dashboard_app, host=host, port=port)
 
 if __name__ == "__main__":
     try:

@@ -76,6 +76,7 @@ vectorbt = "^0.28.0"
 pydantic = "^2.11.7"
 typer = {extras = ["all"], version = "^0.16.0"}
 openpyxl = "^3.1.5"
+fastapi = {extras = ["all"], version = "^0.116.1"}
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"           # 核心測試框架
 pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件

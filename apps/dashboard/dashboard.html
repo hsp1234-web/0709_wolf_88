@@ -1,0 +1,79 @@
+<!-- 檔案: apps/dashboard/dashboard.html -->
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>普羅米修斯之火 - 回測儀表板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-200 p-8 font-sans">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-4xl font-bold mb-2 text-cyan-400">回測結果儀表板</h1>
+        <p class="text-gray-400 mb-8">所有異步計算任務的最終成果匯總。</p>
+
+        <!-- 圖表容器 -->
+        <div id="chart" class="bg-gray-800 p-4 rounded-lg shadow-lg mb-8"></div>
+
+        <!-- 表格容器 -->
+        <h2 class="text-2xl font-bold mb-4 text-cyan-400">詳細數據</h2>
+        <div id="table-container" class="bg-gray-800 p-4 rounded-lg shadow-lg overflow-auto">
+            <table id="results-table" class="min-w-full">
+                <!-- 表頭將由 JS 動態生成 -->
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function fetchData() {
+            const response = await fetch('/api/results');
+            const data = await response.json();
+
+            if (data.length === 0) {
+                document.getElementById('chart').innerHTML = '<p class="text-center">尚無圖表數據。</p>';
+                document.getElementById('table-container').innerHTML = '<p class="text-center">尚無詳細數據。</p>';
+                return;
+            }
+
+            // 渲染圖表
+            const symbols = data.map(d => d.symbol);
+            const crossoverPoints = data.map(d => d.crossover_points);
+            const plotData = [{
+                x: symbols,
+                y: crossoverPoints,
+                type: 'bar',
+                marker: { color: '#22d3ee' }
+            }];
+            const layout = {
+                title: '各標的 SMA 交叉點數量',
+                paper_bgcolor: '#1f2937',
+                plot_bgcolor: '#1f2937',
+                font: { color: '#e5e7eb' },
+                xaxis: { title: '標的' },
+                yaxis: { title: '交叉點數量' }
+            };
+            Plotly.newPlot('chart', plotData, layout);
+
+            // 渲染表格
+            const table = document.getElementById('results-table');
+            const headers = Object.keys(data[0]);
+            let headerHtml = '<thead class="bg-gray-700"><tr>';
+            headers.forEach(h => headerHtml += `<th class="p-3 text-left">${h}</th>`);
+            headerHtml += '</tr></thead>';
+
+            let bodyHtml = '<tbody>';
+            data.forEach(row => {
+                bodyHtml += '<tr class="border-b border-gray-700 hover:bg-gray-600">';
+                headers.forEach(h => bodyHtml += `<td class="p-3">${row[h]}</td>`);
+                bodyHtml += '</tr>';
+            });
+            bodyHtml += '</tbody>';
+
+            table.innerHTML = headerHtml + bodyHtml;
+        }
+
+        window.onload = fetchData;
+    </script>
+</body>
+</html>
