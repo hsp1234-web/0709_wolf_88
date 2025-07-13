@@ -9,6 +9,11 @@
 -   `config.yml`: **專案的中央神經系統**。集中管理所有需要靈活配置的參數，如 API 金鑰、資料庫路徑等。嚴禁包含任何敏感資訊的版本被提交。
 -   `pyproject.toml`: **專案的身份證與依賴清單**。使用 `Poetry` 管理，定義了專案的元數據、核心依賴與開發依賴。是專案環境可重複性的唯一真理來源。
 -   `poetry.lock`: **依賴的精確藍圖**。由 `Poetry` 自動生成，鎖定了每個依賴包的精確版本，確保所有開發者環境的一致性。
+-   `pytest.ini`: `pytest` 測試框架的設定檔。
+-   `mypy.ini`: `mypy` 型別檢查工具的設定檔。
+-   `run_tests.py`: 執行自動化測試的腳本。
+-   `run_pipeline.sh`: 執行資料管線的腳本。
+-   `_test_run.py`: 用於執行臨時測試的腳本。
 
 ## **二、 `core/` - 核心引擎與共享工具**
 
@@ -23,10 +28,38 @@
 -   `core/utils/caching.py`: **高效的記憶體**。
     -   **職責**: 提供基於 `requests-cache` 的網路請求快取機制。
     -   **數據流**: 在 `extract.py` 模組中被用於快取來自 API 的原始數據，避免在開發和測試中重複下載，大幅提高效率。
+-   `core/config.py`: **設定檔的管理模組**。
+-   `core/constants.py`: **定義專案中使用的常數**。
+-   `core/logger.py`: **日誌記錄模組**。
+-   `core/analysis/`: **分析工具**。
+    -   `data_engine.py`: **資料引擎**，負責提供和管理分析數據。
+    -   `stress_index.py`: **壓力指數的計算邏輯**。
+-   `core/analyzers/`: **分析器**。
+    -   `base_analyzer.py`: **分析器的基底類別**。
+-   `core/engines/`: **引擎**。
+    -   `robust_acquisition_engine.py`: **提供穩健的數據獲取功能**。
+-   `core/pipelines/`: **資料管線的核心組件**。
+    -   `base_step.py`: **管線步驟的基底類別**。
+    -   `pipeline.py`: **管線的核心邏輯**。
+    -   `steps/`: **包含各個管線步驟的實作**。
+-   `core/utils/`: **共用的工具函式**。
+    -   `path_utils.py`: **路徑處理工具**。
 
 ## **三、 `pipelines/` - 數據處理與轉化管線**
 
 此目錄是專案的工業區，負責將原始數據轉化為高價值的結構化資訊。
+
+### **`pipelines/p0_downloader/` - 原始資料下載管線**
+-   `run.py`: **執行原始資料的下載**。
+
+### **`pipelines/p1_explorer/` - 資料探索管線**
+-   `run.py`: **執行資料的探索與初步分析**。
+
+### **`pipelines/p2_elt_pipeline/` - ELT 管線**
+-   `run_elt.py`: **執行 ELT (抽取、載入、轉換) 流程**。
+
+### **`pipelines/p3_backfill_hourly_data/` - 小時級歷史資料回填管線**
+-   `run.py`: **執行小時級歷史資料的回填**。
 
 ### **`pipelines/p4_daily_macro_etl/` - 日線宏觀數據管線**
 -   **戰術角色**: 負責建立宏觀經濟的背景視圖。
@@ -88,3 +121,46 @@
         2.  **轉換**: 使用 `Plotly` 將數據轉換為多個聯動的互動式圖表。
         3.  **輸出**: 生成一個名為 `market_dashboard.html` 的獨立 HTML 檔案到 `output/` 目錄，並自動在瀏覽器中打開。
     -   **外部依賴**: `core/db/db_manager.py`。
+
+### **其他應用**
+-   `apps/analysis_pipeline/run.py`: **執行資料分析管線**。
+-   `apps/backtesting_engine/`: **回測引擎**。
+    -   `engine.py`: **回測引擎的核心邏輯**。
+    -   `run.py`: **執行回測**。
+-   `apps/db_manager/setup_database.py`: **設定和初始化資料庫**。
+-   `apps/factor_engine/`: **因子計算引擎**。
+    -   `engine.py`: **因子計算引擎**。
+    -   `run_factor_etl.py`: **執行因子數據的 ETL (抽取、轉換、載入) 流程**。
+    -   `sma_crossover_factor.py`: **實現簡單移動平均線 (SMA) 交叉策略的因子**。
+-   `apps/pipeline_metadata_manager/manager.py`: **管理和追蹤管線的元數據**。
+-   `apps/portfolio_optimizer/main.py`: **投資組合優化器**。
+-   `apps/report_generator/`: **報告產生器**。
+    -   `generator.py`: **產生回測或分析報告**。
+    -   `run.py`: **執行報告產生**。
+-   `apps/visualization/plot_sma_crossover.py`: **將 SMA 交叉策略的結果可視化**。
+-   `apps/run_finmind_test.py`: **測試 `FinMind` API 客戶端**。
+-   `apps/run_fmp_test.py`: **測試 `FMP` API 客戶端**。
+-   `apps/run_gold_layer.py`: **執行黃金層數據處理**。
+-   `apps/run_stress_index.py`: **計算和分析壓力指數**。
+-   `apps/run_taifex_prototype_test.py`: **測試台交所數據原型**。
+
+## **五、 `data/` - 數據儲存**
+-   `financial_data.db`: **DuckDB 數據庫檔案**。
+
+## **六、 `output/` - 輸出**
+-   `market_dashboard.html`: **互動式市場儀表板的 HTML 檔案**。
+-   `logs/`: **存放日誌檔案**。
+    -   `archive/`: **歸檔的作戰報告**。
+    -   `session.sqlite`: **當前工作階段的日誌數據庫**。
+    -   `standalone_test.sqlite`: **獨立測試的日誌數據庫**。
+
+## **七、 `tests/` - 自動化測試**
+-   `conftest.py`: **`pytest` 的設定檔，用於定義 fixtures**。
+-   `fixtures/`: **存放測試用的靜態檔案**。
+-   `ignition_test.py`: **點火測試，確保專案的基本設定正確**。
+-   `integration/`: **整合測試**。
+-   `unit/`: **單元測試**。
+-   `test_p0_downloader.py`: **測試 `p0_downloader` 管線**。
+-   `test_p1_explorer.py`: **測試 `p1_explorer` 管線**。
+-   `test_p2_elt_pipeline.py`: **測試 `p2_elt_pipeline` 管線**。
+-   `unit/test_feature_analyzer.py`: **測試特徵分析器**。

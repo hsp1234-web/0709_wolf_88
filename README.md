@@ -24,18 +24,28 @@
 ## **三、 技術棧 (Technology Stack)**
 
 *   **核心程式語言:** Python (>=3.12, <3.14)
-*   **依賴管理:** Poetry
-*   **命令列介面**: Typer
+*   **依賴管理:** Poetry (v1.8.2 或相容版本)
+*   **命令列介面**: Typer (`^0.16.0`)
 *   **數據處理:**
-    *   Pandas, NumPy
-    *   Pandas-TA-OpenBB (用於技術指標計算)
+    *   Pandas (`^2.3.1`)
+    *   NumPy (`<2.0`)
+    *   Pandas-TA (`0.3.14b0`)
 *   **API 客戶端與網路請求:**
-    *   Requests, Requests-Cache
-    *   FredAPI, YFinance
-*   **資料庫**: DuckDB, SQLite3 (用於日誌系統)
-*   **設定檔管理:** PyYAML
-*   **視覺化**: Plotly
-*   **測試與品質保證:** Pytest, Pytest-Mock, Ruff
+    *   Requests (`^2.32.4`)
+    *   Requests-Cache (`^1.2.1`)
+    *   FredAPI (`^0.5.2`)
+    *   YFinance (`0.2.60`)
+*   **資料庫**:
+    *   DuckDB (`^1.3.2`)
+    *   SQLite3 (內建，用於日誌系統)
+*   **設定檔管理:**
+    *   PyYAML (`^6.0.2`)
+*   **視覺化**:
+    *   Plotly (`^6.2.0`)
+*   **測試與品質保證:**
+    *   Pytest (`^8.4.1`)
+    *   Pytest-Mock (`^3.14.1`)
+    *   Ruff (用於程式碼檢查與格式化)
 
 ## **四、 架構概覽**
 
@@ -49,24 +59,54 @@
 ├── PROJECT_FILES_GLOSSARY.md
 ├── apps
 │   ├── dashboard
-│   │   └── run_app.py  # 儀表板生成邏輯
-│   └── ... (其他應用)
+│   │   └── run_app.py
+│   ├── analysis_pipeline
+│   │   └── run.py
+│   ├── backtesting_engine
+│   │   ├── engine.py
+│   │   └── run.py
+│   ├── db_manager
+│   │   └── setup_database.py
+│   ├── factor_engine
+│   │   ├── engine.py
+│   │   ├── run_factor_etl.py
+│   │   └── sma_crossover_factor.py
+│   ├── pipeline_metadata_manager
+│   │   └── manager.py
+│   ├── portfolio_optimizer
+│   │   └── main.py
+│   ├── report_generator
+│   │   ├── generator.py
+│   │   └── run.py
+│   └── visualization
+│       └── plot_sma_crossover.py
 ├── config.yml
 ├── core
-│   ├── clients       # 所有第三方 API 客戶端
-│   ├── db            # 數據庫管理
-│   └── ... (其他核心工具)
+│   ├── clients
+│   ├── db
+│   ├── analysis
+│   ├── analyzers
+│   ├── engines
+│   ├── pipelines
+│   └── utils
+├── data
+│   └── financial_data.db
 ├── output
-│   ├── market_dashboard.html # 儀表板輸出
+│   ├── market_dashboard.html
 │   └── logs
-│       └── archive     # 作戰報告歸檔
+│       └── archive
 ├── pipelines
-│   ├── p4_daily_macro_etl    # 日線宏觀數據管線
-│   └── p5_hourly_price_etl   # 小時級市場數據管線
+│   ├── p0_downloader
+│   ├── p1_explorer
+│   ├── p2_elt_pipeline
+│   ├── p3_backfill_hourly_data
+│   ├── p4_daily_macro_etl
+│   └── p5_hourly_price_etl
 ├── pyproject.toml
-├── run.py  # 專案統一指揮入口
+├── run.py
 └── tests
-    └── ...
+    ├── integration
+    └── unit
 ```
 
 ## **五、 快速上手指南**
