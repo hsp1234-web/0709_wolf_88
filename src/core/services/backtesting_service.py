@@ -1,7 +1,8 @@
 # 檔案: src/core/services/backtesting_service.py
 import pandas as pd
+import pandas_ta as ta
 import vectorbt as vbt
-from typing import Tuple
+from typing import Dict, Any
 
 from src.core.clients.yfinance import YFinanceClient
 from src.core.db.results_saver import ResultsSaver
@@ -9,74 +10,81 @@ from src.core.logger import LogManager
 
 class BacktestingService:
     """
-    回測服務 v2.0 (真實數據版)
-    負責執行單次回測任務，計算策略的適應度分數。
+    回測服務 v3.0 (基因體解讀版)
+    負責接收一個標準化的「策略基因體」，並執行回測。
     """
     def __init__(self, results_saver: ResultsSaver, log_manager: LogManager):
         self.results_saver = results_saver
         self.log_manager = log_manager
-        # 初始化真實數據客戶端
         self.yf_client = YFinanceClient()
-        self.log_manager.log("INFO", "回測服務已初始化，使用 YFinanceClient 獲取真實數據。")
+        self.log_manager.log("INFO", "回測服務 v3.0 初始化，具備策略基因體解讀能力。")
 
-    def run_backtest(self, individual: Tuple[int, int], backtest_id: str) -> float:
+    def _interpret_genome_and_run(self, price: pd.Series, genome: Dict[str, Any]) -> float:
         """
-        執行一次完整的、基於真實數據的回測。
+        內部核心：解讀基因體並執行回測。
+        (目前僅實作 RSI 均值回歸策略作為原型)
+        """
+        strategy_name = genome.get("strategy_name")
+
+        if strategy_name == "RSI_MeanReversion":
+            # 1. 解析指標
+            rsi_params = genome["indicators"][0]["params"]
+            rsi = ta.rsi(price, length=rsi_params["window"])
+
+            # 2. 解析交易規則
+            entry_rule = genome["entry_rules"][0]
+            exit_rule = genome["exit_rules"][0]
+
+            entries = rsi < entry_rule["value"]
+            exits = rsi > exit_rule["value"]
+
+            # 3. 執行回測
+            portfolio = vbt.Portfolio.from_signals(price, entries, exits, init_cash=100000, freq="D")
+
+            # 4. 返回適應度分數
+            return float(portfolio.sharpe_ratio())
+
+        # 未來可在此處添加對其他策略名稱 (如 SMACrossover) 的解讀邏輯
+        # elif strategy_name == "SMACrossover":
+        #     ...
+
+        else:
+            self.log_manager.log("ERROR", f"未知的策略名稱: {strategy_name}")
+            return 0.0
+
+
+    def run_backtest(self, genome: Dict[str, Any], backtest_id: str) -> float:
+        """
+        執行一次基於策略基因體的回測。
 
         Args:
-            individual: 一個包含 (快線週期, 慢線週期) 的元組。
+            genome: 描述完整策略的字典。
             backtest_id: 本次獨立回測的唯一識別碼。
 
         Returns:
-            該策略的夏普比率 (Sharpe Ratio) 作為適應度分數。
+            該策略的夏普比率 (Sharpe Ratio)。
         """
-        fast_window, slow_window = individual
-
-        # 策略驗證：慢線必須長於快線
-        if slow_window <= fast_window:
-            self.log_manager.log("WARNING", f"無效策略參數: 慢線({slow_window}) <= 快線({fast_window})。適應度設為-1。")
-            return -1.0
-
         try:
-            # 1. 獲取真實數據
-            self.log_manager.log("INFO", f"[{backtest_id}] 正在為 SPY 獲取 2020-2023 年的歷史日線數據...")
-            price = self.yf_client.get_daily_data(
-                ticker="SPY",
-                start_date="2020-01-01",
-                end_date="2023-12-31"
-            )
-            if price.empty:
+            # 獲取真實數據 (此處暫時硬編碼，未來可由基因體定義)
+            price_close = self.yf_client.get_daily_data("SPY", "2020-01-01", "2023-12-31")
+            if price_close.empty:
                 self.log_manager.log("ERROR", f"[{backtest_id}] 無法獲取 SPY 數據。")
                 return 0.0
 
-            # 2. 計算移動平均線
-            fast_ma = vbt.MA.run(price, window=fast_window, short_name="fast")
-            slow_ma = vbt.MA.run(price, window=slow_window, short_name="slow")
+            # 調用內部核心來執行
+            sharpe_ratio = self._interpret_genome_and_run(price_close, genome)
 
-            # 3. 生成交易信號
-            entries = fast_ma.ma_crossed_above(slow_ma)
-            exits = fast_ma.ma_crossed_below(slow_ma)
-
-            # 4. 執行回測
-            portfolio = vbt.Portfolio.from_signals(price, entries, exits, init_cash=100000)
-
-            # 5. 計算表現指標 (夏普比率)
-            sharpe_ratio = portfolio.sharpe_ratio()
-
-            # 儲存回測結果 (此處僅為範例，可擴充)
+            # 儲存結果
             self.results_saver.save_result(
                 backtest_id=backtest_id,
-                strategy_name="SMACrossover",
-                parameters={"fast": fast_window, "slow": slow_window},
-                # 將 portfolio.stats() 轉換為字典以便儲存
-                metrics=portfolio.stats().to_dict()
+                strategy_name=genome.get("strategy_name", "Unknown"),
+                parameters=genome, # 將整個基因體存為參數
+                metrics={"sharpe_ratio": sharpe_ratio}
             )
 
-            self.log_manager.log("SUCCESS", f"[{backtest_id}] 策略 ({fast_window}, {slow_window}) 回測完成。夏普比率: {sharpe_ratio:.4f}")
-
-            # 返回適應度分數
-            return float(sharpe_ratio)
+            self.log_manager.log("SUCCESS", f"[{backtest_id}] 基因體 {genome.get('strategy_name')} 回測完成。夏普比率: {sharpe_ratio:.4f}")
+            return sharpe_ratio
 
         except Exception as e:
-            self.log_manager.log("CRITICAL", f"[{backtest_id}] 在回測過程中發生嚴重錯誤: {e}")
+            self.log_manager.log("CRITICAL", f"[{backtest_id}] 在基因體回測過程中發生嚴重錯誤: {e}")
             return 0.0
