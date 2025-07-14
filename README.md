@@ -35,109 +35,325 @@
     *   Pytest-Mock (`^3.14.1`)
     *   Ruff (用於程式碼檢查與格式化)
 
-## **三、 檔案目錄結構 (v0.6.0)**
+## **三、 檔案目錄結構 (v0.8.0)**
 
-以下為專案目前的完整檔案目錄結構 (已移除 `__pycache__` 和臨時檔案)。
+以下為專案目前的完整檔案目錄結構 (已移除 `__pycache__` 和 `.pyc` 檔案)。
 
 > **[文件化說明]**
 > 關於下表中每一個檔案的詳細功能、職責與執行邏輯，請參閱 **[`PROJECT_FILES_GLOSSARY.md`](./PROJECT_FILES_GLOSSARY.md)** 檔案。
 
 ```
-.
-├── README.md
-├── _test_run.py
-├── apps
-│   ├── analysis_pipeline
-│   │   └── run.py
-│   ├── backtesting_engine
-│   │   ├── engine.py
-│   │   └── run.py
-│   ├── db_manager
-│   │   └── setup_database.py
-│   ├── factor_engine
-│   │   ├── engine.py
-│   │   ├── run_factor_etl.py
-│   │   └── sma_crossover_factor.py
-│   ├── pipeline_metadata_manager
-│   │   └── manager.py
-│   ├── portfolio_optimizer
-│   │   └── main.py
-│   ├── report_generator
-│   │   ├── generator.py
-│   │   └── run.py
-│   ├── visualization
-│   │   └── plot_sma_crossover.py
-│   ├── run_finmind_test.py
-│   ├── run_fmp_test.py
-│   ├── run_gold_layer.py
-│   ├── run_stress_index.py
-│   └── run_taifex_prototype_test.py
-├── config.yml
-├── core
-│   ├── analysis
-│   │   ├── data_engine.py
-│   │   └── stress_index.py
-│   ├── analyzers
-│   │   └── base_analyzer.py
-│   ├── clients
-│   │   ├── base.py
-│   │   ├── finmind.py
-│   │   ├── fmp.py
-│   │   ├── fred.py
-│   │   ├── nyfed.py
-│   │   ├── taifex_db.py
-│   │   └── yfinance.py
-│   ├── config.py
-│   ├── constants.py
-│   ├── db
-│   │   └── db_manager.py
-│   ├── engines
-│   │   └── robust_acquisition_engine.py
-│   ├── logger.py
-│   ├── pipelines
-│   │   ├── base_step.py
-│   │   ├── pipeline.py
-│   │   └── steps
-│   └── utils
-│       ├── caching.py
-│       └── path_utils.py
-├── mypy.ini
-├── output
-│   └── logs
-│       ├── archive
-│       └── standalone_test.sqlite
-├── pipelines
-│   ├── p0_downloader
-│   │   └── run.py
-│   ├── p1_explorer
-│   │   └── run.py
-│   ├── p2_elt_pipeline
-│   │   └── run_elt.py
-│   └── p3_backfill_hourly_data
-│       └── run.py
-├── poetry.lock
-├── pyproject.toml
-├── pytest.ini
-├── run.py
-├── run_pipeline.sh
-├── run_tests.py
-└── tests
-    ├── conftest.py
-    ├── fixtures
-    │   ├── corrupted.zip
-    │   ├── no_data_response.html
-    │   └── sample_daily_ohlc_20250711.zip
-    ├── ignition_test.py
-    ├── integration
-    │   ├── analysis
-    │   ├── apps
-    │   └── pipelines
-    ├── test_p0_downloader.py
-    ├── test_p1_explorer.py
-    ├── test_p2_elt_pipeline.py
-    └── unit
-        ├── analysis
-        └── core
+.:
+PROJECT_FILES_GLOSSARY.md
+README.md
+TEST_REPORT.md
+_test_run.py
+apps
+archive_test.py
+check_qsize.py
+config.yml
+core
+file_structure.txt
+latest_structure.txt
+mypy.ini
+output
+pipeline_test_loader.duckdb
+pipelines
+poetry.lock
+prometheus_fire.duckdb
+pyproject.toml
+pytest.ini
+read_logs.py
+run.py
+run_pipeline.sh
+run_show_results.py
+run_tests.py
+tests
+
+
+./apps:
+__init__.py
+analysis_pipeline
+backtest_worker_app.py
+backtesting_engine
+dashboard
+db_manager
+evolution_app.py
+factor_engine
+optimizer_app.py
+pipeline_metadata_manager
+portfolio_optimizer
+py.typed
+query_gateway.py
+report_generator
+run_finmind_test.py
+run_fmp_test.py
+run_gold_layer.py
+run_stress_index.py
+run_taifex_prototype_test.py
+tools
+visualization
+
+
+./apps/analysis_pipeline:
+run.py
+
+
+./apps/backtesting_engine:
+__init__.py
+engine.py
+run.py
+
+
+./apps/dashboard:
+dashboard.html
+
+./apps/db_manager:
+setup_database.py
+
+
+./apps/factor_engine:
+engine.py
+run_factor_etl.py
+sma_crossover_factor.py
+
+
+./apps/pipeline_metadata_manager:
+__init__.py
+manager.py
+
+
+./apps/portfolio_optimizer:
+__init__.py
+main.py
+
+
+./apps/report_generator:
+__init__.py
+generator.py
+run.py
+
+
+./apps/tools:
+clear_results.py
+report_generator_app.py
+show_results.py
+task_adder_app.py
+
+
+./apps/visualization:
+plot_sma_crossover.py
+
+
+./core:
+__init__.py
+analysis
+analyzers
+clients
+config.py
+constants.py
+db
+engines
+logger.py
+pipelines
+py.typed
+queue
+services
+utils
+
+
+./core/analysis:
+data_engine.py
+stress_index.py
+
+
+./core/analyzers:
+__init__.py
+base_analyzer.py
+
+
+./core/clients:
+__init__.py
+base.py
+finmind.py
+fmp.py
+fred.py
+nyfed.py
+taifex_db.py
+yfinance.py
+
+
+./core/db:
+__init__.py
+db_manager.py
+results_saver.py
+
+
+./core/engines:
+__init__.py
+robust_acquisition_engine.py
+
+
+./core/pipelines:
+__init__.py
+base_step.py
+pipeline.py
+steps
+
+
+./core/pipelines/steps:
+__init__.py
+aggregators.py
+financial_steps.py
+loaders.py
+
+
+./core/queue:
+__init__.py
+base.py
+sqlite_queue.py
+
+
+./core/services:
+__init__.py
+backtesting_service.py
+evolution_chamber.py
+optimizer_service.py
+
+
+./core/utils:
+__init__.py
+caching.py
+path_utils.py
+
+
+./output:
+logs
+reports
+test_integration_log.db
+test_log_archive
+
+./output/logs:
+archive
+session.sqlite
+standalone_test.sqlite
+test_evolution_pipeline.sqlite
+
+./output/logs/archive:
+battle_report_20250714_082411.txt
+battle_report_20250714_082414.txt
+battle_report_20250714_082423.txt
+battle_report_20250714_082445.txt
+battle_report_20250714_082513.txt
+battle_report_20250714_082515.txt
+battle_report_20250714_082521.txt
+battle_report_20250714_082542.txt
+battle_report_20250714_082558.txt
+battle_report_20250714_082559.txt
+battle_report_20250714_082605.txt
+battle_report_20250714_082627.txt
+battle_report_20250714_082653.txt
+battle_report_20250714_082655.txt
+battle_report_20250714_082701.txt
+battle_report_20250714_082723.txt
+battle_report_20250714_082805.txt
+battle_report_20250714_082806.txt
+battle_report_20250714_082813.txt
+battle_report_20250714_082834.txt
+
+./output/reports:
+report.xml
+
+./output/test_log_archive:
+
+./pipelines:
+__init__.py
+p0_downloader
+p1_explorer
+p2_elt_pipeline
+p3_backfill_hourly_data
+
+
+./pipelines/p0_downloader:
+run.py
+
+
+./pipelines/p1_explorer:
+__init__.py
+run.py
+
+
+./pipelines/p2_elt_pipeline:
+run_elt.py
+
+
+./pipelines/p3_backfill_hourly_data:
+run.py
+
+./tests:
+conftest.py
+fixtures
+ignition_test.py
+integration
+test_p0_downloader.py
+test_p1_explorer.py
+test_p2_elt_pipeline.py
+unit
+
+
+./tests/fixtures:
+corrupted.zip
+no_data_response.html
+sample_daily_ohlc_20250711.zip
+
+./tests/integration:
+analysis
+apps
+pipelines
+test_evolution_pipeline.py
+test_full_pipeline.py
+
+
+./tests/integration/analysis:
+test_data_engine_cache.py
+
+
+./tests/integration/apps:
+test_analysis_pipeline.py
+test_refactored_apps.py
+
+
+./tests/integration/pipelines:
+test_data_pipeline.py
+test_example_flow.py
+
+
+./tests/unit:
+analysis
+core
+test_feature_analyzer.py
+
+
+./tests/unit/analysis:
+test_data_engine.py
+
+
+./tests/unit/core:
+analyzers
+clients
+test_queue.py
+
+
+./tests/unit/core/analyzers:
+test_base_analyzer.py
+
+
+./tests/unit/core/clients:
+test_finmind.py
+test_fmp.py
+test_fred.py
+test_nyfed.py
+test_yfinance.py
 ```
 
 ## **四、 環境設定與執行**
