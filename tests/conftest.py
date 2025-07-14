@@ -26,7 +26,7 @@ def app_context() -> AppContext:
         os.remove(RESULTS_DB_PATH)
 
     # 2. 建立新的、乾淨的上下文
-    test_log_manager = LogManager(db_path="output/test.log.db", archive_dir="output/log_archive")
+    test_log_manager = LogManager(session_name="test_session")
     context = AppContext(log_manager=test_log_manager)
 
     # 3. 將上下文交付給測試

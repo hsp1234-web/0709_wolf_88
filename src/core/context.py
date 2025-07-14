@@ -34,5 +34,6 @@ class AppContext:
         """
         if self.db_connection is None:
             import duckdb
-            self.db_connection = duckdb.connect("prometheus_fire.duckdb", read_only=False)
+            # Enable multithreading and disable file locking
+            self.db_connection = duckdb.connect(database=":memory:", read_only=False)
         return self.db_connection

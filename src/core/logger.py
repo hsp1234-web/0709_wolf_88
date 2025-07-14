@@ -1,34 +1,42 @@
-# core/logger.py
-
-import os
+import logging
 import sqlite3
+import os
 from datetime import datetime
-import pytz
 from pathlib import Path
+import pytz
 import sys
 
 class LogManager:
     """
-    後端日誌管理器，負責將日誌寫入 SQLite 並在任務結束時歸檔。
-    設計為在後端獨立運作。
+    一個多進程安全的日誌管理器。
+    為每個工作階段 (session) 創建一個唯一的日誌資料庫。
     """
-    def __init__(self, db_path: str | Path, archive_dir: str | Path):
-        self.db_path = Path(db_path)
-        self.archive_dir = Path(archive_dir)
+    def __init__(self, session_name: str = "default"):
+        self.session_name = session_name
+        self.pid = os.getpid() # 獲取當前進程 ID
         self.taipei_tz = pytz.timezone('Asia/Taipei')
 
-        os.makedirs(self.db_path.parent, exist_ok=True)
-        os.makedirs(self.archive_dir, exist_ok=True)
+        # === 核心變更：生成唯一的日誌檔名 ===
+        log_db_filename = f"session_{self.session_name}_{self.pid}.sqlite"
+        self.log_db_path = Path("output/logs") / log_db_filename
+        self.log_db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=10)
+        self._conn = sqlite3.connect(self.log_db_path, check_same_thread=False, timeout=10)
         self._conn.execute("PRAGMA journal_mode=WAL;")
         self._conn.row_factory = sqlite3.Row
-        self._setup_database()
-        self.log("BATTLE", f"LogManager 初始化完成。日誌數據庫: {self.db_path}")
+        self._init_db()
+        self.log("BATTLE", f"LogManager 初始化完成。日誌數據庫: {self.log_db_path}")
 
-    def _setup_database(self):
+    def _init_db(self):
         with self._conn:
-            self._conn.execute("CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY, timestamp TEXT, level TEXT, message TEXT)")
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT,
+                    level TEXT,
+                    message TEXT
+                )
+            """)
 
     def log(self, level: str, message: str):
         ts_iso = datetime.now(self.taipei_tz).isoformat()
@@ -36,38 +44,42 @@ class LogManager:
         print(f"[{ts_display}] [{level}] {message}") # 即時輸出到終端機
         try:
             with self._conn:
-                self._conn.execute("INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)", (ts_iso, level, message))
+                self._conn.execute(
+                    "INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)",
+                    (ts_iso, level, message)
+                )
+        except sqlite3.ProgrammingError as e:
+            # 如果資料庫已關閉，則打印到控制台
+            print(f"FATAL: LogDB 寫入失敗: {e}. Log: [{level}] {message}", file=sys.stderr)
         except Exception as e:
             print(f"FATAL: LogDB 寫入失敗: {e}", file=sys.stderr)
 
-    def archive_to_file(self):
-        """將資料庫中的所有日誌歸檔到一個文字檔中。"""
+
+    def close_and_archive(self):
+        if not self._conn:
+            return
+
         self.log("BATTLE", "--- 開始歸檔作戰報告 ---")
+
+        archive_dir = Path("output/logs/archive")
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        timestamp_str = datetime.now(self.taipei_tz).strftime("%Y%m%d_%H%M%S")
+        archive_filename = f"battle_report_{self.session_name}_{self.pid}_{timestamp_str}.txt"
+        archive_path = archive_dir / archive_filename
+
         try:
-            cursor = self._conn.cursor()
-            cursor.execute("SELECT timestamp, level, message FROM logs ORDER BY id ASC")
-            all_logs = [dict(row) for row in cursor.fetchall()]
+            with open(archive_path, "w", encoding="utf-8") as f:
+                cursor = self._conn.cursor()
+                for row in cursor.execute("SELECT timestamp, level, message FROM logs ORDER BY id"):
+                    ts_str = datetime.fromisoformat(row['timestamp']).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                    f.write(f"[{ts_str}] [{row['level']}] {row['message']}\n")
 
-            if not all_logs:
-                self.log("INFO", "日誌資料庫為空，無需生成戰報檔案。")
-                return
+            self.log("SUCCESS", f"✅ 作戰報告已成功歸檔至: {archive_path}")
 
-            ts_file = datetime.now(self.taipei_tz).strftime('%Y%m%d_%H%M%S')
-            filename = f"battle_report_{ts_file}.txt"
-            archive_filepath = self.archive_dir / filename
-
-            with open(archive_filepath, "w", encoding="utf-8") as f:
-                f.write(f"--- 作戰報告 ---\n")
-                f.write(f"生成時間: {datetime.now(self.taipei_tz).isoformat()}\n")
-                f.write(f"========================================\n\n")
-                for log_item in all_logs:
-                    ts_str = datetime.fromisoformat(log_item['timestamp']).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                    f.write(f"[{ts_str}] [{log_item['level']}] {log_item['message']}\n")
-
-            self.log("SUCCESS", f"✅ 作戰報告已成功歸檔至: {archive_filepath}")
         except Exception as e:
             self.log("ERROR", f"❌ 歸檔作戰日誌失敗: {e}")
         finally:
             if self._conn:
                 self._conn.close()
-                self.log("INFO", "日誌資料庫連線已關閉。")
+                self._conn = None
+                print(f"INFO: 日誌資料庫連線已關閉。報告已歸檔至 {archive_path}")

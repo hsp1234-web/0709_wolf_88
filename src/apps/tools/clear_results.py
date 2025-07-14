@@ -1,20 +1,15 @@
-import duckdb
-from src.core.context import AppContext
 import os
+from src.core.context import AppContext
 
-DB_PATH = "prometheus_fire.duckdb"
-TABLE_NAME = "backtest_results"
+RESULTS_DB_PATH = "output/results.sqlite"
 
 def clear_results(ctx: AppContext):
-    """清除資料庫中的回測結果表。"""
+    ctx.log_manager.log("WARNING", f"準備刪除交易型結果資料庫: {RESULTS_DB_PATH}...")
     try:
-        if os.path.exists(DB_PATH):
-            conn = duckdb.connect(DB_PATH, read_only=False)
-            # 使用 DROP TABLE IF EXISTS 來避免在表不存在時出錯
-            conn.execute(f"DROP TABLE IF EXISTS {TABLE_NAME}")
-            conn.close()
-            ctx.log_manager.log("SUCCESS", f"已成功清除 '{TABLE_NAME}'。")
+        if os.path.exists(RESULTS_DB_PATH):
+            os.remove(RESULTS_DB_PATH)
+            ctx.log_manager.log("SUCCESS", f"資料庫檔案 '{RESULTS_DB_PATH}' 已成功刪除。")
         else:
-            ctx.log_manager.log("INFO", "資料庫檔案不存在，無需清除。")
+            ctx.log_manager.log("INFO", f"資料庫檔案 '{RESULTS_DB_PATH}' 不存在，無需刪除。")
     except Exception as e:
-        ctx.log_manager.log("ERROR", f"清除結果時發生錯誤: {e}")
+        ctx.log_manager.log("ERROR", f"刪除資料庫檔案時發生錯誤: {e}")

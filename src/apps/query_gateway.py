@@ -1,6 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
-import duckdb
+import sqlite3
+import pandas as pd
 from fastapi.responses import FileResponse
 from src.core.context import AppContext
 
@@ -10,24 +11,25 @@ def run_dashboard_service(ctx: AppContext, host: str, port: int):
     @app.get("/api/results")
     def get_results():
         try:
-            conn = duckdb.connect("prometheus_fire.duckdb", read_only=True)
-            results = conn.execute("SELECT * FROM backtest_results").fetchdf()
+            conn = sqlite3.connect("output/results.sqlite")
+            df = pd.read_sql_query("SELECT * FROM backtest_results", conn)
             conn.close()
-            return results.to_dict(orient="records")
-        except duckdb.Error:
+            return df.to_dict(orient="records")
+        except sqlite3.OperationalError:
             return []
 
-    # === 新增 API 端點 ===
     @app.get("/api/evolution_logs")
     def get_evolution_logs():
         """提供所有演化日誌的 API。"""
         try:
+            # This part still uses DuckDB as it's a separate concern.
+            import duckdb
             conn = duckdb.connect("prometheus_fire.duckdb", read_only=True)
             logs = conn.execute("SELECT * FROM evolution_logs ORDER BY generation").fetchdf()
             conn.close()
             return logs.to_dict(orient="records")
-        except duckdb.Error:
-            return [] # 如果資料表不存在，返回空列表
+        except Exception:
+            return []
 
     @app.get("/")
     def read_root():

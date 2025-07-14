@@ -1,14 +1,15 @@
-import duckdb
+import sqlite3
+import pandas as pd
 from src.core.context import AppContext
 
-DB_PATH = "prometheus_fire.duckdb"
+DB_PATH = "output/results.sqlite"
 TABLE_NAME = "backtest_results"
 
 def show_results(ctx: AppContext):
-    ctx.log_manager.log("INFO", f"正在從 {DB_PATH} 查詢結果...")
+    ctx.log_manager.log("INFO", f"正在從 SQLite 資料庫查詢結果...")
     try:
-        conn = duckdb.connect(DB_PATH, read_only=True)
-        df = conn.execute(f"SELECT * FROM {TABLE_NAME}").fetchdf()
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql_query(f"SELECT * FROM {TABLE_NAME}", conn)
         conn.close()
 
         if df.empty:
@@ -18,5 +19,6 @@ def show_results(ctx: AppContext):
             print("\n--- 回測結果 ---")
             print(df.to_string())
             print("----------------\n")
+
     except Exception as e:
         ctx.log_manager.log("ERROR", f"查詢結果時發生錯誤: {e}")
