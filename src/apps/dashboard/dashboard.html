@@ -1,18 +1,23 @@
-<!-- 檔案: apps/dashboard/dashboard.html -->
+<!-- 檔案: src/apps/dashboard/dashboard.html -->
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>普羅米修斯之火 - 回測儀表板</title>
+    <title>普羅米修斯之火 - 演化儀表板</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body class="bg-gray-900 text-gray-200 p-8 font-sans">
     <div class="max-w-7xl mx-auto">
-        <h1 class="text-4xl font-bold mb-2 text-cyan-400">回測結果儀表板</h1>
-        <p class="text-gray-400 mb-8">所有異步計算任務的最終成果匯總。</p>
+        <h1 class="text-4xl font-bold mb-2 text-cyan-400">普羅米修斯之火 - 演化儀表板</h1>
+        <p class="text-gray-400 mb-8">所有異步計算任務與演化進程的最終成果匯總。</p>
 
+        <!-- === 新增：演化曲線圖表容器 === -->
+        <h2 class="text-2xl font-bold mb-4 text-cyan-400">演化進程曲線</h2>
+        <div id="evolution-chart" class="bg-gray-800 p-4 rounded-lg shadow-lg mb-8"></div>
+
+        <h2 class="text-2xl font-bold mb-4 text-cyan-400">最終回測結果</h2>
         <!-- 圖表容器 -->
         <div id="chart" class="bg-gray-800 p-4 rounded-lg shadow-lg mb-8"></div>
 
@@ -26,7 +31,8 @@
     </div>
 
     <script>
-        async function fetchData() {
+        // === 將 fetchBacktestData 函數獨立出來 ===
+        async function fetchBacktestData() {
             const response = await fetch('/api/results');
             const data = await response.json();
 
@@ -73,7 +79,42 @@
             table.innerHTML = headerHtml + bodyHtml;
         }
 
-        window.onload = fetchData;
+        // === 新增：獲取並渲染演化曲線的函數 ===
+        async function fetchEvolutionData() {
+            const response = await fetch('/api/evolution_logs');
+            const data = await response.json();
+
+            if (data.length === 0) {
+                document.getElementById('evolution-chart').innerHTML = '<p class="text-center">尚無演化日誌數據。</p>';
+                return;
+            }
+
+            const generations = data.map(d => d.generation);
+            const maxFitness = data.map(d => d.max_fitness);
+            const avgFitness = data.map(d => d.avg_fitness);
+            const minFitness = data.map(d => d.min_fitness);
+
+            const plotData = [
+                { x: generations, y: maxFitness, mode: 'lines+markers', name: '最佳適應度' },
+                { x: generations, y: avgFitness, mode: 'lines+markers', name: '平均適應度' },
+                { x: generations, y: minFitness, mode: 'lines+markers', name: '最差適應度' }
+            ];
+
+            const layout = {
+                title: '適應度演化曲線',
+                paper_bgcolor: '#1f2937',
+                plot_bgcolor: '#1f2937',
+                font: { color: '#e5e7eb' },
+                xaxis: { title: '世代 (Generation)' },
+                yaxis: { title: '適應度分數 (Fitness)' }
+            };
+            Plotly.newPlot('evolution-chart', plotData, layout);
+        }
+
+        window.onload = () => {
+            fetchBacktestData();
+            fetchEvolutionData();
+        };
     </script>
 </body>
 </html>

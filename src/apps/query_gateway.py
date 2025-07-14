@@ -9,10 +9,25 @@ def run_dashboard_service(ctx: AppContext, host: str, port: int):
 
     @app.get("/api/results")
     def get_results():
-        conn = duckdb.connect("prometheus_fire.duckdb", read_only=True)
-        results = conn.execute("SELECT * FROM backtest_results").fetchdf()
-        conn.close()
-        return results.to_dict(orient="records")
+        try:
+            conn = duckdb.connect("prometheus_fire.duckdb", read_only=True)
+            results = conn.execute("SELECT * FROM backtest_results").fetchdf()
+            conn.close()
+            return results.to_dict(orient="records")
+        except duckdb.Error:
+            return []
+
+    # === 新增 API 端點 ===
+    @app.get("/api/evolution_logs")
+    def get_evolution_logs():
+        """提供所有演化日誌的 API。"""
+        try:
+            conn = duckdb.connect("prometheus_fire.duckdb", read_only=True)
+            logs = conn.execute("SELECT * FROM evolution_logs ORDER BY generation").fetchdf()
+            conn.close()
+            return logs.to_dict(orient="records")
+        except duckdb.Error:
+            return [] # 如果資料表不存在，返回空列表
 
     @app.get("/")
     def read_root():
