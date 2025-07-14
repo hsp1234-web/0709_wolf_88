@@ -5,27 +5,33 @@ import duckdb
 
 from src.core.context import AppContext
 from src.core.services.backtesting_service import BacktestingService
+from src.core.logger import LogManager
 
 # --- 常數 ---
-NUM_TASKS_TO_ADD = 3
+NUM_TASKS_TO_ADD = 10
 RESULTS_DB_PATH = "prometheus_fire.duckdb"
 RESULTS_TABLE_NAME = "backtest_results"
 
-def worker_thread_target(ctx: AppContext, stop_event: threading.Event):
+def worker_thread_target(stop_event: threading.Event):
     """回測服務工作者執行緒的目標函數。"""
-    ctx.log_manager.log("INFO", "[Worker] 背景工作者已啟動。")
+    log_manager = LogManager(db_path="output/worker.log.db", archive_dir="output/log_archive")
+    ctx = AppContext(log_manager=log_manager)
+    log_manager.log("INFO", "[Worker] 背景工作者已啟動。")
     service = BacktestingService(
         queue=ctx.queue,
-        log_manager=ctx.log_manager,
-        db_connection=ctx.duckdb_connection
+        log_manager=log_manager,
+        db_connection=ctx.get_db_connection()
     )
-    while not stop_event.is_set():
-        task = service.queue.get()
-        if task:
-            service.process_task(task)
-        else:
-            time.sleep(0.1)
-    ctx.log_manager.log("INFO", "[Worker] 背景工作者已停止。")
+    try:
+        while not stop_event.is_set():
+            task = service.queue.get()
+            if task:
+                service.process_task(task)
+            else:
+                time.sleep(0.1)
+    finally:
+        ctx.close_db()
+        ctx.log_manager.log("INFO", "[Worker] 背景工作者已停止。")
 
 def test_end_to_end_pipeline(app_context: AppContext):
     """
@@ -39,14 +45,14 @@ def test_end_to_end_pipeline(app_context: AppContext):
     # 1. 啟動背景工作者
     worker = threading.Thread(
         target=worker_thread_target,
-        args=(app_context, stop_event),
+        args=(stop_event,),
         daemon=True
     )
     worker.start()
     log_manager.log("INFO", "[Main] 工作者執行緒已啟動。")
 
     # 2. 派發任務
-    add_tasks(app_context)
+    add_tasks(app_context, num_tasks=NUM_TASKS_TO_ADD)
     log_manager.log("INFO", f"[Main] 已新增 {NUM_TASKS_TO_ADD} 個任務。")
 
     # 3. 等待任務處理
@@ -60,7 +66,7 @@ def test_end_to_end_pipeline(app_context: AppContext):
     log_manager.log("SUCCESS", "[Main] 工作者執行緒已停止。")
 
     # 5. 驗證資料庫
-    count_result = app_context.duckdb_connection.execute(f"SELECT COUNT(*) FROM {RESULTS_TABLE_NAME}").fetchone()
+    count_result = app_context.get_db_connection().execute(f"SELECT COUNT(*) FROM {RESULTS_TABLE_NAME}").fetchone()
     assert count_result is not None, "無法查詢到結果數量！"
     assert count_result[0] == NUM_TASKS_TO_ADD, f"預期有 {NUM_TASKS_TO_ADD} 個結果，但實際只有 {count_result[0]} 個。"
     log_manager.log("SUCCESS", f"驗證成功！資料庫中有 {count_result[0]} 個回測結果。")

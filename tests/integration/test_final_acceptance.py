@@ -29,15 +29,15 @@ def test_final_acceptance_for_evolution(app_context: AppContext):
 
     # 2. 在主執行緒中，執行完整的演化流程
     log_manager.log("INFO", "[Main] 即將開始執行演化流程...")
-    run_evolution(app_context, population_size=POPULATION_SIZE, generations=GENERATIONS)
+    run_evolution(app_context)
     log_manager.log("SUCCESS", "[Main] 演化流程已執行完畢。")
 
     # 3. 驗證結果
     log_manager.log("INFO", "[Main] 正在驗證資料庫結果...")
     # 總共評估的個體數 = 初始族群 + 後續每一代的新生代
-    expected_results = POPULATION_SIZE + (GENERATIONS * POPULATION_SIZE)
+    expected_results = 30 # population_size=10, generations=2 -> 10 + 10 + 10
 
-    count_result = app_context.duckdb_connection.execute(f"SELECT COUNT(*) FROM {RESULTS_TABLE_NAME}").fetchone()
+    count_result = app_context.get_db_connection().execute(f"SELECT COUNT(*) FROM {RESULTS_TABLE_NAME}").fetchone()
 
     assert count_result is not None, "無法從結果資料庫查詢到計數！"
     # 由於可能存在無效個體 (slow <= fast)，實際結果數可能小於預期

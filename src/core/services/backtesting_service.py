@@ -13,16 +13,16 @@ class BacktestingService:
         self._setup_database()
 
     def _setup_database(self):
-        with self.db_conn.cursor() as cursor:
-            cursor.execute(f"""
-                CREATE TABLE IF NOT EXISTS {self.table_name} (
-                    symbol VARCHAR,
-                    strategy VARCHAR,
-                    params VARCHAR,
-                    crossover_points INTEGER,
-                    batch_id VARCHAR
-                )
-            """)
+        # 使用 CREATE TABLE IF NOT EXISTS 確保表存在
+        self.db_conn.execute(f"""
+            CREATE TABLE IF NOT EXISTS {self.table_name} (
+                symbol VARCHAR,
+                strategy VARCHAR,
+                params VARCHAR,
+                crossover_points INTEGER,
+                batch_id VARCHAR
+            )
+        """)
 
     def run(self):
         self.log_manager.log("INFO", "[BacktestingService] Worker is running and waiting for tasks.")

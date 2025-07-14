@@ -1,9 +1,8 @@
 import pytest
 import os
 import sys
-from src.core.context import AppContext, QUEUE_DB_PATH
+from src.core.context import AppContext, QUEUE_DB_PATH, RESULTS_DB_PATH
 from src.core.logger import LogManager
-from src.apps.tools.clear_results import clear_results
 
 # 將專案根目錄添加到 sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -19,11 +18,10 @@ def app_context() -> AppContext:
     3. 將此實例提供給測試函數使用。
     """
     # 1. 執行清理
-    # 使用一個臨時的 LogManager 進行清理操作
-    cleanup_log_manager = LogManager(db_path="output/cleanup.log.db", archive_dir="output/log_archive")
-    clear_results(AppContext(log_manager=cleanup_log_manager))
     if os.path.exists(QUEUE_DB_PATH):
         os.remove(QUEUE_DB_PATH)
+    if os.path.exists(RESULTS_DB_PATH):
+        os.remove(RESULTS_DB_PATH)
 
     # 2. 建立新的、乾淨的上下文
     test_log_manager = LogManager(db_path="output/test.log.db", archive_dir="output/log_archive")
@@ -33,4 +31,5 @@ def app_context() -> AppContext:
     yield context
 
     # 4. 測試結束後，可以執行額外的清理 (可選)
+    context.close_db()
     test_log_manager.log("INFO", "測試會話結束。")

@@ -1,5 +1,4 @@
 import typer
-from typing_extensions import Annotated
 import pytest
 import os
 
@@ -60,13 +59,11 @@ def cli_run_tests(
 ):
     """執行所有測試並生成報告。"""
     app_context: AppContext = ctx.obj
-    # ... (此函數內部邏輯不變，因為它不直接依賴 AppContext) ...
     os.makedirs(os.path.dirname(xml_path), exist_ok=True)
     pytest.main(["-v", f"--junitxml={xml_path}"])
     reporter = AIReportGenerator(app_context.log_manager)
     reporter.generate_from_xml(xml_path, md_path)
 
-# ... (其他工具命令也按此模式重構) ...
 @app.command(name="add-test-tasks")
 def cli_add_test_tasks(ctx: typer.Context):
     """向佇列中添加測試任務。"""

@@ -1,18 +1,23 @@
-import json
 from src.core.context import AppContext
-
+import random
 import uuid
 
-def add_tasks(ctx: AppContext):
-    """向佇列中添加一組預定義的測試任務"""
+def add_tasks(ctx: AppContext, num_tasks: int = 10):
+    """
+    向任務佇列中添加指定數量的隨機回測任務。
+    """
+    ctx.log_manager.log("INFO", f"正在生成 {num_tasks} 個回測任務...")
     batch_id = str(uuid.uuid4())
-    tasks = [
-        {"strategy": "MACD", "symbol": "TEST_01", "params": {"fast": 12, "slow": 26, "signal": 9}, "batch_id": batch_id},
-        {"strategy": "SMA_Crossover", "symbol": "TEST_02", "params": {"fast": 20, "slow": 50}, "batch_id": batch_id},
-        {"strategy": "RSI", "symbol": "TEST_03", "params": {"period": 14, "buy_level": 30, "sell_level": 70}, "batch_id": batch_id},
-    ]
-
-    ctx.log_manager.log("INFO", f"正在向佇列添加 {len(tasks)} 個任務...")
-    for task in tasks:
+    for i in range(num_tasks):
+        # 任務現在是一個字典
+        task = {
+            "task_id": str(uuid.uuid4()),
+            "type": "backtest",
+            "strategy": "SMA_Crossover",
+            "symbol": random.choice(["BTC/USDT", "ETH/USDT", "XRP/USDT"]),
+            "params": {"fast": random.randint(5, 15), "slow": random.randint(20, 40)},
+            "batch_id": batch_id
+        }
         ctx.queue.put(task)
-    ctx.log_manager.log("SUCCESS", "所有任務已成功添加。")
+        ctx.log_manager.log("DEBUG", f"已將任務 {i+1}/{num_tasks} ({task['strategy']}) 添加到佇列。")
+    ctx.log_manager.log("SUCCESS", f"成功將 {num_tasks} 個任務添加到佇列。")

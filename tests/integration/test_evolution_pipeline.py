@@ -17,7 +17,7 @@ async def test_evolution_logic_in_loop(app_context: AppContext):
     chamber = EvolutionChamber(
         queue=app_context.queue,
         log_manager=log_manager,
-        db_connection=app_context.duckdb_connection
+        db_connection=app_context.get_db_connection()
     )
 
     # 模擬 _evaluate_and_assign_fitness 方法，避免真實的回測
