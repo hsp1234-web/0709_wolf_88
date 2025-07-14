@@ -7,7 +7,20 @@ from core.services.evolution_chamber import EvolutionChamber
 @pytest.fixture(scope="function")
 def test_log_manager():
     """提供一個用於測試的 LogManager 實例。"""
-    return LogManager(session_name="lightweight_evolution_test")
+    from pathlib import Path
+
+    # 使用一個記憶體中的 SQLite 資料庫進行測試
+    # 確保測試不會影響到主要的日誌檔案
+    # 使用 Path 物件來確保跨平台的兼容性
+    db_path = Path("output/logs/test_evolution_pipeline.sqlite")
+    archive_dir = Path("output/logs/archive")
+
+    # 確保目錄存在
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    # 傳遞 Path 物件給 LogManager
+    return LogManager(db_path=db_path, archive_dir=archive_dir)
 
 def mock_evaluate_fitness(individual):
     """

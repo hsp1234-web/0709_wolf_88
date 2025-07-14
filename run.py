@@ -23,6 +23,8 @@ try:
     from apps.tools.clear_results import clear_results
     from apps.optimizer_app import run_optimizer # 導入新函數
     from apps.evolution_app import run_evolution # 導入新函數
+    import pytest # 導入 pytest
+    from apps.tools.report_generator_app import AIReportGenerator # 導入新類別
 except ImportError as e:
     print(f"錯誤：導入應用模組失敗。錯誤訊息：{e}", file=sys.stderr)
     sys.exit(1)
@@ -145,6 +147,34 @@ def cli_evolve(ctx: typer.Context):
     """
     log_manager: LogManager = ctx.obj
     run_evolution(log_manager)
+
+# 新增測試與報告命令
+@app.command(name="run-tests")
+def cli_run_tests(
+    ctx: typer.Context,
+    xml_path: str = typer.Option("output/reports/report.xml", help="JUnit XML 報告的輸出路徑。"),
+    md_path: str = typer.Option("TEST_REPORT.md", help="Markdown 戰報的輸出路徑。")
+):
+    """
+    執行所有測試，並產生一份人類可讀的 Markdown 格式作戰報告。
+    """
+    import os
+    log_manager: LogManager = ctx.obj
+
+    # 確保報告目錄存在
+    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
+
+    log_manager.log("INFO", "--- 階段一：執行自動化測試 ---")
+    # 以程式化方式執行 pytest，並傳入 --junitxml 參數
+    result_code = pytest.main(["-v", f"--junitxml={xml_path}"])
+
+    if result_code == pytest.ExitCode.NO_TESTS_COLLECTED:
+        log_manager.log("WARNING", "未找到任何測試，跳過報告生成。")
+        return
+
+    log_manager.log("INFO", "--- 階段二：AI 報告生成 ---")
+    reporter = AIReportGenerator(log_manager)
+    reporter.generate_from_xml(xml_path, md_path)
 
 if __name__ == "__main__":
     try:

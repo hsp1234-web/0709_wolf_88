@@ -12,9 +12,9 @@ class LogManager:
     後端日誌管理器，負責將日誌寫入 SQLite 並在任務結束時歸檔。
     設計為在後端獨立運作。
     """
-    def __init__(self, db_path: Path, archive_dir: Path):
-        self.db_path = db_path
-        self.archive_dir = archive_dir
+    def __init__(self, db_path: str | Path, archive_dir: str | Path):
+        self.db_path = Path(db_path)
+        self.archive_dir = Path(archive_dir)
         self.taipei_tz = pytz.timezone('Asia/Taipei')
 
         os.makedirs(self.db_path.parent, exist_ok=True)
