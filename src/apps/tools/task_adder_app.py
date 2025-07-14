@@ -1,29 +1,15 @@
-from core.queue.sqlite_queue import SQLiteQueue
-from core.logger import LogManager
-import random
+import json
+from src.core.context import AppContext
 
-QUEUE_DB_PATH = "output/task_queue.db"
-
-def add_tasks(log_manager: LogManager):
-    queue = SQLiteQueue(db_path=QUEUE_DB_PATH)
-    log_manager.log("INFO", "正在新增包含動態參數的測試任務...")
-
-    # 定義不同的策略參數組合
-    param_sets = [
-        {"fast": 5, "slow": 10},
-        {"fast": 10, "slow": 20},
-        {"fast": 5, "slow": 20},
+def add_tasks(ctx: AppContext):
+    """向佇列中添加一組預定義的測試任務"""
+    tasks = [
+        {"type": "MACD", "params": {"fast": 12, "slow": 26, "signal": 9}},
+        {"type": "SMA_Crossover", "params": {"fast": 20, "slow": 50}},
+        {"type": "RSI", "params": {"period": 14, "buy_level": 30, "sell_level": 70}},
     ]
 
-    for i in range(5):
-        # 為每個任務隨機選擇一個參數組
-        params = random.choice(param_sets)
-        task_data = {
-            "strategy": "SMA_crossover",
-            "symbol": f"STOCK_{i}",
-            "params": params  # 將參數字典加入任務
-        }
-        queue.put(task_data)
-        log_manager.log("INFO", f"  已新增任務: {task_data}")
-
-    log_manager.log("SUCCESS", "所有任務已新增。")
+    ctx.log_manager.log("INFO", f"正在向佇列添加 {len(tasks)} 個任務...")
+    for task in tasks:
+        ctx.queue.put(task)
+    ctx.log_manager.log("SUCCESS", "所有任務已成功添加。")

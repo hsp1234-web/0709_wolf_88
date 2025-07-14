@@ -14,18 +14,20 @@ def save_result(result_data: dict):
             params VARCHAR,
             crossover_points INTEGER,
             last_price DOUBLE,
+            batch_id VARCHAR,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
     # 插入數據
     conn.execute(
-        f"INSERT INTO {TABLE_NAME} (symbol, params, crossover_points, last_price) VALUES (?, ?, ?, ?)",
+        f"INSERT INTO {TABLE_NAME} (symbol, params, crossover_points, last_price, batch_id) VALUES (?, ?, ?, ?, ?)",
         [
             result_data.get("symbol"),
             json.dumps(result_data.get("params", {})), # 將參數字典轉為 JSON 字串
             result_data.get("crossover_points"),
-            result_data.get("last_price")
+            result_data.get("last_price"),
+            result_data.get("batch_id")
         ]
     )
     conn.close()

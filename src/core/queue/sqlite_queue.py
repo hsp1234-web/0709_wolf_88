@@ -80,8 +80,8 @@ class SQLiteQueue(BaseQueue):
                     (task_id,)
                 )
                 task_data = json.loads(payload_str)
-                task_data['_task_id'] = task_id  # 將內部ID注入任務，以便後續追蹤
-                return task_data
+                # task_data['_task_id'] = task_id  # 將內部ID注入任務，以便後續追蹤
+                return {'payload': payload_str, '_task_id': task_id}
         return None
 
     def task_done(self, task_id: int) -> None:

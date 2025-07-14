@@ -1,9 +1,10 @@
 import pytest
 import threading
 import time
+import json
 from pathlib import Path
 
-from core.queue.sqlite_queue import SQLiteQueue
+from src.core.queue.sqlite_queue import SQLiteQueue
 
 @pytest.fixture
 def temp_db_path(tmp_path: Path) -> Path:
@@ -43,7 +44,8 @@ def test_get_and_task_done(queue: SQLiteQueue):
     # 取得任務
     retrieved_task = queue.get()
     assert retrieved_task is not None
-    assert retrieved_task["url"] == task_payload["url"]
+    task_data = json.loads(retrieved_task['payload'])
+    assert task_data["url"] == task_payload["url"]
     assert "_task_id" in retrieved_task
 
     # 取得任務後，狀態變為 'running'，所以待處理佇列應為 0
@@ -73,5 +75,6 @@ def test_persistence(temp_db_path: Path):
     assert queue2.qsize() == 1
     task = queue2.get()
     assert task is not None
-    assert task["persistent"] is True
+    task_data = json.loads(task['payload'])
+    assert task_data["persistent"] is True
     queue2.close()

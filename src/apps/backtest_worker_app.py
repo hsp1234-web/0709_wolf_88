@@ -1,11 +1,6 @@
-from core.queue.sqlite_queue import SQLiteQueue
-from core.services.backtesting_service import BacktestingService
-from core.logger import LogManager # 導入
+from src.core.context import AppContext
+from src.core.services.backtesting_service import BacktestingService
 
-QUEUE_DB_PATH = "output/task_queue.db"
-
-# 修改主函數，使其能接收 log_manager
-def run_worker(log_manager: LogManager):
-    queue = SQLiteQueue(db_path=QUEUE_DB_PATH)
-    service = BacktestingService(queue=queue, log_manager=log_manager)
+def run_worker(ctx: AppContext):
+    service = BacktestingService(queue=ctx.queue, log_manager=ctx.log_manager)
     service.run()

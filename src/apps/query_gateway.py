@@ -1,27 +1,34 @@
+import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 import duckdb
+import pandas as pd
+from src.core.context import AppContext
 
-app = FastAPI()
 DB_PATH = "prometheus_fire.duckdb"
 TABLE_NAME = "backtest_results"
 
-@app.get("/api/results")
-def get_results():
-    """提供所有回測結果的 API。"""
-    conn = duckdb.connect(DB_PATH, read_only=True)
-    try:
-        # 檢查資料表是否存在
-        tables = conn.execute("SHOW TABLES").fetchall()
-        if (TABLE_NAME,) not in tables:
-            return [] # 如果不存在，返回空列表
+# 將 uvicorn.run 的啟動邏輯封裝成一個函數
+def run_dashboard_service(ctx: AppContext, host: str, port: int):
+    # FastAPI 應用實例現在在函數內部創建
+    app = FastAPI()
 
-        results = conn.execute(f"SELECT * FROM {TABLE_NAME}").fetchdf()
-        return results.to_dict(orient="records")
-    finally:
-        conn.close()
+    @app.get("/api/results")
+    def get_results():
+        try:
+            with duckdb.connect(database=DB_PATH, read_only=True) as con:
+                df = con.execute(f"SELECT * FROM {TABLE_NAME} ORDER BY id DESC LIMIT 20").fetchdf()
+            return df.to_dict(orient="records")
+        except duckdb.CatalogException:
+            return {"error": "No results table found. Please run a backtest first."}
+        except Exception as e:
+            return {"error": str(e)}
 
-@app.get("/")
-def read_root():
-    """提供儀表板 HTML 檔案。"""
-    return FileResponse('apps/dashboard/dashboard.html')
+    @app.get("/", response_class=HTMLResponse)
+    def read_root():
+        with open("src/apps/dashboard/dashboard.html", "r") as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content, status_code=200)
+
+    ctx.log_manager.log("INFO", f"正在於 http://{host}:{port} 啟動儀表板...")
+    uvicorn.run(app, host=host, port=port)
