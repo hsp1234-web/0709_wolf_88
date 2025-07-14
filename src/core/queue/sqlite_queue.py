@@ -1,75 +1,79 @@
 import sqlite3
 import json
-import threading
+import uuid
+from pathlib import Path
+from typing import Optional, Dict
+
 from .base import BaseQueue
 
 class SQLiteQueue(BaseQueue):
-    def __init__(self, db_path='queue.db'):
-        self.db_path = db_path
-        self.lock = threading.Lock()
-        with self._get_connection() as conn:
-            self._create_table(conn)
+    """
+    一個基於 SQLite 的、絕對穩健的持久化任務佇列。
+    其核心依賴 SQLite 的事務性與明確的狀態管理欄位。
+    """
+    def __init__(self, db_path: str | Path = "output/task_queue.db"):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # 允許多執行緒共享同一個連線，並增加超時
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=10)
+        self._init_db()
 
-    def _get_connection(self):
-        return sqlite3.connect(self.db_path, check_same_thread=False)
+    def _init_db(self):
+        with self.conn:
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',  -- 'pending'|'running'|'completed'
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
 
-    def _create_table(self, conn):
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                payload TEXT NOT NULL,
-                is_done BOOLEAN NOT NULL DEFAULT 0
+    def put(self, task_data: Dict) -> str:
+        """將一個新任務放入佇列，並返回任務 ID。"""
+        task_id = str(uuid.uuid4())
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO tasks (id, payload) VALUES (?, ?)",
+                (task_id, json.dumps(task_data))
             )
-        """)
-        conn.commit()
+        return task_id
 
-    def put(self, task):
-        with self.lock:
-            with self._get_connection() as conn:
-                payload_str = json.dumps(task)
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO tasks (payload) VALUES (?)", (payload_str,))
-                conn.commit()
+    def get(self) -> Optional[Dict]:
+        """以原子操作從佇列中取出一個任務。"""
+        with self.conn:
+            cursor = self.conn.cursor()
+            # 找出一個待處理的任務
+            cursor.execute("""
+                SELECT id, payload FROM tasks
+                WHERE status = 'pending'
+                ORDER BY created_at
+                LIMIT 1
+            """)
+            task = cursor.fetchone()
 
-    def get(self):
-        with self.lock:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, payload FROM tasks WHERE is_done = 0 ORDER BY id ASC LIMIT 1")
-                task = cursor.fetchone()
-                if task:
-                    task_id, payload_str = task
-                    try:
-                        payload = json.loads(payload_str)
-                        # Ensure payload is a dictionary before unpacking
-                        if isinstance(payload, dict):
-                            return {**payload, '_task_id': task_id}
-                        else:
-                            return {'payload': payload, '_task_id': task_id}
-                    except json.JSONDecodeError:
-                        return {'payload': payload_str, '_task_id': task_id}
-                return None
+            if task:
+                task_id, payload_str = task
+                # 鎖定該任務
+                self.conn.execute(
+                    "UPDATE tasks SET status = 'running' WHERE id = ?",
+                    (task_id,)
+                )
+                task_data = json.loads(payload_str)
+                task_data['_task_id'] = task_id # 將 ID 注入
+                return task_data
+        return None
 
-    def task_done(self, task_id):
-        with self.lock:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE tasks SET is_done = 1 WHERE id = ?", (task_id,))
-                conn.commit()
+    def task_done(self, task_id: str) -> None:
+        """標記一個任務已完成。"""
+        with self.conn:
+            self.conn.execute(
+                "UPDATE tasks SET status = 'completed' WHERE id = ?",
+                (task_id,)
+            )
 
-    def __len__(self):
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM tasks WHERE is_done = 0")
-            count = cursor.fetchone()[0]
-            return count
-
-    def is_empty(self):
-        return len(self) == 0
-
-    def qsize(self):
-        return self.__len__()
-
-    def close(self):
-        pass # No-op for now, as we are using a shared connection
+    def qsize(self) -> int:
+        """返回待處理任務的數量。"""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM tasks WHERE status = 'pending'")
+        return cursor.fetchone()[0]

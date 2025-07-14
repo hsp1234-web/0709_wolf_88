@@ -1,12 +1,14 @@
 import pytest
 import os
 import sys
-from src.core.context import AppContext, QUEUE_DB_PATH, RESULTS_DB_PATH
+from src.core.context import AppContext, QUEUE_DB_PATH
 from src.core.logger import LogManager
 
 # 將專案根目錄添加到 sys.path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
+
+RESULTS_DB_PATH = "prometheus_fire.duckdb"
 
 @pytest.fixture(scope="function")
 def app_context() -> AppContext:
@@ -31,5 +33,4 @@ def app_context() -> AppContext:
     yield context
 
     # 4. 測試結束後，可以執行額外的清理 (可選)
-    context.close_db()
     test_log_manager.log("INFO", "測試會話結束。")
