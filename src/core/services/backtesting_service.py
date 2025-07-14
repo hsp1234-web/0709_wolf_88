@@ -1,44 +1,80 @@
-from core.queue.base import BaseQueue
-from core.logger import LogManager
-from apps.factor_engine.sma_crossover_factor import calculate_sma_crossover
-from core.db.results_saver import save_result # 導入儲存函數
+import time
+import json
+import duckdb
+from src.core.queue.base import BaseQueue
+from src.core.logger import LogManager
 
 class BacktestingService:
-    def __init__(self, queue: BaseQueue, log_manager: LogManager):
+    def __init__(self, queue: BaseQueue, log_manager: LogManager, db_connection: duckdb.DuckDBPyConnection):
         self.queue = queue
-        self.log = log_manager
-        self.log.log("INFO", "回測服務已啟動，等待任務...")
+        self.log_manager = log_manager
+        self.db_conn = db_connection
+        self.table_name = "backtest_results"
+        self._setup_database()
+
+    def _setup_database(self):
+        with self.db_conn.cursor() as cursor:
+            cursor.execute(f"""
+                CREATE TABLE IF NOT EXISTS {self.table_name} (
+                    symbol VARCHAR,
+                    strategy VARCHAR,
+                    params VARCHAR,
+                    crossover_points INTEGER,
+                    batch_id VARCHAR
+                )
+            """)
 
     def run(self):
+        self.log_manager.log("INFO", "[BacktestingService] Worker is running and waiting for tasks.")
         while True:
             task = self.queue.get()
             if task:
-                task_id = task.get('_task_id')
-                symbol = task.get("symbol", "UNKNOWN")
-                # 從任務中提取參數，如果不存在則使用預設值
-                params = task.get("params", {})
-
-                self.log.log("INFO", f"  [處理中] 任務 {task_id}: {task}")
-
-                try:
-                    # === 將參數動態傳入計算函數 ===
-                    result = calculate_sma_crossover(symbol=symbol, **params)
-                    # 將任務參數附加到結果中，以便儲存
-                    result['params'] = params
-                    result['batch_id'] = task.get('batch_id') # 從任務中繼承 batch_id
-                    self.log.log("DATA", f"  [計算結果] {result}")
-
-                    # === 儲存結果至資料庫 ===
-                    save_result(result)
-                    self.log.log("INFO", f"  [結果已儲存] 任務 {task_id}")
-
-                except Exception as e:
-                    import traceback
-                    error_details = traceback.format_exc()
-                    self.log.log("ERROR", f"  [計算失敗] 任務 {task_id} 發生錯誤: {e}\n{error_details}")
-
-                self.queue.task_done(task_id)
-                self.log.log("SUCCESS", f"  [已完成] 任務 {task_id}")
+                self.log_manager.log("INFO", f"[BacktestingService] Received task: {task}")
+                self.process_task(task)
             else:
-                import time
-                time.sleep(1)
+                # 如果佇列是空的，可以短暫休眠一下，避免 CPU 空轉
+                time.sleep(0.1)
+
+    def process_task(self, task):
+        task_id = task.get('_task_id')
+        try:
+            strategy = task.get('strategy')
+            symbol = task.get('symbol')
+            params = task.get('params')
+            batch_id = task.get('batch_id')
+
+            if not all([strategy, symbol, params, batch_id]):
+                self.log_manager.log("ERROR", f"任務 {task_id} 缺少必要欄位。")
+                self.queue.task_done(task_id)
+                return
+
+            if strategy == "SMA_crossover_evolved":
+                fast_period = params.get('fast')
+                slow_period = params.get('slow')
+
+                # 這是一個模擬的回測，我們只返回一個基於參數的隨機分數
+                # 在真實世界中，這裡會是複雜的回測邏輯
+                if slow_period <= fast_period:
+                    crossover_points = 0 # 無效參數
+                else:
+                    # 模擬一個簡單的計算
+                    crossover_points = (slow_period - fast_period) * 10
+
+                self.save_results(symbol, strategy, params, crossover_points, batch_id)
+                self.log_manager.log("SUCCESS", f"任務 {task_id} ({symbol}) 處理完畢。")
+            else:
+                self.log_manager.log("WARNING", f"未知的策略: {strategy}")
+
+        except Exception as e:
+            self.log_manager.log("ERROR", f"處理任務 {task_id} 時發生錯誤: {e}")
+        finally:
+            # 確保無論成功或失敗，都標記任務為完成
+            self.queue.task_done(task_id)
+
+    def save_results(self, symbol, strategy, params, crossover_points, batch_id):
+        params_str = json.dumps(params)
+        with self.db_conn.cursor() as cursor:
+            cursor.execute(
+                f"INSERT INTO {self.table_name} (symbol, strategy, params, crossover_points, batch_id) VALUES (?, ?, ?, ?, ?)",
+                (symbol, strategy, params_str, crossover_points, batch_id)
+            )

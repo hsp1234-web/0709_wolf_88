@@ -1,20 +1,20 @@
 from dataclasses import dataclass, field
-from functools import lru_cache
-
 from src.core.logger import LogManager
 from src.core.queue.sqlite_queue import SQLiteQueue
-from src.core.queue.base import BaseQueue
+import duckdb
+import os
 
-# 定義常數以避免硬編碼
-QUEUE_DB_PATH = "output/task_queue.db"
+# --- 常數定義 ---
+# 使用 os.path.join 確保路徑在不同作業系統下都正確
+QUEUE_DB_PATH = os.path.join("output", "task_queue.db")
+RESULTS_DB_PATH = "prometheus_fire.duckdb"
 
 @dataclass
 class AppContext:
-    """
-    作戰上下文：一個集中容器，持有所有共享服務的實例。
-    """
     log_manager: LogManager
-    queue: BaseQueue = field(init=False)
+    # 使用 default_factory 來延遲 duckdb 連線的建立
+    # 這可以避免在多執行緒環境下，不同執行緒建立不同設定的連線
+    duckdb_connection: duckdb.DuckDBPyConnection = field(default_factory=lambda: duckdb.connect(RESULTS_DB_PATH, read_only=False))
 
     def __post_init__(self):
         """
@@ -22,3 +22,10 @@ class AppContext:
         """
         self.log_manager.log("DEBUG", "正在初始化 SQLiteQueue...")
         self.queue = SQLiteQueue(db_path=QUEUE_DB_PATH)
+
+    def __del__(self):
+        """
+        在物件被銷毀前，確保關閉資料庫連線。
+        """
+        if self.duckdb_connection:
+            self.duckdb_connection.close()

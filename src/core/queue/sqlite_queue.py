@@ -1,108 +1,68 @@
 import sqlite3
 import json
 import threading
-from pathlib import Path
-from typing import Optional
-
 from .base import BaseQueue
 
 class SQLiteQueue(BaseQueue):
-    """
-    一個基於 SQLite 的、支援多執行緒的持久化任務佇列。
-    """
-    _TABLE_NAME = "task_queue"
+    def __init__(self, db_path='queue.db'):
+        self.db_path = db_path
+        self.lock = threading.Lock()
+        with self._get_connection() as conn:
+            self._create_table(conn)
 
-    def __init__(self, db_path: str | Path):
-        """
-        初始化佇列。
+    def _get_connection(self):
+        return sqlite3.connect(self.db_path, check_same_thread=False)
 
-        Args:
-            db_path (str | Path): SQLite 資料庫檔案的路徑。
-        """
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # 為每個執行緒建立獨立的資料庫連線
-        self.local = threading.local()
-        self._create_table()
-
-    def _get_conn(self) -> sqlite3.Connection:
-        """為當前執行緒取得或建立資料庫連線。"""
-        if not hasattr(self.local, 'conn'):
-            self.local.conn = sqlite3.connect(self.db_path, timeout=10)
-        return self.local.conn
-
-    def _create_table(self):
-        """如果資料表不存在，則建立它。"""
-        conn = self._get_conn()
-        with conn:
-            conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {self._TABLE_NAME} (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    payload TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            # 為 status 欄位建立索引以加速查詢
-            conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_status ON {self._TABLE_NAME} (status)
-            """)
-
-    def put(self, task_data: dict) -> None:
-        """將任務放入佇列。"""
-        payload_str = json.dumps(task_data)
-        conn = self._get_conn()
-        with conn:
-            conn.execute(
-                f"INSERT INTO {self._TABLE_NAME} (payload, status) VALUES (?, 'pending')",
-                (payload_str,)
-            )
-
-    def get(self) -> Optional[dict]:
-        """以原子操作從佇列中取得一個任務。"""
-        conn = self._get_conn()
+    def _create_table(self, conn):
         cursor = conn.cursor()
-
-        # 使用事務確保操作的原子性
-        with conn:
-            # 查詢一個待處理的任務
-            cursor.execute(
-                f"SELECT id, payload FROM {self._TABLE_NAME} WHERE status = 'pending' ORDER BY id LIMIT 1"
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                payload TEXT NOT NULL,
+                is_done BOOLEAN NOT NULL DEFAULT 0
             )
-            task = cursor.fetchone()
+        """)
+        conn.commit()
 
-            if task:
-                task_id, payload_str = task
-                # 鎖定該任務，防止其他工作者取得
-                cursor.execute(
-                    f"UPDATE {self._TABLE_NAME} SET status = 'running' WHERE id = ?",
-                    (task_id,)
-                )
-                task_data = json.loads(payload_str)
-                # task_data['_task_id'] = task_id  # 將內部ID注入任務，以便後續追蹤
-                return {'payload': payload_str, '_task_id': task_id}
-        return None
+    def put(self, task):
+        with self.lock:
+            with self._get_connection() as conn:
+                payload_str = json.dumps(task)
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO tasks (payload) VALUES (?)", (payload_str,))
+                conn.commit()
 
-    def task_done(self, task_id: int) -> None:
-        """標記任務完成。"""
-        conn = self._get_conn()
-        with conn:
-            conn.execute(
-                f"UPDATE {self._TABLE_NAME} SET status = 'completed' WHERE id = ?",
-                (task_id,)
-            )
+    def get(self):
+        with self.lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, payload FROM tasks WHERE is_done = 0 ORDER BY id ASC LIMIT 1")
+                task = cursor.fetchone()
+                if task:
+                    task_id, payload_str = task
+                    try:
+                        payload = json.loads(payload_str)
+                        return {**payload, '_task_id': task_id}
+                    except json.JSONDecodeError:
+                        return {'_task_id': task_id, 'payload': payload_str}
+                return None
 
-    def qsize(self) -> int:
-        """返回待處理任務的數量。"""
-        conn = self._get_conn()
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT COUNT(*) FROM {self._TABLE_NAME} WHERE status = 'pending'")
-        count = cursor.fetchone()[0]
-        return count
+    def task_done(self, task_id):
+        with self.lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE tasks SET is_done = 1 WHERE id = ?", (task_id,))
+                conn.commit()
 
-    def close(self):
-        """關閉當前執行緒的資料庫連線。"""
-        if hasattr(self.local, 'conn'):
-            self.local.conn.close()
-            del self.local.conn
+    def __len__(self):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM tasks WHERE is_done = 0")
+            count = cursor.fetchone()[0]
+            return count
+
+    def is_empty(self):
+        return len(self) == 0
+
+    def qsize(self):
+        return self.__len__()

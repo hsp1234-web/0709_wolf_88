@@ -10,10 +10,10 @@ from src.core.logger import LogManager
 from src.core.queue.base import BaseQueue
 
 class EvolutionChamber:
-    def __init__(self, queue: BaseQueue, log_manager: LogManager):
+    def __init__(self, queue: BaseQueue, log_manager: LogManager, db_connection: duckdb.DuckDBPyConnection):
         self.log = log_manager
         self.queue = queue
-        self.db_path = "prometheus_fire.duckdb"
+        self.db_conn = db_connection
         self.table_name = "backtest_results"
 
         # --- 基因與工具箱設定 (與之前相同，但移除 evaluate 註冊) ---
@@ -58,10 +58,6 @@ class EvolutionChamber:
         評估一個「子族群」的適應度，並將結果賦值回去。
         這是一個阻塞操作，會等待所有回測完成。
         """
-        # 確保資料庫檔案存在
-        conn = duckdb.connect(self.db_path)
-        conn.close()
-
         if not individuals_to_eval:
             return # 如果沒有需要評估的個體，直接返回
 
@@ -94,14 +90,13 @@ class EvolutionChamber:
         self.log.log("INFO", f"等待 {num_dispatched} 個回測結果...")
         start_time = time.time()
         while True:
-            conn = duckdb.connect(self.db_path, read_only=True)
-            try:
-                completed_count = conn.execute(
-                    f"SELECT COUNT(*) FROM {self.table_name} WHERE batch_id = ?", [batch_id]
-                ).fetchone()[0]
-            except duckdb.CatalogException:
-                completed_count = 0
-            conn.close()
+            with self.db_conn.cursor() as cursor:
+                try:
+                    completed_count = cursor.execute(
+                        f"SELECT COUNT(*) FROM {self.table_name} WHERE batch_id = ?", [batch_id]
+                    ).fetchone()[0]
+                except (duckdb.CatalogException, TypeError):
+                    completed_count = 0
 
             if completed_count >= num_dispatched:
                 self.log.log("SUCCESS", f"批次 {batch_id} 所有結果已收到。")
@@ -112,23 +107,22 @@ class EvolutionChamber:
                 break # 超時後繼續，未完成的個體將得到 0 分
 
         # 3. 分配適應度
-        conn = duckdb.connect(self.db_path, read_only=True)
-        try:
-            results_df = conn.execute(
-                f"SELECT params, crossover_points FROM {self.table_name} WHERE batch_id = ?", [batch_id]
-            ).fetchdf()
-            fitness_map = {row['params']: (row['crossover_points'],) for _, row in results_df.iterrows()}
-        except duckdb.CatalogException:
-            fitness_map = {}
-        conn.close()
+        with self.db_conn.cursor() as cursor:
+            try:
+                results_df = cursor.execute(
+                    f"SELECT params, crossover_points FROM {self.table_name} WHERE batch_id = ?", [batch_id]
+                ).fetchdf()
+                fitness_map = {row['params']: (row['crossover_points'],) for _, row in results_df.iterrows()}
+            except duckdb.CatalogException:
+                fitness_map = {}
 
         for ind in individuals_to_eval:
             if not ind.fitness.valid: # 只更新需要評估的個體
                 params_str = json.dumps({"fast": ind[0], "slow": ind[1]})
-                fitness = fitness_map.get(params_str, (0,))
+                fitness = fitness_map.get(params_str, (-1,)) # 超時或未找到結果的個體適應度為 -1
                 ind.fitness.values = fitness
 
-    def run_evolution_cycle(self, population_size=10, generations=3, cxpb=0.5, mutpb=0.2):
+    def run_evolution_cycle(self, population_size: int, generations: int, cxpb=0.5, mutpb=0.2):
         """
         執行一次完整的、手動控制的演化週期。
         """
