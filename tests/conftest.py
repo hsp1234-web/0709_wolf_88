@@ -1,36 +1,19 @@
 import pytest
-import os
-import sys
-from src.core.context import AppContext, QUEUE_DB_PATH
-from src.core.logger import LogManager
-
-# 將專案根目錄添加到 sys.path
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, PROJECT_ROOT)
-
-RESULTS_DB_PATH = "prometheus_fire.duckdb"
+import uuid
+from src.core.context import AppContext
 
 @pytest.fixture(scope="function")
 def app_context() -> AppContext:
-    """
-    「測試上下文工廠」 Fixture。
-    在每個測試函數執行前，此 Fixture 會：
-    1. 徹底清理舊的資料庫和任務佇列。
-    2. 建立一個全新的、隔離的 AppContext 實例。
-    3. 將此實例提供給測試函數使用。
-    """
-    # 1. 執行清理
-    if os.path.exists(QUEUE_DB_PATH):
-        os.remove(QUEUE_DB_PATH)
-    if os.path.exists(RESULTS_DB_PATH):
-        os.remove(RESULTS_DB_PATH)
+    """ 測試上下文工廠 v2.1 (統一關閉協議版) """
+    session_name = f"test_session_{uuid.uuid4().hex[:8]}"
+    context = AppContext(session_name=session_name, mode='test')
 
-    # 2. 建立新的、乾淨的上下文
-    test_log_manager = LogManager(session_name="test_session")
-    context = AppContext(log_manager=test_log_manager)
+    context.queue.clear()
+    context.results_saver.clear_results()
 
-    # 3. 將上下文交付給測試
-    yield context
-
-    # 4. 測試結束後，可以執行額外的清理 (可選)
-    test_log_manager.log("INFO", "測試會話結束。")
+    try:
+        yield context
+    finally:
+        # === 核心修正：確保 context.close() 被可靠地調用 ===
+        print(f"\n測試會話 {session_name} 正在清理...")
+        context.close()
