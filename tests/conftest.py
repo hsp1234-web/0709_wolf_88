@@ -1,31 +1,36 @@
+import pytest
 import os
 import sys
+from src.core.context import AppContext, QUEUE_DB_PATH
+from src.core.logger import LogManager
+from src.apps.tools.clear_results import clear_results
 
 # 將專案根目錄添加到 sys.path
-# __file__ 是 conftest.py 的路徑: /app/tests/conftest.py
-# os.path.dirname(__file__) 是 /app/tests
-# os.path.abspath(os.path.join(os.path.dirname(__file__), '..')) 是 /app (專案根目錄)
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
-print(f"DEBUG: [tests/conftest.py] Added {PROJECT_ROOT} to sys.path")
-print(f"DEBUG: [tests/conftest.py] Current sys.path: {sys.path}")
+@pytest.fixture(scope="function")
+def app_context() -> AppContext:
+    """
+    「測試上下文工廠」 Fixture。
+    在每個測試函數執行前，此 Fixture 會：
+    1. 徹底清理舊的資料庫和任務佇列。
+    2. 建立一個全新的、隔離的 AppContext 實例。
+    3. 將此實例提供給測試函數使用。
+    """
+    # 1. 執行清理
+    # 使用一個臨時的 LogManager 進行清理操作
+    cleanup_log_manager = LogManager(db_path="output/cleanup.log.db", archive_dir="output/log_archive")
+    clear_results(AppContext(log_manager=cleanup_log_manager))
+    if os.path.exists(QUEUE_DB_PATH):
+        os.remove(QUEUE_DB_PATH)
 
-# 如果需要，可以在這裡定義全局的 fixtures 等
-# 例如，如果 BaseAPIClient 需要 mock 的 session，可以在這裡統一定義
-# import pytest
-# from unittest.mock import MagicMock
+    # 2. 建立新的、乾淨的上下文
+    test_log_manager = LogManager(db_path="output/test.log.db", archive_dir="output/log_archive")
+    context = AppContext(log_manager=test_log_manager)
 
-# @pytest.fixture(scope="session", autouse=True) # autouse=True 會自動應用於所有測試
-# def mock_global_requests_session():
-#     """
-#     如果 BaseAPIClient 或其子類在初始化時就發起網路請求，
-#     或者為了避免任何真實網路調用，可以全局 mock requests.Session。
-#     但更常見的做法是針對性地 mock client 實例的 _session.get 或 _session.post。
-#     """
-#     # from requests import Session
-#     # original_session_get = Session.get
-#     # Session.get = MagicMock(return_value=MagicMock(status_code=503, text="Global mock: Service Unavailable"))
-#     # yield
-#     # Session.get = original_session_get # 還原
-#     pass
+    # 3. 將上下文交付給測試
+    yield context
+
+    # 4. 測試結束後，可以執行額外的清理 (可選)
+    test_log_manager.log("INFO", "測試會話結束。")

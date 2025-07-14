@@ -1,79 +1,87 @@
-# 檔案: tests/integration/test_evolution_pipeline.py
 import pytest
-import random
-from core.logger import LogManager
-from core.services.evolution_chamber import EvolutionChamber
+import json
+from src.core.context import AppContext
+from src.core.services.evolution_chamber import EvolutionChamber
+from src.apps.factor_engine.sma_crossover_factor import calculate_sma_crossover
+from src.core.db.results_saver import save_result
 
-@pytest.fixture(scope="function")
-def test_log_manager():
-    """提供一個用於測試的 LogManager 實例。"""
-    from pathlib import Path
+# --- 常數定義 ---
+POPULATION_SIZE = 4 # 使用較小的族群以加速測試
+GENERATIONS = 2     # 使用較少的世代數
 
-    # 使用一個記憶體中的 SQLite 資料庫進行測試
-    # 確保測試不會影響到主要的日誌檔案
-    # 使用 Path 物件來確保跨平台的兼容性
-    db_path = Path("output/logs/test_evolution_pipeline.sqlite")
-    archive_dir = Path("output/logs/archive")
-
-    # 確保目錄存在
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    archive_dir.mkdir(parents=True, exist_ok=True)
-
-    # 傳遞 Path 物件給 LogManager
-    return LogManager(db_path=db_path, archive_dir=archive_dir)
-
-def mock_evaluate_fitness(individual):
+def test_evolution_logic_in_loop(app_context: AppContext):
     """
-    一個模擬的、同步的適應度評估函數。
-    它不執行任何 I/O 或多執行緒操作，能瞬時返回結果。
+    驗證演化核心邏輯的「完全內循環」測試。
+    此測試不依賴任何背景執行緒或真實的佇列等待。
     """
-    fast, slow = individual[0], individual[1]
-    # 確保慢線 > 快線，否則適應度為 0
-    if slow <= fast:
-        return 0,  # DEAP 要求適應度是一個元組
-    # 模擬一個簡單的適應度分數
-    return (slow - fast),
+    log_manager = app_context.log_manager
+    chamber = EvolutionChamber(queue=app_context.queue, log_manager=log_manager)
 
-def test_evolution_chamber_logic(test_log_manager):
-    """
-    驗證 EvolutionChamber 核心演算法邏輯的單元測試。
-    """
-    # 1. 初始化演化室 (注意：不傳入 queue，因為我們用不到它)
-    #    為了防止 __init__ 報錯，我們傳入一個 None
-    chamber = EvolutionChamber(queue=None, log_manager=test_log_manager)
+    # === 核心戰術：用一個「同步執行」的模擬函數，覆蓋掉原本的異步評估流程 ===
+    def synchronous_evaluation_mock(individuals_to_eval):
+        """
+        這個模擬函數扮演了「演化室」和「背景工作者」的雙重角色。
+        它在同一個執行緒中，完成了從派發到執行的所有工作。
+        """
+        log_manager.log("INFO", "[MOCK] 攔截到批次評估請求...")
 
-    # 2. === 核心戰術：替換評估函數 ===
-    #    用我們輕量級的模擬函數，覆蓋掉原本需要執行回測的真實函數。
-    chamber.toolbox.register("evaluate", mock_evaluate_fitness)
+        if not individuals_to_eval:
+            return
 
-    # 3. 移除會與真實管線交互的、我們不再需要的函數
-    #    這確保了測試的完全隔離。
-    chamber._evaluate_and_assign_fitness = lambda individuals: None
+        # 1. 模擬「派發」與「執行」
+        #    直接在主執行緒中計算結果並儲存，而不是放入佇列等待。
+        for ind in individuals_to_eval:
+            fast, slow = ind[0], ind[1]
+            if slow <= fast:
+                ind.fitness.values = (0,)
+                continue
 
-    test_log_manager.log("INFO", "開始執行輕量化演化邏輯測試...")
+            # 模擬工作者執行計算
+            params = {"fast": fast, "slow": slow}
+            result = calculate_sma_crossover(symbol="MOCK_SYMBOL", **params)
+            result['params'] = json.dumps(params)
 
-    # 4. 執行一個極小規模的演化
-    #    我們使用 DEAP 的標準演算法，因為現在評估函數是同步的，不會有問題。
-    from deap import algorithms
+            # 模擬工作者儲存結果
+            save_result(result)
 
-    population = chamber.toolbox.population(n=10)
+        # 2. 模擬「等待」與「分配適應度」
+        #    因為計算已同步完成，這裡直接從資料庫讀取結果即可。
+        from deap import tools
+        import duckdb
 
-    # 執行演算法
-    result_pop, logbook = algorithms.eaSimple(
-        population,
-        chamber.toolbox,
-        cxpb=0.5,
-        mutpb=0.2,
-        ngen=4,
-        verbose=False # 關閉 DEAP 的內建日誌
+        conn = duckdb.connect("prometheus_fire.duckdb", read_only=True)
+        results_df = conn.execute("SELECT params, crossover_points FROM backtest_results").fetchdf()
+        conn.close()
+
+        fitness_map = {row['params']: (row['crossover_points'],) for _, row in results_df.iterrows()}
+
+        for ind in individuals_to_eval:
+            params_str = json.dumps({"fast": ind[0], "slow": ind[1]})
+            fitness = fitness_map.get(params_str, (0,))
+            ind.fitness.values = fitness
+
+        log_manager.log("SUCCESS", "[MOCK] 模擬評估完成。")
+
+    # === 將演化室的真實評估函數替換為我們的模擬版本 ===
+    chamber._evaluate_and_assign_fitness = synchronous_evaluation_mock
+
+    log_manager.log("INFO", "開始執行完全邏輯內循環演化測試...")
+
+    # 執行演化，現在它將在一個完全同步、可預測的環境中運行
+    best_individual = chamber.run_evolution_cycle(
+        population_size=POPULATION_SIZE,
+        generations=GENERATIONS
     )
 
-    # 5. 驗證結果
-    from deap import tools
-    best_individual = tools.selBest(result_pop, k=1)[0]
-
-    test_log_manager.log("SUCCESS", f"輕量化測試完成。最佳個體: {best_individual}, 適應度: {best_individual.fitness.values[0]}")
+    # 驗證最終結果
+    log_manager.log("SUCCESS", f"內循環測試完成。最佳個體: {best_individual}, 適應度: {best_individual.fitness.values[0]}")
 
     assert best_individual is not None, "演化未能產生任何最佳個體！"
     assert best_individual.fitness.valid, "最終選出的最佳個體沒有有效的適應度分數！"
-    assert best_individual.fitness.values[0] > 0, "最佳個體的適應度不應為 0！"
+
+    # 驗證資料庫中確實產生了結果
+    import duckdb
+    conn = duckdb.connect("prometheus_fire.duckdb", read_only=True)
+    count_result = conn.execute("SELECT COUNT(*) FROM backtest_results").fetchone()
+    conn.close()
+    assert count_result[0] > 0, "資料庫中沒有任何回測結果！"

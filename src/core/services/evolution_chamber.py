@@ -6,8 +6,8 @@ import json
 import duckdb
 from deap import base, creator, tools
 # 移除 algorithms 的導入，我們將不再使用它
-from core.logger import LogManager
-from core.queue.base import BaseQueue
+from src.core.logger import LogManager
+from src.core.queue.base import BaseQueue
 
 class EvolutionChamber:
     def __init__(self, queue: BaseQueue, log_manager: LogManager):
@@ -30,6 +30,28 @@ class EvolutionChamber:
         self.toolbox.register("mutate", tools.mutUniformInt, low=1, up=50, indpb=0.2)
         self.toolbox.register("select", tools.selTournament, tournsize=3)
         # 不再向 toolbox 註冊 evaluate，我們將手動調用它
+
+    def _get_initial_population(self, population_size):
+        return self.toolbox.population(n=population_size)
+
+    def _select_survivors(self, population, k):
+        return self.toolbox.select(population, k)
+
+    def _crossover_and_mutate(self, offspring, cxpb, mutpb):
+        # 交叉 (交配)
+        for child1, child2 in zip(offspring[::2], offspring[1::2]):
+            if random.random() < cxpb:
+                self.toolbox.mate(child1, child2)
+                del child1.fitness.values
+                del child2.fitness.values
+
+        # 突變
+        for mutant in offspring:
+            if random.random() < mutpb:
+                self.toolbox.mutate(mutant)
+                del mutant.fitness.values
+
+        return offspring
 
     def _evaluate_and_assign_fitness(self, individuals_to_eval):
         """
@@ -111,7 +133,7 @@ class EvolutionChamber:
         執行一次完整的、手動控制的演化週期。
         """
         self.log.log("INFO", "演化室啟動：正在初始化族群...")
-        population = self.toolbox.population(n=population_size)
+        population = self._get_initial_population(population_size)
 
         # 初始評估整個族群
         self.log.log("INFO", "--- 第 0 代：初始評估 ---")
@@ -121,21 +143,11 @@ class EvolutionChamber:
             self.log.log("INFO", f"--- 第 {g} 代：開始演化 ---")
 
             # 1. 選擇
-            offspring = self.toolbox.select(population, len(population))
+            offspring = self._select_survivors(population, len(population))
             offspring = list(map(self.toolbox.clone, offspring))
 
-            # 2. 交叉 (交配)
-            for child1, child2 in zip(offspring[::2], offspring[1::2]):
-                if random.random() < cxpb:
-                    self.toolbox.mate(child1, child2)
-                    del child1.fitness.values
-                    del child2.fitness.values
-
-            # 3. 突變
-            for mutant in offspring:
-                if random.random() < mutpb:
-                    self.toolbox.mutate(mutant)
-                    del mutant.fitness.values
+            # 2. 交叉 (交配) and 3. 突變
+            offspring = self._crossover_and_mutate(offspring, cxpb, mutpb)
 
             # 4. 評估所有適應度無效的新生代
             invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
@@ -146,9 +158,15 @@ class EvolutionChamber:
 
             # 打印當代最佳
             best_ind = tools.selBest(population, 1)[0]
-            self.log.log("DATA", f"第 {g} 代最佳個體: {best_ind}, 適應度: {best_ind.fitness.values[0]:.2f}")
+            if best_ind.fitness.valid:
+                self.log.log("DATA", f"第 {g} 代最佳個體: {best_ind}, 適應度: {best_ind.fitness.values[0]:.2f}")
+            else:
+                self.log.log("DATA", f"第 {g} 代最佳個體: {best_ind}, 適應度: N/A")
 
         best_individual = tools.selBest(population, k=1)[0]
         self.log.log("SUCCESS", f"演化完成！找到的最佳策略參數為: {best_individual}")
-        self.log.log("DATA", f"  - 最終最佳適應度分數: {best_individual.fitness.values[0]:.2f}")
+        if best_individual.fitness.valid:
+            self.log.log("DATA", f"  - 最終最佳適應度分數: {best_individual.fitness.values[0]:.2f}")
+        else:
+            self.log.log("DATA", "  - 最終最佳適應度分數: N/A")
         return best_individual
