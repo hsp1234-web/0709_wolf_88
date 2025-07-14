@@ -47,31 +47,58 @@
 PROJECT_FILES_GLOSSARY.md
 README.md
 TEST_REPORT.md
-_test_run.py
-apps
-archive_test.py
-check_qsize.py
+archive
 config.yml
-core
-file_structure.txt
-latest_structure.txt
 mypy.ini
 output
 pipeline_test_loader.duckdb
 pipelines
 poetry.lock
 prometheus_fire.duckdb
+prometheus_fire.duckdb.wal
 pyproject.toml
 pytest.ini
-read_logs.py
 run.py
-run_pipeline.sh
-run_show_results.py
-run_tests.py
+src
 tests
 
+./archive:
 
-./apps:
+./output:
+cleanup.log.db
+log_archive
+task_queue.db
+test.log.db
+test.log.db-shm
+test.log.db-wal
+
+./output/log_archive:
+
+./pipelines:
+__init__.py
+p0_downloader
+p1_explorer
+p2_elt_pipeline
+p3_backfill_hourly_data
+
+./pipelines/p0_downloader:
+run.py
+
+./pipelines/p1_explorer:
+__init__.py
+run.py
+
+./pipelines/p2_elt_pipeline:
+run_elt.py
+
+./pipelines/p3_backfill_hourly_data:
+run.py
+
+./src:
+apps
+core
+
+./src/apps:
 __init__.py
 analysis_pipeline
 backtest_worker_app.py
@@ -86,72 +113,58 @@ portfolio_optimizer
 py.typed
 query_gateway.py
 report_generator
-run_finmind_test.py
-run_fmp_test.py
-run_gold_layer.py
-run_stress_index.py
-run_taifex_prototype_test.py
 tools
 visualization
 
-
-./apps/analysis_pipeline:
+./src/apps/analysis_pipeline:
 run.py
 
-
-./apps/backtesting_engine:
+./src/apps/backtesting_engine:
 __init__.py
 engine.py
 run.py
 
-
-./apps/dashboard:
+./src/apps/dashboard:
 dashboard.html
 
-./apps/db_manager:
+./src/apps/db_manager:
 setup_database.py
 
-
-./apps/factor_engine:
+./src/apps/factor_engine:
 engine.py
 run_factor_etl.py
 sma_crossover_factor.py
 
-
-./apps/pipeline_metadata_manager:
+./src/apps/pipeline_metadata_manager:
 __init__.py
 manager.py
 
-
-./apps/portfolio_optimizer:
+./src/apps/portfolio_optimizer:
 __init__.py
 main.py
 
-
-./apps/report_generator:
+./src/apps/report_generator:
 __init__.py
 generator.py
 run.py
 
-
-./apps/tools:
+./src/apps/tools:
 clear_results.py
 report_generator_app.py
 show_results.py
 task_adder_app.py
 
-
-./apps/visualization:
+./src/apps/visualization:
 plot_sma_crossover.py
 
-
-./core:
+./src/core:
 __init__.py
 analysis
 analyzers
 clients
 config.py
 constants.py
+context.py
 db
 engines
 logger.py
@@ -161,18 +174,15 @@ queue
 services
 utils
 
-
-./core/analysis:
+./src/core/analysis:
 data_engine.py
 stress_index.py
 
-
-./core/analyzers:
+./src/core/analyzers:
 __init__.py
 base_analyzer.py
 
-
-./core/clients:
+./src/core/clients:
 __init__.py
 base.py
 finmind.py
@@ -182,113 +192,42 @@ nyfed.py
 taifex_db.py
 yfinance.py
 
-
-./core/db:
+./src/core/db:
 __init__.py
 db_manager.py
 results_saver.py
 
-
-./core/engines:
+./src/core/engines:
 __init__.py
 robust_acquisition_engine.py
 
-
-./core/pipelines:
+./src/core/pipelines:
 __init__.py
 base_step.py
 pipeline.py
 steps
 
-
-./core/pipelines/steps:
+./src/core/pipelines/steps:
 __init__.py
 aggregators.py
 financial_steps.py
 loaders.py
 
-
-./core/queue:
+./src/core/queue:
 __init__.py
 base.py
 sqlite_queue.py
 
-
-./core/services:
+./src/core/services:
 __init__.py
 backtesting_service.py
 evolution_chamber.py
 optimizer_service.py
 
-
-./core/utils:
+./src/core/utils:
 __init__.py
 caching.py
 path_utils.py
-
-
-./output:
-logs
-reports
-test_integration_log.db
-test_log_archive
-
-./output/logs:
-archive
-session.sqlite
-standalone_test.sqlite
-test_evolution_pipeline.sqlite
-
-./output/logs/archive:
-battle_report_20250714_082411.txt
-battle_report_20250714_082414.txt
-battle_report_20250714_082423.txt
-battle_report_20250714_082445.txt
-battle_report_20250714_082513.txt
-battle_report_20250714_082515.txt
-battle_report_20250714_082521.txt
-battle_report_20250714_082542.txt
-battle_report_20250714_082558.txt
-battle_report_20250714_082559.txt
-battle_report_20250714_082605.txt
-battle_report_20250714_082627.txt
-battle_report_20250714_082653.txt
-battle_report_20250714_082655.txt
-battle_report_20250714_082701.txt
-battle_report_20250714_082723.txt
-battle_report_20250714_082805.txt
-battle_report_20250714_082806.txt
-battle_report_20250714_082813.txt
-battle_report_20250714_082834.txt
-
-./output/reports:
-report.xml
-
-./output/test_log_archive:
-
-./pipelines:
-__init__.py
-p0_downloader
-p1_explorer
-p2_elt_pipeline
-p3_backfill_hourly_data
-
-
-./pipelines/p0_downloader:
-run.py
-
-
-./pipelines/p1_explorer:
-__init__.py
-run.py
-
-
-./pipelines/p2_elt_pipeline:
-run_elt.py
-
-
-./pipelines/p3_backfill_hourly_data:
-run.py
 
 ./tests:
 conftest.py
@@ -300,7 +239,6 @@ test_p1_explorer.py
 test_p2_elt_pipeline.py
 unit
 
-
 ./tests/fixtures:
 corrupted.zip
 no_data_response.html
@@ -311,42 +249,34 @@ analysis
 apps
 pipelines
 test_evolution_pipeline.py
+test_final_acceptance.py
 test_full_pipeline.py
-
 
 ./tests/integration/analysis:
 test_data_engine_cache.py
 
-
 ./tests/integration/apps:
 test_analysis_pipeline.py
-test_refactored_apps.py
-
 
 ./tests/integration/pipelines:
 test_data_pipeline.py
 test_example_flow.py
-
 
 ./tests/unit:
 analysis
 core
 test_feature_analyzer.py
 
-
 ./tests/unit/analysis:
 test_data_engine.py
-
 
 ./tests/unit/core:
 analyzers
 clients
 test_queue.py
 
-
 ./tests/unit/core/analyzers:
 test_base_analyzer.py
-
 
 ./tests/unit/core/clients:
 test_finmind.py
