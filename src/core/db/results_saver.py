@@ -1,33 +1,57 @@
 import duckdb
 import json
+from src.core.logger import LogManager
 
-DB_PATH = "prometheus_fire.duckdb"
-TABLE_NAME = "backtest_results"
+class ResultsSaver:
+    """
+    結果儲存器 v2.0
+    負責將回測結果寫入 DuckDB 資料庫。
+    """
+    def __init__(self, db_path: str = "prometheus_fire.duckdb", log_manager: LogManager = None):
+        self.db_path = db_path
+        self.table_name = "backtest_results"
+        self.log_manager = log_manager if log_manager else LogManager()
+        self._initialize_db()
 
-def save_result(result_data: dict):
-    """將單筆計算結果儲存至 DuckDB。"""
-    conn = duckdb.connect(DB_PATH)
-    # 確保資料表存在
-    conn.execute(f"""
-        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-            symbol VARCHAR,
-            params VARCHAR,
-            crossover_points INTEGER,
-            last_price DOUBLE,
-            batch_id VARCHAR,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    def _initialize_db(self):
+        """確保資料庫和資料表存在。"""
+        try:
+            with duckdb.connect(self.db_path) as conn:
+                conn.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {self.table_name} (
+                        backtest_id VARCHAR,
+                        strategy_name VARCHAR,
+                        parameters VARCHAR,
+                        metrics VARCHAR,
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+            self.log_manager.log("INFO", f"資料庫 '{self.db_path}' 及資料表 '{self.table_name}' 初始化成功。")
+        except Exception as e:
+            self.log_manager.log("CRITICAL", f"資料庫初始化失敗: {e}")
+            raise
 
-    # 插入數據
-    conn.execute(
-        f"INSERT INTO {TABLE_NAME} (symbol, params, crossover_points, last_price, batch_id) VALUES (?, ?, ?, ?, ?)",
-        [
-            result_data.get("symbol"),
-            json.dumps(result_data.get("params", {})), # 將參數字典轉為 JSON 字串
-            result_data.get("crossover_points"),
-            result_data.get("last_price"),
-            result_data.get("batch_id")
-        ]
-    )
-    conn.close()
+    def save_result(self, backtest_id: str, strategy_name: str, parameters: dict, metrics: dict):
+        """
+        將單筆回測結果儲存至 DuckDB。
+
+        Args:
+            backtest_id: 回測的唯一識別碼。
+            strategy_name: 策略名稱。
+            parameters: 策略使用的參數 (字典)。
+            metrics: 回測產生的績效指標 (字典)。
+        """
+        try:
+            with duckdb.connect(self.db_path) as conn:
+                conn.execute(
+                    f"INSERT INTO {self.table_name} (backtest_id, strategy_name, parameters, metrics) VALUES (?, ?, ?, ?)",
+                    [
+                        backtest_id,
+                        strategy_name,
+                        json.dumps(parameters),
+                        json.dumps(metrics)
+                    ]
+                )
+            self.log_manager.log("INFO", f"成功儲存回測結果至資料庫: ID {backtest_id}")
+        except Exception as e:
+            self.log_manager.log("ERROR", f"儲存回測結果 (ID: {backtest_id}) 時發生錯誤: {e}")
