@@ -1,10 +1,218 @@
-# 專案檔案詞彙表 (v0.8.0)
+# 專案檔案詞彙表 (v1.0)
 
 本文件旨在提供一個完整、詳細的專案檔案地圖，說明每一個檔案與目錄在【普羅米修斯之火】框架中的功能與核心職責。
 
 ---
+## **一、 檔案目錄結構 (v1.0)**
+.
+├── PROJECT_FILES_GLOSSARY.md
+├── README.md
+├── TEST_REPORT.md
+├── config.yml
+├── latest_structure.txt
+├── mypy.ini
+├── output
+│   ├── logs
+│   │   ├── session_clear_results_3680.sqlite
+│   │   ├── session_evolve_3985.sqlite
+│   │   ├── session_evolve_4619.sqlite
+│   │   ├── session_evolve_5215.sqlite
+│   │   ├── session_evolve_5811.sqlite
+│   │   ├── session_evolve_6458.sqlite
+│   │   ├── session_evolve_7064.sqlite
+│   │   ├── session_test_session_10138.sqlite
+│   │   ├── session_test_session_10138.sqlite-shm
+│   │   ├── session_test_session_10138.sqlite-wal
+│   │   ├── session_test_session_10537.sqlite
+│   │   ├── session_test_session_10537.sqlite-shm
+│   │   ├── session_test_session_10537.sqlite-wal
+│   │   ├── session_test_session_11058.sqlite
+│   │   ├── session_test_session_11058.sqlite-shm
+│   │   ├── session_test_session_11058.sqlite-wal
+│   │   ├── session_test_session_11862.sqlite
+│   │   ├── session_test_session_11862.sqlite-shm
+│   │   ├── session_test_session_11862.sqlite-wal
+│   │   ├── session_test_session_12187.sqlite
+│   │   ├── session_test_session_12187.sqlite-shm
+│   │   ├── session_test_session_12187.sqlite-wal
+│   │   ├── session_test_session_12515.sqlite
+│   │   ├── session_test_session_12515.sqlite-shm
+│   │   ├── session_test_session_12515.sqlite-wal
+│   │   ├── session_test_session_13053.sqlite
+│   │   ├── session_test_session_13053.sqlite-shm
+│   │   ├── session_test_session_13053.sqlite-wal
+│   │   ├── session_test_session_13378.sqlite
+│   │   ├── session_test_session_13378.sqlite-shm
+│   │   ├── session_test_session_13378.sqlite-wal
+│   │   ├── session_test_session_13707.sqlite
+│   │   ├── session_test_session_13707.sqlite-shm
+│   │   ├── session_test_session_13707.sqlite-wal
+│   │   ├── session_test_session_14306.sqlite
+│   │   ├── session_test_session_14306.sqlite-shm
+│   │   ├── session_test_session_14306.sqlite-wal
+│   │   ├── session_test_session_8983.sqlite
+│   │   ├── session_test_session_9424.sqlite
+│   │   ├── session_test_session_9424.sqlite-shm
+│   │   ├── session_test_session_9424.sqlite-wal
+│   │   ├── session_test_session_9781.sqlite
+│   │   ├── session_test_session_9781.sqlite-shm
+│   │   ├── session_test_session_9781.sqlite-wal
+│   │   ├── session_worker_3984.sqlite
+│   │   ├── session_worker_4618.sqlite
+│   │   ├── session_worker_5214.sqlite
+│   │   ├── session_worker_5810.sqlite
+│   │   ├── session_worker_6457.sqlite
+│   │   └── session_worker_7063.sqlite
+│   ├── results.sqlite
+│   └── task_queue.db
+├── pipelines
+│   ├── __init__.py
+│   ├── p0_downloader
+│   │   └── run.py
+│   ├── p1_explorer
+│   │   ├── __init__.py
+│   │   └── run.py
+│   ├── p2_elt_pipeline
+│   │   └── run_elt.py
+│   └── p3_backfill_hourly_data
+│       └── run.py
+├── poetry.lock
+├── pyproject.toml
+├── pytest.ini
+├── run.py
+├── src
+│   ├── apps
+│   │   ├── __init__.py
+│   │   ├── analysis_pipeline
+│   │   │   └── run.py
+│   │   ├── backtest_worker_app.py
+│   │   ├── backtesting_engine
+│   │   │   ├── __init__.py
+│   │   │   ├── engine.py
+│   │   │   └── run.py
+│   │   ├── dashboard
+│   │   │   └── dashboard.html
+│   │   ├── db_manager
+│   │   │   └── setup_database.py
+│   │   ├── evolution_app.py
+│   │   ├── factor_engine
+│   │   │   ├── engine.py
+│   │   │   ├── run_factor_etl.py
+│   │   │   └── sma_crossover_factor.py
+│   │   ├── optimizer_app.py
+│   │   ├── pipeline_metadata_manager
+│   │   │   ├── __init__.py
+│   │   │   └── manager.py
+│   │   ├── portfolio_optimizer
+│   │   │   ├── __init__.py
+│   │   │   └── main.py
+│   │   ├── py.typed
+│   │   ├── query_gateway.py
+│   │   ├── report_generator
+│   │   │   ├── __init__.py
+│   │   │   ├── generator.py
+│   │   │   └── run.py
+│   │   ├── tools
+│   │   │   ├── clear_results.py
+│   │   │   ├── report_generator_app.py
+│   │   │   ├── show_results.py
+│   │   │   └── task_adder_app.py
+│   │   └── visualization
+│   │       └── plot_sma_crossover.py
+│   └── core
+│       ├── __init__.py
+│       ├── analysis
+│       │   ├── data_engine.py
+│       │   └── stress_index.py
+│       ├── analyzers
+│       │   ├── __init__.py
+│       │   └── base_analyzer.py
+│       ├── clients
+│       │   ├── __init__.py
+│       │   ├── base.py
+│       │   ├── finmind.py
+│       │   ├── fmp.py
+│       │   ├── fred.py
+│       │   ├── nyfed.py
+│       │   ├── taifex_db.py
+│       │   └── yfinance.py
+│       ├── config.py
+│       ├── constants.py
+│       ├── context.py
+│       ├── db
+│       │   ├── __init__.py
+│       │   ├── db_manager.py
+│       │   ├── evolution_logger.py
+│       │   ├── results_saver.py
+│       │   └── transactional_writer.py
+│       ├── engines
+│       │   ├── __init__.py
+│       │   └── robust_acquisition_engine.py
+│       ├── logger.py
+│       ├── pipelines
+│       │   ├── __init__.py
+│       │   ├── base_step.py
+│       │   ├── pipeline.py
+│       │   └── steps
+│       │       ├── __init__.py
+│       │       ├── aggregators.py
+│       │       ├── financial_steps.py
+│       │       └── loaders.py
+│       ├── py.typed
+│       ├── queue
+│       │   ├── __init__.py
+│       │   ├── base.py
+│       │   └── sqlite_queue.py
+│       ├── services
+│       │   ├── __init__.py
+│       │   ├── backtesting_service.py
+│       │   ├── evolution_chamber.py
+│       │   └── optimizer_service.py
+│       └── utils
+│           ├── __init__.py
+│           ├── caching.py
+│           └── path_utils.py
+└── tests
+    ├── conftest.py
+    ├── fixtures
+    │   ├── corrupted.zip
+    │   ├── no_data_response.html
+    │   └── sample_daily_ohlc_20250711.zip
+    ├── ignition_test.py
+    ├── integration
+    │   ├── analysis
+    │   │   └── test_data_engine_cache.py
+    │   ├── apps
+    │   │   └── test_analysis_pipeline.py
+    │   ├── pipelines
+    │   │   ├── test_data_pipeline.py
+    │   │   └── test_example_flow.py
+    │   ├── test_evolution_pipeline.py
+    │   ├── test_final_acceptance.py
+    │   └── test_full_pipeline.py
+    ├── test_p0_downloader.py
+    ├── test_p1_explorer.py
+    ├── test_p2_elt_pipeline.py
+    └── unit
+        ├── analysis
+        │   └── test_data_engine.py
+        ├── core
+        │   ├── analyzers
+        │   │   └── test_base_analyzer.py
+        │   ├── clients
+        │   │   ├── test_finmind.py
+        │   │   ├── test_fmp.py
+        │   │   ├── test_fred.py
+        │   │   ├── test_nyfed.py
+        │   │   └── test_yfinance.py
+        │   └── test_queue.py
+        └── test_feature_analyzer.py
 
-## **一、 根目錄 (Root Directory)**
+42 directories, 161 files
+
+---
+
+## **二、 根目錄 (Root Directory)**
 
 專案的起始點，包含核心設定檔、主要執行入口與文檔。
 
@@ -22,7 +230,7 @@
 
 ---
 
-## **二、 `apps/` - 應用程式層**
+## **三、 `apps/` - 應用程式層**
 
 此目錄包含所有使用者可直接透過 `run.py` 執行的具體應用。每個模組都代表一個獨立的功能單元。
 
@@ -42,7 +250,7 @@
 
 ---
 
-## **三、 `core/` - 核心服務與商業邏輯層**
+## **四、 `core/` - 核心服務與商業邏輯層**
 
 此目錄是專案的心臟，包含了所有共享的核心商業邏輯、服務、客戶端與工具。
 
@@ -71,7 +279,7 @@
 
 ---
 
-## **四、 `tests/` - 自動化測試**
+## **五、 `tests/` - 自動化測試**
 
 此目錄包含所有自動化測試，以確保程式碼的品質與穩定性。
 
@@ -85,7 +293,7 @@
 
 ---
 
-## **五、 `output/` - 執行輸出**
+## **六、 `output/` - 執行輸出**
 
 此目錄用於存放所有由程式執行產生的檔案，已被加入 `.gitignore`。
 
@@ -99,7 +307,7 @@
 
 ---
 
-## **六、 `pipelines/` - 歷史數據管線**
+## **七、 `pipelines/` - 歷史數據管線**
 
 此目錄包含專案早期的數據處理管線，部分可能已被新架構取代。
 
@@ -118,3 +326,24 @@
 ### 根目錄 (Root Directory)
 
 -   `TEST_REPORT.md`: **[自動生成報告]** 由 `run.py run-tests` 命令自動產生的、人類可讀的 Markdown 格式測試報告。它總結了所有自動化測試的執行結果。
+
+---
+## **v1.0 新增/修改檔案 (結構性重構與最終穩定)**
+
+本章節記錄了專案為達成 v1.0 穩定版而進行的一系列核心重構。
+
+### **`src/` - 核心原始碼目錄**
+-   **`src/`**: **[結構性變更]** 所有核心原始碼 (`apps`, `core`) 現已全部遷移至此目錄下，以遵循現代 Python 專案的標準佈局。
+
+### **`src/core/` - 核心服務層**
+-   `context.py`: **[新增]** 作戰上下文。一個集中容器，負責統一初始化並提供所有共享服務（如 `LogManager`, `SQLiteQueue`），徹底消除了應用層的重複程式碼。
+-   `queue/sqlite_queue.py`: **[重大升級]** 基於 SQLite 事務與明確狀態欄位 (`pending`, `running`, `completed`) 的企業級佇列。它取代了舊的、不穩健的實現，從根本上解決了任務安全與多進程衝突問題。
+-   `db/transactional_writer.py`: **[新增]** 交易型寫入器。專門負責將回測結果安全地寫入 `results.sqlite`，是系統中唯一的寫入服務。
+-   `db/data_synchronizer.py`: **[已廢棄]** 數據同步器。在「統一儲存協議」中，此檔案已被徹底移除，以簡化架構。
+
+### **`tests/` - 自動化測試**
+-   `conftest.py`: **[新增]** Pytest 的中央設定檔。其核心是 `app_context` Fixture，作為「測試上下文工廠」，為每一個測試案例自動提供一個全新的、乾淨的、隔離的執行環境。
+-   `integration/test_final_acceptance.py`: **[新增]** 最終驗收測試。驗證從 `evolve` 命令到背景工作者完成計算的完整流程，是系統穩定性的最終品質閘門。
+
+### **`archive/` - 歷史檔案歸檔**
+-   **`archive/`**: **[新增]** 一個全新的目錄，用於存放所有在重構過程中被廢棄的、但具有歷史參考價值的舊腳本。

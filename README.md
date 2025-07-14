@@ -412,6 +412,41 @@ test_yfinance.py
 歡迎開發者們一同參與【普羅米修斯之火】的建設！
 
 ---
+## 核心功能 (v1.0 穩定版)
+本專案的核心是一個經過完整測試、絕對穩健的「全自動策略演化引擎」。它整合了異步任務佇列、多進程安全日誌、以及基於 DEAP 的遺傳演算法，實現了從策略探索、回測、到結果分析的端到端自動化。
+
+### 主要工作流程:
+1.  **(可選) 清理環境:**
+    ```bash
+    # 徹底清除所有先前的回測結果，確保演化從一張白紙開始
+    poetry run python run.py clear-results --force
+    ```
+
+2.  **啟動運算工作者 (Worker):**
+    * 在一個終端機中，啟動此常駐服務。它將作為演化所需的回測算力。
+    ```bash
+    # 工作者將持續運行，監聽並執行由演化室派發的計算任務
+    poetry run python run.py backtest-worker
+    ```
+
+3.  **啟動策略演化:**
+    * 在另一個終端機中，啟動演化流程。
+    ```bash
+    # 演化室將自動產生、評估、並迭代策略族群
+    poetry run python run.py evolve
+    ```
+
+4.  **可視化與分析:**
+    * 演化完成後，您可以透過儀表板或 AI 審判官來洞察結果。
+    ```bash
+    # 啟動網頁儀表板，查看演化曲線與所有策略的表現分佈
+    poetry run python run.py dashboard
+
+    # [v1.1 預覽] 啟動 AI 審判官，生成包含洞察的戰略報告
+    poetry run python run.py adjudicate
+    ```
+
+---
 ## 核心功能：策略演化 (v0.8.0 新增)
 
 本專案的核心現已升級為一個具備自我進化能力的策略探索引擎。您可以透過 `evolve` 命令，驅動系統自動探索並優化策略參數。
@@ -454,22 +489,6 @@ test_yfinance.py
 * **單次優化 (`optimize`)**: 此命令是演化室的前身，用於概念驗證，現已被功能更強大的 `evolve` 命令所取代。
 
 ---
-## **測試與品質保證 (v0.9.0 新增)**
-
+## **測試與品質保證 (v1.0)**
 本專案採用一個多層次的自動化測試與品質保證體系，以確保框架的絕對穩定。
-
-### **1. 靜態防線**
--   **`Ruff` (靜態掃描器)**：第一道防線，捕獲語法錯誤與風格問題。
--   **`deptry` (依賴檢查器)**：第二道防線，確保 `pyproject.toml` 的依賴聲明完整且無冗餘。
-
-### **2. 動態防線**
--   **`ignition_test.py` (導入測試器)**：第三道防線，確保專案所有模組均可被成功導入，不存在循環依賴。
--   **單元測試 (`tests/unit`)**: 針對核心組件（如 `SQLiteQueue`）的精細測試。
--   **整合測試 (`tests/integration`)**:
-    -   `test_evolution_pipeline.py`: **輕量化邏輯驗證**。透過模擬(Mocking)回測，專門、快速地驗證演化室的核心演算法。
-    -   `test_final_acceptance.py`: **全系統整合驗證**。在隔離環境中，自動化執行從 `evolve` 命令到背景工作者完成計算的完整流程。
-
-### **3. 自動化戰報系統**
-透過以下命令，可一鍵執行所有測試，並自動產生一份詳細的 Markdown 格式作戰報告 (`TEST_REPORT.md`)。
-```bash
-poetry run python run.py run-tests
+1. 靜態防線Ruff (靜態掃描器)：第一道防線，捕獲語法錯誤與風格問題。deptry (依賴檢查器)：第二道防線，確保 pyproject.toml 的依賴聲明完整且無冗餘。2. 動態防線ignition_test.py (導入測試器)：第三道防線，確保專案所有模組均可被成功導入，不存在循環依賴。單元測試 (tests/unit): 針對核心組件（如 SQLiteQueue）的精細測試。整合測試 (tests/integration):test_evolution_pipeline.py: 輕量化邏輯驗證。透過模擬(Mocking)回測，專門、快速地驗證演化室的核心演算法。test_final_acceptance.py: 全系統整合驗證。在隔離環境中，自動化執行從 evolve 命令到背景工作者完成計算的完整流程。3. 自動化戰報系統透過以下命令，可一鍵執行所有測試，並自動產生一份詳細的 Markdown 格式作戰報告 (TEST_REPORT.md)。poetry run python run.py run-tests
