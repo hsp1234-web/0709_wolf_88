@@ -1,142 +1,99 @@
 # 檔案: src/core/services/evolution_chamber.py
 import random
-from deap import base, creator, tools, algorithms
-from typing import Dict, Any, List, Tuple
+import copy
+import asyncio
+from deap import base, creator, tools
+from typing import Dict, Any, List
+from src.core.queue.async_event_bus import AsyncEventBus
 
-from src.core.queue.base import BaseQueue
-from src.core.logger import LogManager
+# --- DEAP Global Setup ---
+creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+creator.create("Individual", dict, fitness=creator.FitnessMax)
 
-# --- 自定義基因操作函數 ---
-
-def create_rsi_genome() -> Dict[str, Any]:
-    """生成一個隨機參數的 RSI 策略基因體。"""
-    return {
-        "strategy_name": "RSI_MeanReversion",
-        "indicators": [{
-            "name": "RSI",
-            "params": {"window": random.randint(7, 21)}
-        }],
-        "entry_rules": [{
-            "indicator": "RSI",
-            "operator": "<",
-            "value": random.randint(20, 40)
-        }],
-        "exit_rules": [{
-            "indicator": "RSI",
-            "operator": ">",
-            "value": random.randint(60, 80)
-        }]
+def create_rsi_genome(strategy_name: str = "RSI Crossover") -> creator.Individual:
+    genome_dict = {
+        "strategy_name": strategy_name,
+        "indicators": [{"name": "RSI", "params": {"window": random.randint(5, 20)}}],
+        "entry_rules": [{"indicator": "RSI", "operator": "less_than", "value": random.randint(20, 40)}],
+        "exit_rules": [{"indicator": "RSI", "operator": "greater_than", "value": random.randint(60, 80)}],
     }
+    return creator.Individual(genome_dict)
 
-def mutate_genome(individual: Dict[str, Any]) -> Tuple[Dict[str, Any]]:
-    """
-    針對策略基因體字典的自定義突變函數。
-    隨機選擇基因體中的一個數值進行變異。
-    """
-    # DEAP 要求突變函數返回一個元組
-    mutation_type = random.choice(["rsi_window", "entry_value", "exit_value"])
-
-    if mutation_type == "rsi_window":
-        individual["indicators"][0]["params"]["window"] += random.randint(-3, 3)
-        # 確保參數在合理範圍內
-        individual["indicators"][0]["params"]["window"] = max(5, min(30, individual["indicators"][0]["params"]["window"]))
-
-    elif mutation_type == "entry_value":
-        individual["entry_rules"][0]["value"] += random.randint(-5, 5)
-        individual["entry_rules"][0]["value"] = max(15, min(45, individual["entry_rules"][0]["value"]))
-
-    elif mutation_type == "exit_value":
-        individual["exit_rules"][0]["value"] += random.randint(-5, 5)
-        individual["exit_rules"][0]["value"] = max(55, min(85, individual["exit_rules"][0]["value"]))
-
+def mutate_genome(individual: creator.Individual) -> tuple:
+    # 使用 DEAP 內建的工具進行更穩健的變異
+    params = individual["indicators"][0]["params"]
+    # Create a list for mutation
+    window = [params["window"]]
+    tools.mutGaussian(window, mu=14, sigma=5, indpb=1.0)
+    params["window"] = max(2, int(window[0])) # 確保窗口為正整數
     return individual,
 
+def mate_genomes(ind1: creator.Individual, ind2: creator.Individual) -> tuple:
+    """交叉兩個基因組的參數"""
+    # 交換整個參數字典，因為 cxTwoPoint 需要至少兩個元素
+    ind1["indicators"][0]["params"], ind2["indicators"][0]["params"] = \
+        ind2["indicators"][0]["params"], ind1["indicators"][0]["params"]
+    return ind1, ind2
 
 class EvolutionChamber:
-    """
-    策略演化室 v2.0 (基因體感知版)
-    """
-    def __init__(self, queue: BaseQueue, log_manager: LogManager):
+    def __init__(self, queue: AsyncEventBus):
         self.queue = queue
-        self.log_manager = log_manager
-        self.stats = self._setup_stats()
-
-        # === 核心升級：確保 DEAP 類型只被創建一次 ===
-        if not hasattr(creator, "FitnessMax"):
-            creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-        # 將 Individual 的基礎類型從 list 改為 dict
-        if not hasattr(creator, "Individual"):
-            creator.create("Individual", dict, fitness=creator.FitnessMax)
-
         self.toolbox = base.Toolbox()
-
-        # === 核心升級：註冊基因體生成與操作工具 ===
-        self.toolbox.register("individual", tools.initIterate, creator.Individual, create_rsi_genome)
+        self.toolbox.register("individual", create_rsi_genome)
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
-
-        # 註冊自定義的突變函數
+        self.toolbox.register("mate", mate_genomes)
         self.toolbox.register("mutate", mutate_genome)
-
-        # 交叉操作暫時使用簡單的兩點交叉，未來可擴充為更複雜的基因體交叉
-        self.toolbox.register("mate", tools.cxUniform, indpb=0.5)
         self.toolbox.register("select", tools.selTournament, tournsize=3)
-        self.toolbox.register("evaluate", self._submit_for_evaluation)
 
-        self.log_manager.log("INFO", "演化室 v2.0 初始化，已啟用策略基因體感知能力。")
-
-    def _setup_stats(self):
-        # ... (此方法保持不變)
-        stats = tools.Statistics(lambda ind: ind.fitness.values)
-        stats.register("avg", lambda x: sum(x) / len(x) if len(x) > 0 else 0)
-        stats.register("std", lambda x: (sum((i - sum(x)/len(x))**2 for i in x) / len(x))**0.5 if len(x) > 0 else 0)
-        stats.register("min", min)
-        stats.register("max", max)
-        return stats
-
-    def _submit_for_evaluation(self, individual: Dict[str, Any]) -> None:
-        """將單個基因體提交到任務佇列進行評估。"""
-        # ... (此方法保持不變，因為它傳遞的是整個 individual)
+    async def _submit_for_evaluation(self, individual: creator.Individual) -> str:
+        task_payload = dict(individual)
         backtest_id = f"backtest_{random.randint(1000, 9999)}_{random.randint(1000, 9999)}"
-        task = {"individual": individual, "backtest_id": backtest_id}
-        self.queue.put(task)
+        task = {"individual": task_payload, "backtest_id": backtest_id}
+        await self.queue.put(task)
         return backtest_id
 
-    def _evaluate_and_assign_fitness(self, individuals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        # ... (此方法保持不變)
-        task_ids = [self._submit_for_evaluation(ind) for ind in individuals]
+    async def _evaluate_and_assign_fitness(self, individuals: List[creator.Individual]):
+        if not individuals:
+            return
 
-        results = {}
-        for _ in range(len(task_ids)):
-            result = self.queue.get_result()
-            if result:
-                results[result['backtest_id']] = result['fitness']
+        id_to_individual = {await self._submit_for_evaluation(ind): ind for ind in individuals}
 
-        for i, ind in enumerate(individuals):
-            backtest_id = task_ids[i]
-            fitness = results.get(backtest_id)
-            if fitness is not None:
-                ind.fitness.values = (fitness,)
+        await self.queue.join()
 
-        return individuals
+        num_results = len(id_to_individual)
+        for _ in range(num_results):
+            result = await self.queue.get_result()
+            if result and result['backtest_id'] in id_to_individual:
+                individual = id_to_individual[result['backtest_id']]
+                individual.fitness.values = (result['fitness'],)
 
-    def evolve(self):
-        # ... (此方法保持不變)
-        self.log_manager.log("INFO", "演化流程開始...")
-        population = self.toolbox.population(n=10)
+    async def evolve(self, generations=5, population_size=10):
+        population = self.toolbox.population(n=population_size)
 
-        for gen in range(2): # 簡化世代數以便測試
-            self.log_manager.log("INFO", f"--- 第 {gen + 1} 世代 ---")
+        print(f"第 0 代：評估 {len(population)} 個初始個體...")
+        await self._evaluate_and_assign_fitness(population)
 
-            offspring = algorithms.varAnd(population, self.toolbox, cxpb=0.5, mutpb=0.2)
+        for gen in range(1, generations + 1):
+            print(f"--- 第 {gen} 代演化 ---")
+            offspring = self.toolbox.select(population, len(population))
+            offspring = [self.toolbox.clone(ind) for ind in offspring]
+
+            for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                if random.random() < 0.7:
+                    self.toolbox.mate(child1, child2)
+                    del child1.fitness.values
+                    del child2.fitness.values
+
+            for mutant in offspring:
+                if random.random() < 0.3:
+                    self.toolbox.mutate(mutant)
+                    del mutant.fitness.values
 
             invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+            if invalid_ind:
+                print(f"評估 {len(invalid_ind)} 個新個體...")
+                await self._evaluate_and_assign_fitness(invalid_ind)
 
-            evaluated_inds = self._evaluate_and_assign_fitness(invalid_ind)
+            population[:] = offspring
 
-            population = self.toolbox.select(offspring, k=len(population))
-
-            record = self.stats.compile(population)
-            self.log_manager.log("INFO", f"本世代統計: {record}")
-
-        self.log_manager.log("SUCCESS", "演化流程完成。")
         return population
