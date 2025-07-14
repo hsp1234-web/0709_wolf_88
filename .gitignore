@@ -37,4 +37,5 @@ apps/**/tests/*.duckdb
 apps/**/tests/*.log
 output/
 
-poetry.lock
+poetry.lock\n# Archive for legacy scripts
+archive/

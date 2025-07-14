@@ -1,6 +1,6 @@
 # ==============================================================================
 #  通用 AI 輔助開發：磐石協議 (The Bedrock Protocol)
-#  專案配置文件：pyproject.toml (v1.1 - 修正版)
+#  專案配置文件：pyproject.toml (v2.0 - src 架構版)
 #  功能：定義專案元數據、核心依賴、開發工具與建構系統
 #  原則：本文件是專案依賴的「唯一真理來源」
 # ==============================================================================
@@ -13,8 +13,8 @@ authors = ["Jules Agent <jules@agent.ai>"]
 readme = "README.md"
 license = "MIT"
 packages = [
-    {include = "core"},
-    {include = "apps"}
+    {include = "core", from = "src"},
+    {include = "apps", from = "src"}
 ]
 
 # --- 核心依賴 (Core Dependencies) ---
@@ -76,6 +76,9 @@ typer = {extras = ["all"], version = "^0.16.0"}
 fastapi = {extras = ["all"], version = "^0.116.1"}
 uvicorn = "^0.35.0"
 deap = "^1.4.3"
+
+# === 告知 Poetry 我們的套件在哪裡 ===
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.4.1"           # 核心測試框架
 pytest-mock = "^3.14.1"     # 用於在單元測試中模擬物件
@@ -85,14 +88,6 @@ types-pytz = "^2024.1.0"     # 類型存根 for pytz
 # pyyaml = "^6.0.2" # Moved to main dependencies
 # requests-cache = "^1.2.1" # Moved to main dependencies
 deptry = "^0.23.0" # Already here, but confirming
-
-# --- 建構系統配置 ---
-# 由 `poetry init` 自動生成，定義專案的建構方式
-# openpyxl = "^3.1.5" # Duplicate / Unused
-# pybreaker = "^1.4.0" # Moved to main
-# requests-cache = "^1.2.1" # Moved to dev
-# urllib3 = "<2.0" # Moved to main
-# deptry = "^0.23.0" # Duplicate
 ruff = "^0.12.3"
 pytest-timeout = "^2.4.0"
 openpyxl = "^3.1.5"
@@ -105,11 +100,9 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
-pythonpath = [
-    "."
-]
-# 為每個測試設定 60 秒的超時熔斷
 timeout = 60
+# 告知 Pytest 我們的原始碼現在位於 src 目錄下
+pythonpath = "src"
 
 [tool.mypy]
 python_version = "3.12" # Align with project's Python version
@@ -125,6 +118,8 @@ line-length = 88
 [tool.ruff.lint]
 # 啟用 Pyflakes (F), pycodestyle (E, W), isort (I)
 select = ["E", "F", "W", "I"]
+# 告知 Ruff 我們的原始碼目錄
+src = ["src", "tests"]
 ignore = []
 
 # 允許未使用的變數，但僅限於以 `_` 開頭的變數
