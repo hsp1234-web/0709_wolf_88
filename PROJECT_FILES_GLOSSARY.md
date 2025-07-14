@@ -1,214 +1,45 @@
-# 專案檔案詞彙表 (v1.0)
+# 專案檔案詞彙表 (v1.1 鳳凰版)
 
 本文件旨在提供一個完整、詳細的專案檔案地圖，說明每一個檔案與目錄在【普羅米修斯之火】框架中的功能與核心職責。
 
 ---
-## **一、 檔案目錄結構 (v1.0)**
+## **一、 檔案目錄結構 (v1.1.0)**
 .
 ├── PROJECT_FILES_GLOSSARY.md
 ├── README.md
 ├── TEST_REPORT.md
 ├── config.yml
-├── latest_structure.txt
 ├── mypy.ini
-├── output
-│   ├── logs
-│   │   ├── session_clear_results_3680.sqlite
-│   │   ├── session_evolve_3985.sqlite
-│   │   ├── session_evolve_4619.sqlite
-│   │   ├── session_evolve_5215.sqlite
-│   │   ├── session_evolve_5811.sqlite
-│   │   ├── session_evolve_6458.sqlite
-│   │   ├── session_evolve_7064.sqlite
-│   │   ├── session_test_session_10138.sqlite
-│   │   ├── session_test_session_10138.sqlite-shm
-│   │   ├── session_test_session_10138.sqlite-wal
-│   │   ├── session_test_session_10537.sqlite
-│   │   ├── session_test_session_10537.sqlite-shm
-│   │   ├── session_test_session_10537.sqlite-wal
-│   │   ├── session_test_session_11058.sqlite
-│   │   ├── session_test_session_11058.sqlite-shm
-│   │   ├── session_test_session_11058.sqlite-wal
-│   │   ├── session_test_session_11862.sqlite
-│   │   ├── session_test_session_11862.sqlite-shm
-│   │   ├── session_test_session_11862.sqlite-wal
-│   │   ├── session_test_session_12187.sqlite
-│   │   ├── session_test_session_12187.sqlite-shm
-│   │   ├── session_test_session_12187.sqlite-wal
-│   │   ├── session_test_session_12515.sqlite
-│   │   ├── session_test_session_12515.sqlite-shm
-│   │   ├── session_test_session_12515.sqlite-wal
-│   │   ├── session_test_session_13053.sqlite
-│   │   ├── session_test_session_13053.sqlite-shm
-│   │   ├── session_test_session_13053.sqlite-wal
-│   │   ├── session_test_session_13378.sqlite
-│   │   ├── session_test_session_13378.sqlite-shm
-│   │   ├── session_test_session_13378.sqlite-wal
-│   │   ├── session_test_session_13707.sqlite
-│   │   ├── session_test_session_13707.sqlite-shm
-│   │   ├── session_test_session_13707.sqlite-wal
-│   │   ├── session_test_session_14306.sqlite
-│   │   ├── session_test_session_14306.sqlite-shm
-│   │   ├── session_test_session_14306.sqlite-wal
-│   │   ├── session_test_session_8983.sqlite
-│   │   ├── session_test_session_9424.sqlite
-│   │   ├── session_test_session_9424.sqlite-shm
-│   │   ├── session_test_session_9424.sqlite-wal
-│   │   ├── session_test_session_9781.sqlite
-│   │   ├── session_test_session_9781.sqlite-shm
-│   │   ├── session_test_session_9781.sqlite-wal
-│   │   ├── session_worker_3984.sqlite
-│   │   ├── session_worker_4618.sqlite
-│   │   ├── session_worker_5214.sqlite
-│   │   ├── session_worker_5810.sqlite
-│   │   ├── session_worker_6457.sqlite
-│   │   └── session_worker_7063.sqlite
-│   ├── results.sqlite
-│   └── task_queue.db
 ├── pipelines
-│   ├── __init__.py
-│   ├── p0_downloader
-│   │   └── run.py
-│   ├── p1_explorer
-│   │   ├── __init__.py
-│   │   └── run.py
-│   ├── p2_elt_pipeline
-│   │   └── run_elt.py
-│   └── p3_backfill_hourly_data
-│       └── run.py
 ├── poetry.lock
 ├── pyproject.toml
 ├── pytest.ini
 ├── run.py
 ├── src
 │   ├── apps
-│   │   ├── __init__.py
-│   │   ├── analysis_pipeline
-│   │   │   └── run.py
-│   │   ├── backtest_worker_app.py
-│   │   ├── backtesting_engine
-│   │   │   ├── __init__.py
-│   │   │   ├── engine.py
-│   │   │   └── run.py
-│   │   ├── dashboard
-│   │   │   └── dashboard.html
-│   │   ├── db_manager
-│   │   │   └── setup_database.py
-│   │   ├── evolution_app.py
-│   │   ├── factor_engine
-│   │   │   ├── engine.py
-│   │   │   ├── run_factor_etl.py
-│   │   │   └── sma_crossover_factor.py
-│   │   ├── optimizer_app.py
-│   │   ├── pipeline_metadata_manager
-│   │   │   ├── __init__.py
-│   │   │   └── manager.py
-│   │   ├── portfolio_optimizer
-│   │   │   ├── __init__.py
-│   │   │   └── main.py
-│   │   ├── py.typed
-│   │   ├── query_gateway.py
-│   │   ├── report_generator
-│   │   │   ├── __init__.py
-│   │   │   ├── generator.py
-│   │   │   └── run.py
-│   │   ├── tools
-│   │   │   ├── clear_results.py
-│   │   │   ├── report_generator_app.py
-│   │   │   ├── show_results.py
-│   │   │   └── task_adder_app.py
-│   │   └── visualization
-│   │       └── plot_sma_crossover.py
+│   │   ├── __init__.py
+│   │   ├── backtest_worker_app.py
+│   │   └── evolution_app.py
 │   └── core
-│       ├── __init__.py
-│       ├── analysis
-│       │   ├── data_engine.py
-│       │   └── stress_index.py
-│       ├── analyzers
-│       │   ├── __init__.py
-│       │   └── base_analyzer.py
-│       ├── clients
-│       │   ├── __init__.py
-│       │   ├── base.py
-│       │   ├── finmind.py
-│       │   ├── fmp.py
-│       │   ├── fred.py
-│       │   ├── nyfed.py
-│       │   ├── taifex_db.py
-│       │   └── yfinance.py
-│       ├── config.py
-│       ├── constants.py
-│       ├── context.py
-│       ├── db
-│       │   ├── __init__.py
-│       │   ├── db_manager.py
-│       │   ├── evolution_logger.py
-│       │   ├── results_saver.py
-│       │   └── transactional_writer.py
-│       ├── engines
-│       │   ├── __init__.py
-│       │   └── robust_acquisition_engine.py
-│       ├── logger.py
-│       ├── pipelines
-│       │   ├── __init__.py
-│       │   ├── base_step.py
-│       │   ├── pipeline.py
-│       │   └── steps
-│       │       ├── __init__.py
-│       │       ├── aggregators.py
-│       │       ├── financial_steps.py
-│       │       └── loaders.py
-│       ├── py.typed
-│       ├── queue
-│       │   ├── __init__.py
-│       │   ├── base.py
-│       │   └── sqlite_queue.py
-│       ├── services
-│       │   ├── __init__.py
-│       │   ├── backtesting_service.py
-│       │   ├── evolution_chamber.py
-│       │   └── optimizer_service.py
-│       └── utils
-│           ├── __init__.py
-│           ├── caching.py
-│           └── path_utils.py
+│       ├── __init__.py
+│       ├── config.py
+│       ├── constants.py
+│       ├── context.py
+│       ├── db
+│       │   ├── __init__.py
+│       │   └── results_saver.py
+│       ├── queue
+│       │   ├── __init__.py
+│       │   └── async_event_bus.py
+│       └── services
+│           ├── __init__.py
+│           ├── backtesting_service.py
+│           └── evolution_chamber.py
 └── tests
+    ├── __init__.py
     ├── conftest.py
-    ├── fixtures
-    │   ├── corrupted.zip
-    │   ├── no_data_response.html
-    │   └── sample_daily_ohlc_20250711.zip
-    ├── ignition_test.py
-    ├── integration
-    │   ├── analysis
-    │   │   └── test_data_engine_cache.py
-    │   ├── apps
-    │   │   └── test_analysis_pipeline.py
-    │   ├── pipelines
-    │   │   ├── test_data_pipeline.py
-    │   │   └── test_example_flow.py
-    │   ├── test_evolution_pipeline.py
-    │   ├── test_final_acceptance.py
-    │   └── test_full_pipeline.py
-    ├── test_p0_downloader.py
-    ├── test_p1_explorer.py
-    ├── test_p2_elt_pipeline.py
-    └── unit
-        ├── analysis
-        │   └── test_data_engine.py
-        ├── core
-        │   ├── analyzers
-        │   │   └── test_base_analyzer.py
-        │   ├── clients
-        │   │   ├── test_finmind.py
-        │   │   ├── test_fmp.py
-        │   │   ├── test_fred.py
-        │   │   ├── test_nyfed.py
-        │   │   └── test_yfinance.py
-        │   └── test_queue.py
-        └── test_feature_analyzer.py
-
-42 directories, 161 files
+    └── integration
+        └── test_final_acceptance.py
 
 ---
 
@@ -218,78 +49,45 @@
 
 -   `README.md`: **[文檔]** 開發者手冊，提供專案的整體介紹、技術棧、環境設定、主要功能用法、版本歷史與開發者指引。是新成員了解專案的第一站。
 -   `PROJECT_FILES_GLOSSARY.md`: **[文檔]** (本檔案) 專案檔案詞彙表，提供比 `README.md` 更詳細的、針對每一個檔案和目錄的功能說明。
--   `run.py`: **[核心入口]** 專案的統一命令列介面 (CLI) 入口。使用 `Typer` 函式庫，將所有應用程式 (`apps/`) 的功能整合為子命令 (例如 `run-tests`, `evolve`, `dashboard`)。它還負責初始化 `LogManager` 並將其注入到各個任務中。
--   `config.yml`: **[設定檔]** 全局設定檔，用於配置 API 金鑰 (如 FRED)、資料庫路徑、快取設定等外部參數。**此檔案包含敏感資訊，已被加入 `.gitignore`，絕不應提交至版本控制系統。**
--   `pyproject.toml`: **[依賴管理]** `Poetry` 的專案設定檔，定義了專案的元數據 (名稱、版本、作者等) 以及所有生產環境與開發環境的依賴套件。
--   `poetry.lock`: **[依賴管理]** `Poetry` 自動產生的鎖定檔案，確保在任何環境下都能安裝完全相同版本的依賴套件，實現了環境的可複製性。
--   `pytest.ini`: **[測試設定]** `Pytest` 的設定檔，用於配置測試路徑、標記、預設參數 (如 `--junitxml`) 等。
--   `mypy.ini`: **[靜態分析]** `Mypy` 型別檢查工具的設定檔，用於定義型別檢查的規則與路徑。
--   `run_tests.py`: **[歷史腳本]** 舊版的測試執行腳本，現已被 `run.py run-tests` 命令取代。
--   `run_pipeline.sh`: **[歷史腳本]** 舊版的管線執行腳本，其功能已被 `run.py` 中的特定命令取代。
--   `_test_run.py`, `archive_test.py`, `check_qsize.py`, `read_logs.py`, `run_show_results.py`: **[臨時/偵錯腳本]** 這些是開發過程中用於臨時測試、偵錯或快速驗證特定功能的小型腳本，不屬於核心功能的一部分。
+-   `run.py`: **[核心入口 (歷史)]** 專案的統一命令列介面 (CLI) 入口。在【鳳凰計畫】重構後，其大部分功能已整合進測試流程，主要用於歷史功能或未來擴展。
+-   `config.yml`: **[設定檔]** 全局設定檔，用於配置 API 金鑰、資料庫路徑等。
+-   `pyproject.toml`: **[依賴管理]** `Poetry` 的專案設定檔，定義了專案元數據及所有依賴套件。
+-   `poetry.lock`: **[依賴管理]** `Poetry` 自動產生的鎖定檔案，確保環境的可複製性。
+-   `pytest.ini`: **[測試設定]** `Pytest` 的設定檔。
+-   `mypy.ini`: **[靜態分析]** `Mypy` 型別檢查工具的設定檔。
 
 ---
 
-## **三、 `apps/` - 應用程式層**
+## **三、 `src/apps/` - 應用程式層 (非同步)**
 
-此目錄包含所有使用者可直接透過 `run.py` 執行的具體應用。每個模組都代表一個獨立的功能單元。
+此目錄包含所有可執行的非同步應用。每個模組都代表一個獨立的非同步功能單元。
 
--   `evolution_app.py`: **[核心應用]** `evolve` 命令的應用程式入口，負責初始化並啟動 `EvolutionChamber`，執行策略演化流程。
--   `backtest_worker_app.py`: **[核心應用]** `backtest-worker` 命令的應用程式入口，啟動一個背景工作者，專門用於執行由 `EvolutionChamber` 或其他模組派發的回測任務。
--   `query_gateway.py` & `dashboard/dashboard.html`: **[核心應用]** `dashboard` 命令的應用程式入口，使用 `FastAPI` 和 `Uvicorn` 啟動一個網頁伺服器，提供視覺化的儀表板來展示回測結果。
--   `tools/`: **[工具集]**
-    -   `report_generator_app.py`: `run-tests` 命令的一部分，負責讀取 `pytest` 產生的 JUnit XML 報告，並將其轉換為人類可讀的 Markdown 戰報 (`TEST_REPORT.md`)。
-    -   `task_adder_app.py`: `add-test-tasks` (歷史) 命令的入口，用於向任務佇列中手動添加一批測試任務。
-    -   `show_results.py`: `show-results` 命令的入口，用於在終端機中查詢並顯示所有已儲存的回測結果。
-    -   `clear_results.py`: `clear-results` 命令的入口，用於清除資料庫中所有已儲存的回測結果。
--   `optimizer_app.py`: **[歷史應用]** `optimize` (歷史) 命令的入口，是演化室的早期原型，現已被 `evolution_app.py` 取代。
--   `backtesting_engine/`: **[歷史引擎]**
-    -   `engine.py`: 舊版的回測引擎核心邏輯。
-    -   `run.py`: 舊版的回測引擎執行腳本。
--   `factor_engine/`, `analysis_pipeline/`, `portfolio_optimizer/`, `report_generator/`: **[歷史/待整合模組]** 這些是專案早期開發的各種功能模組，部分功能可能已被新架構取代或等待重構整合。
+-   `evolution_app.py`: **[核心應用]** 演化流程的非同步主函數 (`main`)。負責初始化並啟動 `EvolutionChamber`，驅動策略演化流程。
+-   `backtest_worker_app.py`: **[核心應用]** 背景回測工作者的非同步主函數 (`main`)。啟動一個非同步的背景工作者，持續從事件總線 (`AsyncEventBus`) 的任務佇列中獲取任務，執行回測，並將結果放入結果佇列。
 
 ---
 
-## **四、 `core/` - 核心服務與商業邏輯層**
+## **四、 `src/core/` - 核心服務與商業邏輯層 (非同步)**
 
-此目錄是專案的心臟，包含了所有共享的核心商業邏輯、服務、客戶端與工具。
+此目錄是專案的心臟，包含了所有共享的非同步核心商業邏輯、服務與工具。
 
--   `logger.py`: **[核心服務]** `LogManager` 的實作。提供基於 `SQLite` 的結構化日誌系統，並能在任務結束時自動將日誌歸檔為文字檔案。
+-   `context.py`: **[核心服務]** `AppContext` 的實作。一個非同步上下文管理器 (`async with`)，負責初始化並提供所有共享的非同步服務（如 `AsyncEventBus`, `ResultsSaver` 的資料庫連線）。
 -   `services/`: **[核心服務]**
-    -   `evolution_chamber.py`: **策略演化室**。整合了 `DEAP` 遺傳演算法函式庫，是整個系統自我進化的核心。它負責管理策略族群的生成、評估 (透過派發回測任務)、選擇、交叉與突變。
-    -   `backtesting_service.py`: **回測服務**。被 `backtest-worker` 使用，負責從任務佇列中獲取回測任務，執行回測，並將結果儲存到資料庫。
-    -   `optimizer_service.py`: **單次優化器 (歷史)**。`EvolutionChamber` 的前身，用於概念驗證。
--   `queue/`: **[核心服務]**
-    -   `sqlite_queue.py`: 基於 `SQLite` 實現的持久化任務佇列。確保即使在程式中斷後，待處理的回測任務也不會遺失。
-    -   `base.py`: 任務佇列的抽象基底類別。
+    -   `evolution_chamber.py`: **策略演化室 (非同步)**。整合了 `DEAP` 遺傳演算法函式庫。它以非同步方式管理策略族群的生成、評估 (透過向 `AsyncEventBus` 派發回測任務)、選擇、交叉與突變。
+    -   `backtesting_service.py`: **回測服務 (非同步)**。被 `backtest_worker_app` 使用，負責執行回測計算，並以非同步方式將結果儲存到資料庫。
+-   `queue/`: **[核心通訊]**
+    -   `async_event_bus.py`: **非同步事件總線**。基於 `asyncio.Queue` 實現，提供一個任務佇列和一個結果佇列，是系統內所有非同步組件之間通訊的中樞。
 -   `db/`: **[數據持久化]**
-    -   `results_saver.py`: 負責將回測結果、策略參數等數據標準化並儲存到結果資料庫中。
-    -   `db_manager.py`: 提供資料庫連線與管理功能。
--   `clients/`: **[數據源]**
-    -   `finmind.py`, `fmp.py`, `fred.py`, `nyfed.py`, `yfinance.py`: 分別對應不同第三方金融數據 API (FinMind、Financial Modeling Prep、FRED、紐約聯儲、Yahoo Finance) 的客戶端，封裝了數據請求、認證與錯誤處理。
-    -   `base.py`: 所有 API 客戶端的抽象基底類別。
--   `pipelines/`: **[數據處理管線]**
-    -   定義了數據處理的步驟 (`BaseStep`) 與管線 (`Pipeline`) 的基本架構。
-    -   `steps/`: 包含各種可重用的管線步驟，如數據載入 (`loaders.py`)、金融計算 (`financial_steps.py`) 等。
--   `config.py`: **[設定管理]** 提供一個函數 `get_config()`，用於載入並解析 `config.yml`，讓應用程式的其餘部分可以方便地存取設定值。
--   `constants.py`: **[常數]** 定義專案中廣泛使用的常數，例如預設的資料庫名稱、API 端點等，以避免在程式碼中出現硬編碼的 "魔法數字"。
--   `utils/`: **[共用工具]**
-    -   `caching.py`: 提供快取裝飾器，用於快取函式結果，減少重複計算或 API 請求。
-    -   `path_utils.py`: 提供路徑處理相關的工具函式。
+    -   `results_saver.py`: **結果儲存器 (非同步)**。使用 `aiosqlite`，負責以非同步方式將回測結果、策略參數等數據標準化並儲存到結果資料庫 (`results.sqlite`) 中。
 
 ---
 
-## **五、 `tests/` - 自動化測試**
+## **五、 `tests/` - 自動化測試 (非同步)**
 
 此目錄包含所有自動化測試，以確保程式碼的品質與穩定性。
 
--   `ignition_test.py`: **[點火測試]** 一種快速的健全檢查測試，它不執行任何邏輯，僅僅嘗試導入專案中的每一個 `.py` 檔案，以確保沒有任何因語法錯誤、循環依賴或環境問題導致的導入失敗。
--   `integration/`: **[整合測試]**
-    -   `test_evolution_pipeline.py`: 演化管線的輕量化邏輯驗證測試。透過模擬 (Mocking) 耗時的回測過程，專門驗證 `EvolutionChamber` 的核心演算法邏輯是否正確。
-    -   其他檔案: 測試多個模組協同工作時的端到端流程。
--   `unit/`: **[單元測試]** 針對單一函式或類別進行的測試，確保最小的功能單元運作正常。
--   `fixtures/`: 存放測試所需的靜態數據檔案，例如模擬的 API 回應、測試用的 CSV 檔案等。
--   `conftest.py`: `Pytest` 的本地插件檔案，用於定義測試範圍內共享的 Fixtures (例如，一個臨時的資料庫連線)。
+-   `integration/test_final_acceptance.py`: **[最終驗收測試]** 鳳凰計畫的最終驗收測試。這是一個基於 `pytest-asyncio` 的全系統整合測試，它在一個事件循環中，透過 `asyncio.create_task` 協調 `evolution_app` 和 `backtest_worker_app` 的運行，驗證從演化、任務分派、回測到結果儲存的完整非同步流程。
+-   `conftest.py`: **[測試設定]** `Pytest` 的本地插件檔案，為測試提供共享的 fixtures。在鳳凰計畫中，它被簡化，因為 `AppContext` 的 `async with` 機制已能處理大部分設定與清理工作。
 
 ---
 
@@ -297,53 +95,11 @@
 
 此目錄用於存放所有由程式執行產生的檔案，已被加入 `.gitignore`。
 
--   `logs/`:
-    -   `session.sqlite`: 當前 `run.py` 工作階段的即時日誌資料庫。
-    -   `archive/`: 存放所有歷史工作階段的文字日誌歸檔。
--   `reports/`:
-    -   `report.xml`: `pytest` 產生的 JUnit XML 格式的機器可讀測試報告。
--   `*.duckdb`: `DuckDB` 資料庫檔案。
--   `TEST_REPORT.md`: `run.py run-tests` 產生的 Markdown 格式人類可讀測試報告。
+-   `results.sqlite`: 存放所有回測結果的 SQLite 資料庫檔案。
+-   `*.log`: （歷史）日誌檔案。
 
 ---
 
 ## **七、 `pipelines/` - 歷史數據管線**
 
-此目錄包含專案早期的數據處理管線，部分可能已被新架構取代。
-
--   `p0_downloader/`: 下載原始資料。
--   `p1_explorer/`: 探索和初步分析資料。
--   `p2_elt_pipeline/`: 執行 ELT (抽取、載入、轉換) 流程。
--   `p3_backfill_hourly_data/`: 回填每小時的歷史資料。
-
----
-## v0.9.0 新增/修改檔案 (最終驗收)
-
-### `tests/integration` - 整合測試
-
--   `test_final_acceptance.py`: **[新增]** 最終驗收測試。這是一個全系統的整合測試，它在一個由 `conftest.py` 提供的、乾淨的隔離環境中，自動化地模擬從 `evolve` 命令啟動，到背景 `backtest-worker` 處理完所有任務的完整端到端流程。這是驗證所有核心組件能否完美協同工作的最終品質閘門。
-
-### 根目錄 (Root Directory)
-
--   `TEST_REPORT.md`: **[自動生成報告]** 由 `run.py run-tests` 命令自動產生的、人類可讀的 Markdown 格式測試報告。它總結了所有自動化測試的執行結果。
-
----
-## **v1.0 新增/修改檔案 (結構性重構與最終穩定)**
-
-本章節記錄了專案為達成 v1.0 穩定版而進行的一系列核心重構。
-
-### **`src/` - 核心原始碼目錄**
--   **`src/`**: **[結構性變更]** 所有核心原始碼 (`apps`, `core`) 現已全部遷移至此目錄下，以遵循現代 Python 專案的標準佈局。
-
-### **`src/core/` - 核心服務層**
--   `context.py`: **[新增]** 作戰上下文。一個集中容器，負責統一初始化並提供所有共享服務（如 `LogManager`, `SQLiteQueue`），徹底消除了應用層的重複程式碼。
--   `queue/sqlite_queue.py`: **[重大升級]** 基於 SQLite 事務與明確狀態欄位 (`pending`, `running`, `completed`) 的企業級佇列。它取代了舊的、不穩健的實現，從根本上解決了任務安全與多進程衝突問題。
--   `db/transactional_writer.py`: **[新增]** 交易型寫入器。專門負責將回測結果安全地寫入 `results.sqlite`，是系統中唯一的寫入服務。
--   `db/data_synchronizer.py`: **[已廢棄]** 數據同步器。在「統一儲存協議」中，此檔案已被徹底移除，以簡化架構。
-
-### **`tests/` - 自動化測試**
--   `conftest.py`: **[新增]** Pytest 的中央設定檔。其核心是 `app_context` Fixture，作為「測試上下文工廠」，為每一個測試案例自動提供一個全新的、乾淨的、隔離的執行環境。
--   `integration/test_final_acceptance.py`: **[新增]** 最終驗收測試。驗證從 `evolve` 命令到背景工作者完成計算的完整流程，是系統穩定性的最終品質閘門。
-
-### **`archive/` - 歷史檔案歸檔**
--   **`archive/`**: **[新增]** 一個全新的目錄，用於存放所有在重構過程中被廢棄的、但具有歷史參考價值的舊腳本。
+此目錄包含專案早期的數據處理管線，在【鳳凰計畫】中未被使用，但為歷史參考保留。

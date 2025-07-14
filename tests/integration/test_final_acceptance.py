@@ -1,44 +1,40 @@
+# 檔案: tests/integration/test_final_acceptance.py
 import pytest
-import threading
-import time
+import asyncio
 from src.core.context import AppContext
-from src.apps import backtest_worker_app
+from src.apps import evolution_app, backtest_worker_app
 
-def test_final_acceptance_for_evolution(app_context: AppContext):
-    log_manager = app_context.log_manager
+@pytest.mark.asyncio
+async def test_full_async_evolution_flow():
+    """
+    最終驗收測試 v4.0 (鳳凰版)
+    驗證完整的非同步事件驅動流程。
+    """
+    # 使用異步上下文管理器來確保資源的正確初始化和關閉
+    async with AppContext(session_name="phoenix_test", mode='test') as context:
+        print("\n--- 最終驗收測試 (鳳凰版) 開始 ---")
 
-    # BATTLE PHASE: 模擬多個世代的基因演算法執行
-    num_generations = 3
-    population_size = 5
+        # 1. 創建並啟動背景工作者 (Worker) 任務
+        worker_task = asyncio.create_task(backtest_worker_app.main(context))
+        print("背景回測工作者任務已創建。")
 
-    # Start the worker in a separate thread
-    worker_thread = threading.Thread(target=backtest_worker_app.main, args=(app_context,), daemon=True)
-    worker_thread.start()
+        # 2. 在主線程中運行演化流程
+        await evolution_app.main(context)
+        print("演化流程已執行完畢。")
 
-    for gen in range(num_generations):
-        log_manager.log("BATTLE", f"===== 世代 {gen+1}/{num_generations} =====")
-        for i in range(population_size):
-            backtest_id = f"gen{gen+1}_ind{i+1}"
-            # 傳送一個簡化的基因體進行測試
-            app_context.queue.put({
-                "individual": {
-                    "strategy_name": "RSI_MeanReversion",
-                    "indicators": [{"name": "RSI", "params": {"window": 14}}],
-                    "entry_rules": [{"name": "RSI_CrossUnder", "value": 30}],
-                    "exit_rules": [{"name": "RSI_CrossOver", "value": 70}]
-                },
-                "backtest_id": backtest_id
-            })
+        # 3. 發送 "毒丸" 信號來終止 Worker
+        await context.queue.put(None)
 
-    # FINAL CHECK: 等待所有任務處理完畢
-    time.sleep(5)
-    while app_context.queue.qsize() > 0:
-        time.sleep(1)
+        # 等待 Worker 任務處理完 "毒丸" 並終止
+        await asyncio.sleep(0.1) # 給予事件循環一點時間來處理
+        await worker_task
+        print("Worker 任務已確認終止。")
 
-    app_context.queue.put(None) # 傳送關閉信號
-    worker_thread.join(timeout=15)
+        # 4. 最終驗證
+        results_count = await context.results_saver.count_results()
+        print(f"在資料庫中找到 {results_count} 筆回測結果。")
 
-    # ASSERTION: 驗證結果是否已儲存
-    results_count = app_context.results_saver.count_results()
-    log_manager.log("SUCCESS", f"✅ 最終驗收測試完成。共儲存 {results_count} 筆回測結果。")
-    assert results_count >= 15
+        # 初始族群(10) + 後續世代... 預期應有結果
+        assert results_count > 10, f"預期應有多於10個回測結果，但只找到 {results_count} 個。"
+
+        print("--- 最終驗收測試 (鳳凰版) 圓滿成功 ---")

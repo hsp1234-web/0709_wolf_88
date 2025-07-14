@@ -1,29 +1,20 @@
+# 檔案: src/apps/backtest_worker_app.py
+import asyncio
 from src.core.context import AppContext
 from src.core.services.backtesting_service import BacktestingService
 
-def main(context: AppContext):
-    """ 背景回測工作者 v2.2 (模式感知版) """
-    log_manager = context.log_manager
-    backtester = BacktestingService(context.results_saver, log_manager, mode=context.mode)
-
-    log_manager.log("INFO", f"背景回測工作者已在 '{context.mode}' 模式下啟動，等待任務...")
-
+async def main(context: AppContext):
+    backtester = BacktestingService(context.results_saver)
+    print("背景回測工作者已啟動...")
     while True:
+        task = await context.queue.get()
+        if task is None:
+            context.queue.task_done()
+            break
+
         try:
-            task = context.queue.get(block=True, timeout=None)
-            if task is None:
-                log_manager.log("INFO", "收到 None 任務，工作者將優雅地關閉。")
-                break
-
-            individual = task.get("individual")
-            backtest_id = task.get("backtest_id")
-
-            if individual and backtest_id:
-                fitness = backtester.run_backtest(individual, backtest_id)
-                context.queue.put_result({"backtest_id": backtest_id, "fitness": fitness})
-
-        except Exception as e:
-            log_manager.log("CRITICAL", f"背景工作者發生未預期的錯誤: {e}", exc_info=True)
-            continue
-
-    log_manager.log("SUCCESS", "背景回測工作者已成功關閉。")
+            fitness = await backtester.run_backtest(task["individual"], task["backtest_id"])
+            await context.queue.put_result({"backtest_id": task["backtest_id"], "fitness": fitness})
+        finally:
+            context.queue.task_done()
+    print("背景回測工作者已關閉。")
