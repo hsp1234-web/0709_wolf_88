@@ -107,3 +107,14 @@
 -   `p1_explorer/`: 探索和初步分析資料。
 -   `p2_elt_pipeline/`: 執行 ELT (抽取、載入、轉換) 流程。
 -   `p3_backfill_hourly_data/`: 回填每小時的歷史資料。
+
+---
+## v0.9.0 新增/修改檔案 (最終驗收)
+
+### `tests/integration` - 整合測試
+
+-   `test_final_acceptance.py`: **[新增]** 最終驗收測試。這是一個全系統的整合測試，它在一個由 `conftest.py` 提供的、乾淨的隔離環境中，自動化地模擬從 `evolve` 命令啟動，到背景 `backtest-worker` 處理完所有任務的完整端到端流程。這是驗證所有核心組件能否完美協同工作的最終品質閘門。
+
+### 根目錄 (Root Directory)
+
+-   `TEST_REPORT.md`: **[自動生成報告]** 由 `run.py run-tests` 命令自動產生的、人類可讀的 Markdown 格式測試報告。它總結了所有自動化測試的執行結果。

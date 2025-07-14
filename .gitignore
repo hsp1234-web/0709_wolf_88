@@ -39,3 +39,5 @@ output/
 
 poetry.lock\n# Archive for legacy scripts
 archive/
+\n# Archive for legacy scripts
+archive/
