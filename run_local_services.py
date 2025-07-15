@@ -1,6 +1,7 @@
 import threading
 import time
 from pathlib import Path
+import typer
 
 from src.core.queue.sqlite_queue import SQLiteQueue
 from src.core.utils.data_loader import load_ohlcv_data
@@ -11,11 +12,26 @@ from src.apps.results_projector_app import projector_loop, POISON_PILL as PROJEC
 # --- 設定 ---
 DATA_DIR = Path("data")
 OHLCV_DATA_PATH = DATA_DIR / "ohlcv_data.csv"
-TASK_QUEUE_PATH = DATA_DIR / "task_queue.db"
-RESULTS_QUEUE_PATH = DATA_DIR / "results_queue.db"
+DB_DIR = DATA_DIR / "db"
+TASK_QUEUE_PATH = DB_DIR / "task_queue.db"
+RESULTS_QUEUE_PATH = DB_DIR / "results_queue.db"
 NUM_BACKTEST_WORKERS = 2
 
-def main():
+# 建立一個 Typer 應用
+app = typer.Typer()
+
+@app.command()
+def run(
+    resume: bool = typer.Option(False, "--resume", help="從上次的檢查點恢復演化。"),
+    clean: bool = typer.Option(False, "--clean", help="強制進行一次全新的演化，忽略所有檢查點。")
+):
+    """
+    啟動【普羅米修斯之火】本地服務。
+    """
+    if resume and clean:
+        print("錯誤：--resume 和 --clean 旗標不能同時使用。")
+        raise typer.Exit(code=1)
+
     # --- 數據加載和佇列初始化 ---
     print("[Conductor] 正在加載歷史價格數據...")
     try:
@@ -49,10 +65,10 @@ def main():
     )
     threads.append(projector_thread)
 
-    # 建立演化引擎 (它不是 daemon，它的結束將觸發系統關閉)
+    # 【核心改變】將 evolution_loop 的參數傳入
     evolution_thread = threading.Thread(
         target=evolution_loop,
-        args=(task_queue, results_queue)
+        args=(task_queue, results_queue, resume, clean)
     )
     threads.append(evolution_thread)
 
@@ -69,20 +85,16 @@ def main():
 
     except KeyboardInterrupt:
         print("\n[Conductor] 偵測到手動中斷 (Ctrl+C)！正在準備關閉所有服務...")
-        # 在這種情況下，我們不需要特別做什麼，finally區塊會處理關閉
 
     finally:
-        # 【核心改變】發送毒丸，命令所有工作者關閉
+        # 發送毒丸，命令所有工作者關閉
         print("[Conductor] 正在向所有佇列發送關閉信號 (毒丸)...")
 
-        # 有多少個工人，就發送多少個毒丸
         for _ in range(NUM_BACKTEST_WORKERS):
             task_queue.put(WORKER_PILL)
 
-        # 結果投影器只有一個
         results_queue.put(PROJECTOR_PILL)
 
-        # 短暫等待，讓 daemon 執行緒有時間處理毒丸並打印退出訊息
         print("[Conductor] 等待背景服務處理關閉信號...")
         time.sleep(3)
 
@@ -90,5 +102,6 @@ def main():
         results_queue.close()
         print("[Conductor] 佇列已關閉。系統完全關閉。")
 
+
 if __name__ == "__main__":
-    main()
+    app()

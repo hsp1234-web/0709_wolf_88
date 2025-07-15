@@ -1,30 +1,74 @@
 import time
 import uuid
-import asyncio
+import json
+import random
+from pathlib import Path
+from deap import tools, creator
 from src.core.queue.sqlite_queue import SQLiteQueue
 from src.core.services.evolution_chamber import EvolutionChamber
-from deap import tools
+from src.core.services.checkpoint_manager import CheckpointManager
 
-# --- 沙箱模式設定 ---
+# --- 演化設定 ---
 POPULATION_SIZE = 10
-MAX_GENERATIONS = 3
+MAX_GENERATIONS = 5 # 增加代數以便觀察檢查點
+CHECKPOINT_FREQ = 2 # 每 2 代儲存一次檢查點
 
-def evolution_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue):
+# --- 檔案路徑 ---
+HALL_OF_FAME_PATH = Path("data/hall_of_fame.json")
+CHECKPOINT_PATH = Path("data/checkpoints/evolution_state.pkl")
+
+def evolution_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue, resume: bool = False, clean: bool = False):
     """
-    智慧演化引擎的主迴圈。
+    智慧演化引擎 v3：具備斷點續行與智慧播種能力。
     """
-    print("[Evolution-Engine] 策略演化引擎已啟動...")
+    print("[Evolution-Engine] 策略演化引擎 v3 已啟動...")
     chamber = EvolutionChamber()
+    checkpoint_manager = CheckpointManager(CHECKPOINT_PATH)
 
-    # 1. 產生初始族群 (第 0 代)
-    population = chamber.create_population(n=POPULATION_SIZE)
-    hall_of_fame = None # 用於記錄整個演化過程中的最佳個體
+    start_gen = 0
+    population = None
+    hall_of_fame = tools.HallOfFame(1)
+
+    if clean:
+        print("[Evolution-Engine] --clean 模式：將進行一次全新的演化。")
+        checkpoint_manager.clear_checkpoint()
+
+    # 1. 【斷點續行】嘗試從檢查點恢復
+    if resume:
+        state = checkpoint_manager.load_checkpoint()
+        if state:
+            population = state["population"]
+            start_gen = state["generation"] + 1
+            hall_of_fame = state["hall_of_fame"]
+            random.setstate(state["random_state"])
+            print(f"[Evolution-Engine] 從第 {start_gen} 代恢復演化。")
+
+    # 2. 【智慧播種】如果不是恢復，則創建初始族群
+    if population is None:
+        print("[Evolution-Engine] 正在創建初始族群...")
+        population = chamber.create_population(n=POPULATION_SIZE)
+
+        # 嘗試從名人堂讀取最佳基因進行播種
+        if HALL_OF_FAME_PATH.exists():
+            try:
+                with open(HALL_OF_FAME_PATH, 'r') as f:
+                    best_known_strategy = json.load(f)
+                params = best_known_strategy['params']
+                # 注意：這裡的基因體結構必須與 EvolutionChamber 中的定義完全匹配
+                elite_seed = creator.Individual([params.get('fast'), params.get('slow')])
+                # 將 20% 的族群替換為精英種子 (或其變異體)
+                num_elites = int(POPULATION_SIZE * 0.2)
+                for i in range(num_elites):
+                    population[i] = chamber.toolbox.clone(elite_seed)
+                print(f"[Evolution-Engine] 智慧播種成功：已從名人堂注入 {num_elites} 個精英種子。")
+            except Exception as e:
+                print(f"!!!!!! [Evolution-Engine] 讀取名人堂進行播種失敗: {e} !!!!!!")
 
     # --- 演化主迴圈 ---
-    for gen in range(MAX_GENERATIONS):
+    for gen in range(start_gen, MAX_GENERATIONS):
         print(f"\n{'='*10} 正在處理第 {gen} 代 {'='*10}")
 
-        # 2. 評估階段：將族群中的每個個體轉換為回測任務
+        # 評估階段：將族群中的每個個體轉換為回測任務
         pending_tasks = {}
         for i, individual in enumerate(population):
             task_id = str(uuid.uuid4())
@@ -38,69 +82,88 @@ def evolution_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue):
             pending_tasks[task_id] = individual
             print(f"[Evolution-Engine] 已發送任務: {genome_task}")
 
-        # 3. 回收結果並更新適應度
+        # 回收結果並更新適應度
         print("[Evolution-Engine] 等待所有回測結果...")
         evaluated_count = 0
         while evaluated_count < len(pending_tasks):
-            result = results_queue.get(block=True, timeout=10) # 增加超時
+            result = results_queue.get(block=True, timeout=20)
             if result:
-                # 確保我們處理的是元組 (item_id, payload)
                 if isinstance(result, tuple) and len(result) == 2:
                     _, result_payload = result
                 else:
-                    # 假設如果不是元組，就是 payload 本身
                     result_payload = result
 
                 if not result_payload: continue
 
                 genome_id = result_payload.get("genome_id")
-
                 if genome_id in pending_tasks:
-                    individual = pending_tasks[genome_id]
+                    individual = pending_tasks.pop(genome_id) # 從待辦中移除
                     report = result_payload.get("report", {})
-                    fitness = report.get("sharpe_ratio", -1.0) # 使用夏普比率作為適應度
+                    fitness = report.get("sharpe_ratio", -1.0)
 
-                    # 處理無效的適應度值
-                    if fitness is None or fitness == float('inf') or fitness == float('-inf'):
+                    if fitness is None or fitness == float('inf') or fitness == float('-inf') or not isinstance(fitness, (int, float)):
                         fitness = -1.0
 
-                    # 為個體賦予適應度分數
                     individual.fitness.values = (fitness,)
-
                     evaluated_count += 1
-                    print(f"[Evolution-Engine] 收到結果: {genome_id}, 適應度: {fitness:.2f} ({evaluated_count}/{len(pending_tasks)})")
+                    print(f"[Evolution-Engine] 收到結果: {genome_id}, 適應度: {fitness:.2f} ({evaluated_count}/{POPULATION_SIZE})")
             else:
-                # 如果超時後仍未收到結果，可能是有工作者已死亡
                 print("[Evolution-Engine] 警告：等待結果超時，可能部分任務已丟失。")
-                evaluated_count += 1 # 避免無限等待
-
-        # 4. 記錄本代最佳個體
-        best_ind = tools.selBest(population, 1)[0]
-        print(f"--- 第 {gen} 代最佳策略 ---")
-        print(f"  參數: fast={best_ind[0]}, slow={best_ind[1]}")
-        print(f"  夏普比率: {best_ind.fitness.values[0]:.2f}")
+                # 將剩餘未完成的任務標記為失敗
+                for task_id in pending_tasks:
+                    pending_tasks[task_id].fitness.values = (-1.0,)
+                    evaluated_count += 1
+                break # 跳出等待迴圈
 
         # 更新名人堂
-        if hall_of_fame is None or best_ind.fitness.values[0] > hall_of_fame.fitness.values[0]:
-            hall_of_fame = best_ind
+        hall_of_fame.update(population)
 
-        # 5. 產生下一代
-        print("[Evolution-Engine] 正在產生下一代族群...")
-        offspring = chamber.select_offspring(population)
-        new_population = chamber.mate_and_mutate(offspring)
+        # 記錄本代最佳個體
+        if len(hall_of_fame) > 0:
+            best_ind = hall_of_fame[0]
+            print(f"--- 第 {gen} 代最佳策略 ---")
+            print(f"  參數: fast={best_ind[0]}, slow={best_ind[1]}")
+            print(f"  夏普比率: {best_ind.fitness.values[0]:.2f}")
 
-        # Elitism: 將名人堂成員替換掉新族群中的一個隨機成員
-        if hall_of_fame:
-            new_population[0] = hall_of_fame
+        # 3. 【定期儲存】在每一代結束後，儲存檢查點
+        if (gen + 1) % CHECKPOINT_FREQ == 0:
+            current_state = {
+                "population": population,
+                "generation": gen,
+                "hall_of_fame": hall_of_fame,
+                "random_state": random.getstate(),
+            }
+            checkpoint_manager.save_checkpoint(current_state)
 
-        population = new_population
+        # 產生下一代
+        if gen < MAX_GENERATIONS - 1:
+            print("[Evolution-Engine] 正在產生下一代族群...")
+            offspring = chamber.select_offspring(population)
+            new_population = chamber.mate_and_mutate(offspring)
+            # Elitism: 確保名人堂成員進入下一代
+            if len(hall_of_fame) > 0:
+                new_population[0] = hall_of_fame[0]
+            population = new_population
+
 
     # --- 演化結束 ---
     print(f"\n{'='*10} 演化完成 {'='*10}")
-    print("--- 歷史最佳策略 ---")
-    if hall_of_fame:
-        print(f"  參數: fast={hall_of_fame[0]}, slow={hall_of_fame[1]}")
-        print(f"  夏普比率: {hall_of_fame.fitness.values[0]:.2f}")
-    print("[Evolution-Engine] 演化引擎已停止。")
+    if len(hall_of_fame) > 0:
+        best_overall = hall_of_fame[0]
+        print("--- 歷史最佳策略 (名人堂) ---")
+        print(f"  參數: fast={best_overall[0]}, slow={best_overall[1]}")
+        print(f"  夏普比率: {best_overall.fitness.values[0]:.2f}")
 
-    # 讓主執行緒知道可以關閉了 (透過讓迴圈結束)
+        # 儲存名人堂到檔案
+        try:
+            HALL_OF_FAME_PATH.parent.mkdir(exist_ok=True, parents=True)
+            with open(HALL_OF_FAME_PATH, 'w') as f:
+                json.dump({
+                    "params": {"fast": best_overall[0], "slow": best_overall[1]},
+                    "fitness": best_overall.fitness.values[0]
+                }, f, indent=4)
+            print(f"[Evolution-Engine] 名人堂已儲存至: {HALL_OF_FAME_PATH}")
+        except Exception as e:
+            print(f"!!!!!! [Evolution-Engine] 儲存名人堂失敗: {e} !!!!!!")
+
+    print("[Evolution-Engine] 演化引擎已停止。")
