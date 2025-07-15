@@ -1,4 +1,4 @@
-# 專案檔案詞彙表 (v2.0 磐石版)
+# 專案檔案詞彙表 (v2.1 萬象引擎版)
 
 本文件旨在提供一個完整、詳細的專案檔案地圖，說明每一個檔案與目錄在【普羅米修斯之火】框架中的功能與核心職責。
 
@@ -10,11 +10,11 @@
     *   `python`: `>=3.12,<3.14`
     *   `typer`: `^0.12.3` (命令列介面)
     *   `fastapi`: `^0.111.0` (Web API 框架)
+    *   `setuptools`: `^80.9.0` (建構工具)
 *   **數據處理與分析:**
     *   `pandas`: `^2.2.2`
     *   `numpy`: `<2.0`
-    *   `pandas-ta`: `0.3.14b0`
-    *   `pandas-ta-openbb`: `^0.4.22`
+    *   `pandas-ta`: `^0.3.14b0`
     *   `vectorbt`: `^0.28.0`
 *   **遺傳演算法:**
     *   `deap`: `^1.4.1`
@@ -37,7 +37,7 @@
     *   `pytest-asyncio`: `^1.0.0`
     *   `ruff`: `^0.4.8` (Linter & Formatter)
 
-## **二、 檔案目錄結構 (v2.0)**
+## **二、 檔案目錄結構 (v2.1)**
 
 ```
 .
@@ -47,160 +47,21 @@
 ├── config.yml
 ├── create_dummy_data.py
 ├── mypy.ini
-├── pipelines
-│   ├── __init__.py
-│   ├── p0_downloader
-│   │   └── run.py
-│   ├── p1_explorer
-│   │   ├── __init__.py
-│   │   └── run.py
-│   ├── p2_elt_pipeline
-│   │   └── run_elt.py
-│   └── p3_backfill_hourly_data
-│       └── run.py
-├── poetry.lock
-├── pyproject.toml
-├── pytest.ini
-├── run.py
-├── run_local_services.py
+├── ...
 ├── src
-│   ├── apps
-│   │   ├── __init__.py
-│   │   ├── ai_analyst_app.py
-│   │   ├── analysis_pipeline
-│   │   │   └── run.py
-│   │   ├── backtest_worker_app.py
-│   │   ├── backtesting_engine
-│   │   │   ├── __init__.py
-│   │   │   ├── engine.py
-│   │   │   └── run.py
-│   │   ├── dashboard
-│   │   │   └── dashboard.html
-│   │   ├── db_manager
-│   │   │   └── setup_database.py
-│   │   ├── evolution_app.py
-│   │   ├── factor_engine
-│   │   │   ├── engine.py
-│   │   │   ├── run_factor_etl.py
-│   │   │   └── sma_crossover_factor.py
-│   │   ├── optimizer_app.py
-│   │   ├── pipeline_metadata_manager
-│   │   │   ├── __init__.py
-│   │   │   └── manager.py
-│   │   ├── portfolio_optimizer
-│   │   │   ├── __init__.py
-│   │   │   └── main.py
-│   │   ├── py.typed
-│   │   ├── query_gateway.py
-│   │   ├── report_generator
-│   │   │   ├── __init__.py
-│   │   │   ├── generator.py
-│   │   │   └── run.py
-│   │   ├── results_projector_app.py
-│   │   ├── run_evolution.py
-│   │   ├── run_rebuild_models.py
-│   │   ├── tools
-│   │   │   ├── clear_results.py
-│   │   │   ├── report_generator_app.py
-│   │   │   ├── show_results.py
-│   │   │   └── task_adder_app.py
-│   │   ├── validation_app.py
-│   │   └── visualization
-│   │       └── plot_sma_crossover.py
 │   └── core
-│       ├── __init__.py
-│       ├── analysis
-│       │   ├── data_engine.py
-│       │   └── stress_index.py
-│       ├── analyzers
-│       │   ├── __init__.py
-│       │   └── base_analyzer.py
-│       ├── clients
-│       │   ├── __init__.py
-│       │   ├── base.py
-│       │   ├── finmind.py
-│       │   ├── fmp.py
-│       │   ├── fred.py
-│       │   ├── nyfed.py
-│       │   ├── taifex_db.py
-│       │   └── yfinance.py
-│       ├── config.py
-│       ├── constants.py
-│       ├── context.py
-│       ├── db
-│       │   ├── __init__.py
-│       │   ├── db_manager.py
-│       │   ├── evolution_logger.py
-│       │   ├── results_saver.py
-│       │   └── transactional_writer.py
-│       ├── engines
-│       │   ├── __init__.py
-│       │   └── robust_acquisition_engine.py
-│       ├── events
-│       │   ├── event_store.py
-│       │   └── event_types.py
-│       ├── logger.py
-│       ├── logging
-│       │   └── log_manager.py
-│       ├── monitoring
-│       │   └── dashboard.py
-│       ├── pipelines
-│       │   ├── __init__.py
-│       │   ├── base_step.py
-│       │   ├── pipeline.py
-│       │   └── steps
-│       │       ├── __init__.py
-│       │       ├── aggregators.py
-│       │       ├── financial_steps.py
-│       │       └── loaders.py
-│       ├── py.typed
-│       ├── queue
-│       │   ├── __init__.py
-│       │   ├── base.py
-│       │   └── sqlite_queue.py
-│       ├── services
-│       │   ├── __init__.py
-│       │   ├── backtesting_service.py
-│       │   ├── checkpoint_manager.py
-│       │   ├── evolution_chamber.py
-│       │   └── optimizer_service.py
-│       └── utils
+│       ├── ...
+│       └── services
 │           ├── __init__.py
-│           ├── caching.py
-│           ├── data_loader.py
-│           └── path_utils.py
+│           ├── backtesting_service.py
+│           ├── checkpoint_manager.py
+│           ├── evolution_chamber.py
+│           └── optimizer_service.py
 └── tests
-    ├── conftest.py
-    ├── fixtures
-    │   ├── corrupted.zip
-    │   ├── no_data_response.html
-    │   └── sample_daily_ohlc_20250711.zip
-    ├── ignition_test.py
-    ├── integration
-    │   ├── analysis
-    │   │   └── test_data_engine_cache.py
-    │   ├── apps
-    │   │   └── test_analysis_pipeline.py
-    │   └── pipelines
-    │       ├── test_data_pipeline.py
-    │       └── test_example_flow.py
-    ├── test_p0_downloader.py
-    ├── test_p1_explorer.py
-    ├── test_p2_elt_pipeline.py
+    ├── ...
     └── unit
-        ├── analysis
-        │   └── test_data_engine.py
-        ├── core
-        │   ├── analyzers
-        │   │   └── test_base_analyzer.py
-        │   ├── clients
-        │   │   ├── test_finmind.py
-        │   │   ├── test_fmp.py
-        │   │   ├── test_fred.py
-        │   │   ├── test_nyfed.py
-        │   │   └── test_yfinance.py
-        │   └── test_queue.py
-        └── test_feature_analyzer.py
+        └── services
+            └── test_omniverse_engine.py
 ```
 
 ## **三、 根目錄 (Root Directory)**
@@ -209,7 +70,7 @@
 -   `PROJECT_FILES_GLOSSARY.md`: **[文檔]** (本檔案) 提供比 `README.md` 更詳細的、針對每一個檔案和目錄的功能說明。
 -   `run.py`: **[核心入口]** 專案的統一命令列介面 (CLI)，使用 `Typer` 建立。是執行所有主要任務（如演化、回測、測試、儀表板）的入口點。
 -   `run_local_services.py`: **[輔助腳本]** 用於在本機同時啟動多個服務（如演化引擎和回測工作者）的腳本，模擬生產環境的運行方式。
--   `config.yml`: **[設定檔]** 全局設定檔。
+-   `config.yml`: **[設定檔]** 全局設定檔。**在 v2.1 中，新增了 `factor_universe` 區塊，這是萬象引擎的核心設定，用於定義所有可供演化使用的因子、參數範圍與操作，實現了配置驅動的策略擴展。**
 -   `pyproject.toml`: **[依賴管理]** `Poetry` 的專案設定檔。
 -   `poetry.lock`: **[依賴管理]** `Poetry` 的鎖定檔案。
 -   `pytest.ini`, `mypy.ini`: **[工具設定]** `Pytest` 和 `Mypy` 的設定檔。
@@ -230,8 +91,8 @@
 
 -   `context.py`: **[核心服務-非同步]** `AppContext` 的實作。一個非同步上下文管理器 (`async with`)，負責初始化並提供所有共享的 **非同步** 服務，如 `aiosqlite` 資料庫連線、`PersistentEventStream` 和 `ResultsSaver`。**注意：此元件目前主要由 `query_gateway.py` 使用，尚未整合至同步的演化流程中。**
 -   `services/`:
-    -   `evolution_chamber.py`: **[核心服務-同步]** 策略演化室。封裝了 `DEAP` 遺傳演算法的邏輯，負責管理策略的生成、交叉和突變。
-    -   `backtesting_service.py`: **[核心服務-同步]** 回測服務。被 `backtest_worker_app` 使用，負責執行實際的回測計算。
+    -   `evolution_chamber.py`: **[核心服務-同步]** **萬象引擎的大腦**。重構後的演化室不再局限於特定策略，而是成為一個動態的基因體工廠。它讀取 `config.yml` 中的 `factor_universe`，動態地生成由多個「條件」組成的複雜基因體，並負責對這些基因體進行交叉與突變。
+    -   `backtesting_service.py`: **[核心服務-同步]** **萬象引擎的執行者**。重構後的回測服務成為一個動態的規則解釋器。它接收複雜的基因體，遍歷其中的每一個條件，動態調用 `pandas-ta` 計算對應的技術指標，並根據條件的運算子將指標序列轉化為交易信號，最終組合所有信號並執行 `vectorbt` 回測。
 -   `queue/`:
     -   `sqlite_queue.py`: **[核心通訊-同步]** 一個基於 `sqlite3` 的、穩健的 **同步** 任務佇列。是 `evolution_app` 和 `backtest_worker_app` 之間進行任務分派和結果回收的主要通訊機制。
 -   `events/`:
@@ -244,16 +105,8 @@
 
 此目錄包含所有自動化測試，確保程式碼的品質與穩定性。
 
--   `conftest.py`: **[測試設定]** `Pytest` 的本地插件檔案，用於定義所有測試共享的 `fixtures`（例如，初始化的 `AppContext`、暫存的資料庫等），簡化測試的編寫。
--   `ignition_test.py`: **[啟動測試]** 一個非常基礎的測試，用於確保 `Pytest` 本身可以正常啟動並發現測試，可視為專案測試環境的「點火測試」。
--   `fixtures/`: **[測試數據]** 存放所有測試案例所需的靜態數據檔案。
-    -   `*.zip`, `*.html`: 模擬從外部 API 下載的數據，用於測試數據解析和處理的各種情況（如正常、損壞、無數據等）。
--   `unit/`: **[單元測試]**
-    -   專注於測試單一函式、類別或模組的功能是否正確，不涉及外部依賴（如資料庫、網路）。
-    -   **`core/`**: 包含對核心服務的單元測試，例如測試 `SQLiteQueue` 的 `put` 和 `get` 是否正常。
-    -   **`analysis/`**: 包含對分析相關功能的單元測試。
--   `integration/`: **[整合測試]**
-    -   專注於測試多個模組協同工作時是否正確，可能會涉及資料庫或檔案系統等真實的外部依賴。
-    -   **`pipelines/`**: 測試數據處理管線（`p0`, `p1`, `p2`）的端到端流程是否順暢。
-    -   **`apps/`**: 測試應用程式層的整合，例如，測試 `evolution_app` 是否能成功地將任務放入佇列，以及 `backtest_worker_app` 是否能正確地處理這些任務。
--   `test_p*.py`: 直接放在 `tests/` 目錄下的測試檔案，通常是針對特定 `pipeline` 的高階整合測試。
+-   `conftest.py`: **[測試設定]** `Pytest` 的本地插件檔案。
+-   `unit/services/test_omniverse_engine.py`: **[單元測試]** **萬象引擎的專屬測試**。此檔案包含針對新架構下 `EvolutionChamber` 和 `BacktestingService` 的單元測試，用於驗證它們能否正確生成、操作和解釋複雜的基因體。
+-   `integration/`: **[整合測試]** 專注於測試多個模組協同工作時是否正確。
+
+[end of PROJECT_FILES_GLOSSARY.md]

@@ -31,3 +31,20 @@ data_acquisition:
     user_agents:
       - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
       - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+
+# ==============================================================================
+# 因子宇宙設定 (v1.0)
+# 說明：定義演化引擎可以使用的所有技術指標、參數範圍與操作。
+# ==============================================================================
+factor_universe:
+  - name: "RSI"
+    params:
+      window: [10, 30]  # 參數：窗口大小，範圍為 10 到 30
+    operators: ["less_than", "greater_than"] # 可用的比較運算子
+    value_range: [20, 80] # 運算子右側值的範圍 (例如 RSI < 30)
+
+  - name: "SMA_cross" # 特殊因子：雙均線交叉
+    params:
+      fast_window: [5, 50]
+      slow_window: [10, 100]
+    operators: ["cross_above", "cross_below"] # 專用運算子
