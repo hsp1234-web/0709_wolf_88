@@ -1,21 +1,45 @@
 import os
+import shutil
+from src.prometheus.core.logging.log_manager import LogManager
 
-from prometheus.core.context import AppContext
+logger = LogManager.get_instance().get_logger("ClearResults")
 
 RESULTS_DB_PATH = "output/results.sqlite"
+QUEUE_DIR = "data/queues"
+LOG_DIR = "data/logs"
+CHECKPOINT_DIR = "data/checkpoints"
+REPORTS_DIR = "data/reports"
 
 
-def clear_results(ctx: AppContext):
-    ctx.log_manager.log("WARNING", f"準備刪除交易型結果資料庫: {RESULTS_DB_PATH}...")
-    try:
-        if os.path.exists(RESULTS_DB_PATH):
-            os.remove(RESULTS_DB_PATH)
-            ctx.log_manager.log(
-                "SUCCESS", f"資料庫檔案 '{RESULTS_DB_PATH}' 已成功刪除。"
-            )
+def clear_all_results():
+    """
+    清除所有生成的結果、佇列、日誌和檢查點。
+    """
+    logger.info("開始清除所有執行數據...")
+
+    def remove_path(path_str, is_dir=False):
+        if is_dir:
+            if os.path.isdir(path_str):
+                shutil.rmtree(path_str)
+                logger.info(f"已刪除並清空目錄: {path_str}")
         else:
-            ctx.log_manager.log(
-                "INFO", f"資料庫檔案 '{RESULTS_DB_PATH}' 不存在，無需刪除。"
-            )
+            if os.path.exists(path_str):
+                os.remove(path_str)
+                logger.info(f"已刪除檔案: {path_str}")
+
+    try:
+        remove_path(RESULTS_DB_PATH, is_dir=False)
+        remove_path(QUEUE_DIR, is_dir=True)
+        remove_path(LOG_DIR, is_dir=True)
+        remove_path(CHECKPOINT_DIR, is_dir=True)
+        remove_path(REPORTS_DIR, is_dir=True)
+
+        # 重建空目錄
+        os.makedirs(QUEUE_DIR, exist_ok=True)
+        os.makedirs(LOG_DIR, exist_ok=True)
+        os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+        os.makedirs(REPORTS_DIR, exist_ok=True)
+
+        logger.info("清除程序完成。")
     except Exception as e:
-        ctx.log_manager.log("ERROR", f"刪除資料庫檔案時發生錯誤: {e}")
+        logger.error(f"清除過程中發生錯誤: {e}", exc_info=True)

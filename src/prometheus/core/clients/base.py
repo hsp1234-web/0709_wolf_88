@@ -9,13 +9,14 @@
 """
 
 from contextlib import contextmanager
-from typing import Iterator, Optional  # Import Optional
+from typing import Iterator, Optional
 
 import requests
 
-# 從我們的通用工具模組導入快取工具
-# 這裡我們使用之前建立的同步版本
 from prometheus.core.utils.helpers import get_cached_session, temporary_disabled_cache
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("BaseAPIClient")
 
 
 class BaseAPIClient:
@@ -33,10 +34,8 @@ class BaseAPIClient:
         """
         self.api_key = api_key
         self.base_url = base_url
-        # **關鍵升級**: Session 現在直接從我們的中央快取引擎獲取
-        # 這意味著所有使用 self._session 的請求都將自動被快取
         self._session: requests.Session = get_cached_session()
-        print(f"資訊：{self.__class__.__name__} 已初始化，並注入了永久快取 Session。")
+        logger.info(f"{self.__class__.__name__} 已初始化，並注入了永久快取 Session。")
 
     @contextmanager
     def _get_request_context(self, force_refresh: bool = False) -> Iterator[None]:
@@ -48,12 +47,10 @@ class BaseAPIClient:
             force_refresh (bool): 是否強制刷新。
         """
         if force_refresh:
-            # 如果需要強制刷新，則使用 temporary_disabled_cache 上下文管理器
-            print(f"🔄 {self.__class__.__name__} 偵測到強制刷新指令。")
+            logger.info(f"{self.__class__.__name__} 偵測到強制刷新指令。")
             with temporary_disabled_cache(self._session):
                 yield
         else:
-            # 否則，不執行任何操作，讓快取正常運作
             yield
 
     def close_session(self):
@@ -62,7 +59,7 @@ class BaseAPIClient:
         """
         if self._session:
             self._session.close()
-            print(f"資訊：{self.__class__.__name__} 的 Session 已關閉。")
+            logger.info(f"{self.__class__.__name__} 的 Session 已關閉。")
 
     def fetch_data(self, symbol: str, **kwargs):
         """
@@ -103,9 +100,7 @@ class BaseAPIClient:
 
         url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
-        print(
-            f"資訊：{self.__class__.__name__} 正在向 {method} {url} 發送請求，參數：{params}"
-        )
+        logger.debug(f"{self.__class__.__name__} 正在向 {method} {url} 發送請求，參數：{params}")
 
         if method.upper() == "GET":
             response = self._session.get(url, params=params)

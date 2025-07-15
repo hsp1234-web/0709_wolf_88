@@ -2,6 +2,10 @@ import pickle
 from pathlib import Path
 from typing import Optional
 
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("CheckpointManager")
+
 
 class CheckpointManager:
     """
@@ -14,13 +18,12 @@ class CheckpointManager:
     def save_checkpoint(self, state: dict):
         """將演化狀態以 pickle 格式儲存到檔案。"""
         try:
-            # 確保父目錄存在
             self.path.parent.mkdir(exist_ok=True, parents=True)
             with open(self.path, "wb") as f:
                 pickle.dump(state, f)
-            print(f"\n[Checkpoint] 演化狀態已成功儲存至: {self.path}")
+            logger.info(f"演化狀態已成功儲存至: {self.path}")
         except Exception as e:
-            print(f"\n!!!!!! [Checkpoint] 儲存檢查點失敗: {e} !!!!!!")
+            logger.error(f"儲存檢查點失敗: {e}", exc_info=True)
 
     def load_checkpoint(self) -> Optional[dict]:
         """從檔案讀取演化狀態。"""
@@ -30,14 +33,14 @@ class CheckpointManager:
         try:
             with open(self.path, "rb") as f:
                 state = pickle.load(f)
-            print(f"\n[Checkpoint] 成功從 {self.path} 讀取到檢查點。")
+            logger.info(f"成功從 {self.path} 讀取到檢查點。")
             return state
         except Exception as e:
-            print(f"\n!!!!!! [Checkpoint] 讀取檢查點失敗: {e} !!!!!!")
+            logger.error(f"讀取檢查點失敗: {e}", exc_info=True)
             return None
 
     def clear_checkpoint(self):
         """清除舊的檢查點檔案。"""
         if self.path.exists():
             self.path.unlink()
-            print(f"[Checkpoint] 已清除舊的檢查點檔案: {self.path}")
+            logger.info(f"已清除舊的檢查點檔案: {self.path}")

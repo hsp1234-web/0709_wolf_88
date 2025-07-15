@@ -2,16 +2,19 @@ import logging
 from datetime import datetime, timedelta
 
 import numpy as np
+from src.prometheus.core.logging.log_manager import LogManager
 import pandas as pd
 import plotly.graph_objects as go
 
 from prometheus.core.clients.fred import FredClient
 from prometheus.core.clients.nyfed import NYFedClient
 
+logger = LogManager.get_instance().get_logger("StressIndexCalculator")
+
 
 class StressIndexCalculator:
     def __init__(self, rolling_window=252):
-        print("資訊：正在初始化壓力指數計算引擎...")
+        logger.info("正在初始化壓力指數計算引擎...")
         self.fred_client = FredClient()
         self.nyfed_client = NYFedClient()
         self.rolling_window = rolling_window

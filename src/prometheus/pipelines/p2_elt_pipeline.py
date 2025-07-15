@@ -14,20 +14,23 @@ from prometheus.core.utils.helpers import (
     read_file_content,
 )
 from prometheus.pipelines.p1_explorer import get_header_fingerprint
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("P2-ELT-Pipeline")
 
 
 def run_loader(input_dir, raw_db_path, schema_db_path):
-    print("\n--- [階段 2] 執行 Loader ---")
+    logger.info("--- [階段 2] 執行 Loader ---")
     raw_wh = RawDataWarehouse(raw_db_path)
     schema_registry = SchemaRegistry(schema_db_path)
 
     known_fingerprints = schema_registry.get_known_fingerprints()
     if not known_fingerprints:
-        print("[INFO] Loader: No known fingerprints loaded from schema registry. Only files matching these will be processed.")
+        logger.info("Loader: No known fingerprints loaded from schema registry. Only files matching these will be processed.")
 
     files_loaded = 0
     if not os.path.exists(input_dir):
-        print(f"[WARNING] Loader input directory {input_dir} does not exist. Skipping loading.")
+        logger.warning(f"Loader input directory {input_dir} does not exist. Skipping loading.")
         raw_wh.close()
         schema_registry.close()
         return
@@ -35,11 +38,11 @@ def run_loader(input_dir, raw_db_path, schema_db_path):
     for filename in os.listdir(input_dir):
         file_path = os.path.join(input_dir, filename)
 
-        if not os.path.isfile(file_path):  # Skip directories
+        if not os.path.isfile(file_path):
             continue
 
         if raw_wh.is_file_processed(file_path):
-            print(f"[INFO] Loader: File {filename} already in raw_import_log. Skipping.")
+            logger.debug(f"Loader: File {filename} already in raw_import_log. Skipping.")
             continue
 
         try:
@@ -53,30 +56,29 @@ def run_loader(input_dir, raw_db_path, schema_db_path):
                 if fingerprint in known_fingerprints:
                     raw_wh.log_processed_file(file_path, file_bytes_content, fingerprint)
                     files_loaded += 1
-                    print(f"[INFO] Loader: Loaded {filename} (fingerprint: {fingerprint[:8]}...) as it's a known schema.")
+                    logger.info(f"Loader: Loaded {filename} (fingerprint: {fingerprint[:8]}...) as it's a known schema.")
                 else:
-                    print(f"[INFO] Loader: Skipped {filename} (fingerprint: {fingerprint[:8]}...) as its schema is not in the registry.")
+                    logger.info(f"Loader: Skipped {filename} (fingerprint: {fingerprint[:8]}...) as its schema is not in the registry.")
             else:
-                print(f"[INFO] Loader: Skipped file {filename} due to content prospecting failure: {result.get('error', 'Unknown error')}")
+                logger.warning(f"Loader: Skipped file {filename} due to content prospecting failure: {result.get('error', 'Unknown error')}")
 
         except Exception as e:
-            print(f"[ERROR] Loader 處理 {filename} 失敗: {e}")
+            logger.error(f"Loader 處理 {filename} 失敗: {e}", exc_info=True)
 
     raw_wh.close()
     schema_registry.close()
-    print(f"Loader 完成，新載入 {files_loaded} 個檔案。")
+    logger.info(f"Loader 完成，新載入 {files_loaded} 個檔案。")
 
 
-# --- Transformer 邏輯 ---
 def run_transformer(raw_db_path, schema_db_path, analytics_db_path):
-    print("\n--- [階段 3] 執行 Transformer ---")
+    logger.info("--- [階段 3] 執行 Transformer ---")
     schema_registry = SchemaRegistry(schema_db_path)
     raw_wh = RawDataWarehouse(raw_db_path)
     analytics_wh = AnalyticsDataWarehouse(analytics_db_path)
 
     schema_map = schema_registry.get_all_schemas()
     if not schema_map:
-        print("[WARNING] Transformer: 格式註冊表為空或讀取失敗，Transformer 無法執行有效轉換。")
+        logger.warning("Transformer: 格式註冊表為空或讀取失敗，Transformer 無法執行有效轉換。")
         schema_registry.close()
         raw_wh.close()
         analytics_wh.close()
@@ -86,9 +88,9 @@ def run_transformer(raw_db_path, schema_db_path, analytics_db_path):
     target_daily_futures_fingerprint = get_header_fingerprint(daily_futures_header_str)
 
     if target_daily_futures_fingerprint not in schema_map:
-        print(f"[WARNING] Transformer: Did not find fingerprint for daily_futures_header '{daily_futures_header_str}' in schema_map. Cannot process daily_futures.")
+        logger.warning(f"Transformer: Did not find fingerprint for daily_futures_header '{daily_futures_header_str}' in schema_map. Cannot process daily_futures.")
     else:
-        print(f"[INFO] Transformer: Target fingerprint for daily_futures is {target_daily_futures_fingerprint[:8]}...")
+        logger.info(f"Transformer: Target fingerprint for daily_futures is {target_daily_futures_fingerprint[:8]}...")
 
     analytics_wh.create_daily_futures_table()
 
@@ -123,14 +125,14 @@ def run_transformer(raw_db_path, schema_db_path, analytics_db_path):
                 transformed_count += 1
 
         except pd.errors.EmptyDataError:
-            print(f"[WARNING] Transformer: No data or columns found in CSV for fingerprint {fingerprint[:8]}...")
+            logger.warning(f"Transformer: No data or columns found in CSV for fingerprint {fingerprint[:8]}...")
         except Exception as e:
-            print(f"[ERROR] Transformer 處理指紋 {fingerprint[:8]}... 的資料時失敗: {e}")
+            logger.error(f"Transformer 處理指紋 {fingerprint[:8]}... 的資料時失敗: {e}", exc_info=True)
 
     raw_wh.close()
     analytics_wh.close()
     schema_registry.close()
-    print(f"Transformer 完成，成功轉換 {transformed_count} 筆記錄。")
+    logger.info(f"Transformer 完成，成功轉換 {transformed_count} 筆記錄。")
 
 
 def run_elt_pipeline(input_dir: str, raw_db_path: str, schema_db_path: str, analytics_db_path: str):

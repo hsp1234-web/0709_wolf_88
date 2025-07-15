@@ -3,6 +3,10 @@ from typing import Any, Dict
 
 import yaml
 
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("ConfigManager")
+
 
 class ConfigManager:
     _instance = None
@@ -20,15 +24,12 @@ class ConfigManager:
     def _load_config(self, config_path: str):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                # 直接更新實例的 _config 字典
                 self.__class__._config.update(yaml.safe_load(f))
-                print(f"資訊：設定檔 '{config_path}' 載入成功。")
+                logger.info(f"設定檔 '{config_path}' 載入成功。")
         except FileNotFoundError:
-            print(f"警告：找不到設定檔 '{config_path}'。將使用預設值或空值。")
-            # self.__class__._config remains as it was (e.g. {} if first load failed)
+            logger.warning(f"找不到設定檔 '{config_path}'。將使用預設值或空值。")
         except Exception as e:
-            print(f"錯誤：載入設定檔 '{config_path}' 時發生錯誤: {e}")
-            # self.__class__._config remains as it was
+            logger.error(f"載入設定檔 '{config_path}' 時發生錯誤: {e}", exc_info=True)
 
     def get(self, key: str, default: Any = None) -> Any:
         keys = key.split(".")
@@ -54,13 +55,11 @@ config = ConfigManager(config_path="config.yml")  # 指定路徑
 
 def get_fred_api_key() -> str:
     """一個專用的輔助函數，用於安全地獲取 FRED API 金鑰。"""
-    # 直接從全域 config 實例獲取
     key = config.get("api_keys.fred")
-    if not key or key == "YOUR_FRED_API_KEY_HERE":  # 檢查是否為預留位置
-        print("錯誤：FRED API 金鑰未在 config.yml 中正確設定或仍為預留位置。")
-        raise ValueError(
-            "錯誤：FRED API 金鑰未在 config.yml 中正確設定或仍為預留位置。"
-        )
+    if not key or "YOUR_REAL" in key:
+        error_msg = "FRED API 金鑰未在 config.yml 中正確設定或仍為預留位置。"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
     return key
 
 

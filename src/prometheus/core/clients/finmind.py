@@ -5,12 +5,15 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from io import StringIO
-from typing import Any, Dict, List, Optional  # Ensure List is imported
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import requests
 
 from .base import BaseAPIClient
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("FinMindClient")
 
 # FinMind API 基礎 URL (所有請求都使用此 URL)
 FINMIND_API_BASE_URL = "https://api.finmindtrade.com/api/v4/data"
@@ -41,7 +44,7 @@ class FinMindClient(BaseAPIClient):
             )
 
         super().__init__(api_key=finmind_api_token, base_url=FINMIND_API_BASE_URL)
-        print("資訊：FinMindClient 初始化完成。")
+        logger.info("FinMindClient 初始化完成。")
 
     def _request(
         self, endpoint: str = "", params: Optional[Dict[str, Any]] = None
@@ -81,61 +84,48 @@ class FinMindClient(BaseAPIClient):
             else self.base_url
         )
 
-        print(
-            f"資訊：向 FinMind API 發送請求，URL: {current_url}, 資料集：'{request_params.get('dataset')}', 資料ID：'{request_params.get('data_id')}'"
-        )
+        logger.debug(f"向 FinMind API 發送請求，URL: {current_url}, 資料集：'{request_params.get('dataset')}', 資料ID：'{request_params.get('data_id')}'")
 
         try:
-            # Ensure current_url is not None before calling get, though the check for self.base_url should cover this.
             if not current_url:
-                raise ValueError(
-                    "FinMindClient: Calculated URL is empty, cannot make a request."
-                )
-            response: requests.Response = self._session.get(
-                current_url, params=request_params
-            )
-            response.raise_for_status()  # type: ignore[no-untyped-call]
+                raise ValueError("FinMindClient: Calculated URL is empty, cannot make a request.")
+            response: requests.Response = self._session.get(current_url, params=request_params)
+            response.raise_for_status()
 
             content_type = response.headers.get("Content-Type", "")
             if "text/csv" in content_type:
-                print("資訊：FinMind API 回應為 CSV 格式。")
+                logger.debug("FinMind API 回應為 CSV 格式。")
                 df = pd.read_csv(StringIO(response.text))
                 return df if not df.empty else pd.DataFrame()
 
             elif "application/json" in content_type:
-                print("資訊：FinMind API 回應為 JSON 格式。")
-                json_response: Dict[str, Any] = response.json()  # type: ignore[no-any-return]
+                logger.debug("FinMind API 回應為 JSON 格式。")
+                json_response: Dict[str, Any] = response.json()
 
                 if json_response.get("status") != 200:
                     error_msg = json_response.get("msg", "未知 API 內部錯誤")
                     status_code = json_response.get("status", "N/A")
-                    print(
-                        f"錯誤：FinMind API 邏輯錯誤 (內部 status {status_code}): {error_msg}"
-                    )
+                    logger.error(f"FinMind API 邏輯錯誤 (內部 status {status_code}): {error_msg}")
                     return pd.DataFrame()
 
                 data_list: Optional[List[Dict[str, Any]]] = json_response.get("data")
                 if data_list:
                     return pd.DataFrame(data_list)
                 else:
-                    print(
-                        f"資訊：FinMind API 未返回任何數據 (data 列表為空或不存在)。資料集：'{request_params.get('dataset')}', ID：'{request_params.get('data_id')}'"
-                    )
+                    logger.info(f"FinMind API 未返回任何數據 (data 列表為空或不存在)。資料集：'{request_params.get('dataset')}', ID：'{request_params.get('data_id')}'")
                     return pd.DataFrame()
             else:
-                print(f"錯誤：未知的 FinMind API 回應 Content-Type: {content_type}")
+                logger.error(f"未知的 FinMind API 回應 Content-Type: {content_type}")
                 return pd.DataFrame()
 
         except requests.exceptions.HTTPError as http_err:
-            print(
-                f"錯誤：FinMind API HTTP 錯誤：{http_err} - 回應內容：{http_err.response.text if http_err.response else '無回應內容'}"
-            )
+            logger.error(f"FinMind API HTTP 錯誤：{http_err} - 回應內容：{http_err.response.text if http_err.response else '無回應內容'}", exc_info=True)
             raise
         except requests.exceptions.RequestException as req_err:
-            print(f"錯誤：請求 FinMind API 時發生網路或請求配置錯誤：{req_err}")
+            logger.error(f"請求 FinMind API 時發生網路或請求配置錯誤：{req_err}", exc_info=True)
             return pd.DataFrame()
         except Exception as e:
-            print(f"錯誤：處理 FinMind API 回應時發生未知錯誤：{e}")
+            logger.error(f"處理 FinMind API 回應時發生未知錯誤：{e}", exc_info=True)
             return pd.DataFrame()
 
     def fetch_data(self, symbol: str, **kwargs) -> pd.DataFrame:

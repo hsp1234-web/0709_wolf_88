@@ -1,14 +1,17 @@
 # core/clients/nyfed.py
 # 此模組包含從紐約聯儲 (NY Fed) 下載和解析一級交易商持有量數據的客戶端邏輯。
 
-import traceback  # 保留 traceback 以便在開發或詳細日誌模式下使用
+import traceback
 from io import BytesIO
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import requests
 
-from .base import BaseAPIClient  # 導入 BaseAPIClient
+from .base import BaseAPIClient
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("NYFedClient")
 
 # NY Fed API URLs 和解析設定 (保持不變)
 NYFED_DATA_CONFIGS: List[Dict[str, Any]] = [
@@ -94,68 +97,38 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
         # NYFed 不使用 API Key 和標準的 base_url 模式，但仍調用父類構造函數
         super().__init__(api_key=None, base_url=None)
         self.data_configs = data_configs or NYFED_DATA_CONFIGS
-        # 父類的 _session 仍然可用於發送 HTTP 請求
-        print(
-            f"資訊：NYFedClient 初始化完成，將使用 {len(self.data_configs)} 個數據源配置。"
-        )
+        logger.info(f"NYFedClient 初始化完成，將使用 {len(self.data_configs)} 個數據源配置。")
 
     def _download_excel_to_dataframe(
         self, config: Dict[str, Any]
     ) -> Optional[pd.DataFrame]:
         """
         從指定的 API URL 下載 Excel 檔案並讀取特定 sheet 到 DataFrame。
-        此為內部輔助方法，使用父類的 _session 進行請求。
-
-        Args:
-            config (Dict[str, Any]): 單個數據源的配置字典。
-
-        Returns:
-            Optional[pd.DataFrame]: 包含 Excel 數據的 DataFrame，若下載或讀取失敗則為 None。
         """
         url = config["url"]
         sheet_name = config.get("sheet_name", 0)
         header_row = config.get("header_row", 0)
 
-        print(
-            f"資訊：NYFedClient 正在從 {url} 下載 Excel 數據 (Sheet: {sheet_name}, Header: {header_row})..."
-        )
+        logger.debug(f"正在從 {url} 下載 Excel 數據 (Sheet: {sheet_name}, Header: {header_row})...")
         try:
-            # 使用繼承自 BaseAPIClient 的 _session
             response: requests.Response = self._session.get(url, timeout=60)
-            response.raise_for_status()  # type: ignore[no-untyped-call] # 檢查 HTTP 錯誤
+            response.raise_for_status()
 
             excel_file = BytesIO(response.content)
-            df = pd.read_excel(
-                excel_file, sheet_name=sheet_name, header=header_row, engine="openpyxl"
-            )
+            df = pd.read_excel(excel_file, sheet_name=sheet_name, header=header_row, engine="openpyxl")
 
-            # 清理欄位名稱
-            df.columns = [
-                str(col)
-                .strip()
-                .upper()
-                .replace("\N{LINE FEED}", " ")
-                .replace("\n", " ")
-                .replace("\r", " ")
-                .replace("  ", " ")
-                for col in df.columns
-            ]
+            df.columns = [str(col).strip().upper().replace("\n", " ").replace("\r", " ").replace("  ", " ") for col in df.columns]
 
-            print(f"資訊：NYFedClient 成功從 {url} 下載並讀取了 {len(df)} 行數據。")
+            logger.debug(f"成功從 {url} 下載並讀取了 {len(df)} 行數據。")
             return df
         except requests.exceptions.HTTPError as http_err:
-            print(
-                f"錯誤：NYFedClient 下載 Excel 檔案 {url} 時發生 HTTP 錯誤: {http_err}"
-            )
-            # 可以選擇重新拋出或返回 None
-            # raise
+            logger.error(f"下載 Excel 檔案 {url} 時發生 HTTP 錯誤: {http_err}", exc_info=True)
             return None
         except requests.exceptions.RequestException as req_err:
-            print(f"錯誤：NYFedClient 下載 Excel 檔案 {url} 時發生網路錯誤: {req_err}")
+            logger.error(f"下載 Excel 檔案 {url} 時發生網路錯誤: {req_err}", exc_info=True)
             return None
-        except Exception as e:  # 例如 pd.read_excel 相關的錯誤
-            print(f"錯誤：NYFedClient 處理來自 {url} 的 Excel 檔案時發生錯誤: {e}")
-            # traceback.print_exc() # 可在調試時啟用
+        except Exception as e:
+            logger.error(f"處理來自 {url} 的 Excel 檔案時發生錯誤: {e}", exc_info=True)
             return None
 
     def _parse_dealer_positions(
@@ -163,13 +136,10 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
     ) -> pd.DataFrame:
         """
         根據設定解析從單個 Excel 檔案讀取的一級交易商持有量數據。
-        此方法邏輯保持不變。
         """
         date_col_name = config["date_column_names"][0]
         if date_col_name not in df_raw.columns:
-            print(
-                f"錯誤：在來源 {config['url']} 的數據中找不到預期日期欄位 '{date_col_name}'。可用欄位: {df_raw.columns.tolist()}"
-            )
+            logger.error(f"在來源 {config['url']} 的數據中找不到預期日期欄位 '{date_col_name}'。可用欄位: {df_raw.columns.tolist()}")
             return pd.DataFrame(columns=["Date", "Total_Positions"])
 
         df = df_raw.copy()
@@ -183,9 +153,7 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
 
         missing_core_cols = [col for col in required_core_cols if col not in df.columns]
         if missing_core_cols:
-            print(
-                f"錯誤：類型 {config['type']} 的數據 ({config['url']}) 缺少核心欄位: {missing_core_cols}。可用欄位: {df.columns.tolist()}"
-            )
+            logger.error(f"類型 {config['type']} 的數據 ({config['url']}) 缺少核心欄位: {missing_core_cols}。可用欄位: {df.columns.tolist()}")
             return pd.DataFrame(columns=["Date", "Total_Positions"])
 
         df[value_col_name] = pd.to_numeric(df[value_col_name], errors="coerce")
@@ -193,16 +161,12 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
         if config["type"] == "SBP":
             cols_to_sum = config.get("cols_to_sum_if_sbp")
             if not cols_to_sum:
-                print(
-                    f"錯誤：SBP 類型數據 ({config['url']}) 未在配置中提供 'cols_to_sum_if_sbp' 列表。"
-                )
+                logger.error(f"SBP 類型數據 ({config['url']}) 未在配置中提供 'cols_to_sum_if_sbp' 列表。")
                 return pd.DataFrame(columns=["Date", "Total_Positions"])
             target_series_codes = [code.upper() for code in cols_to_sum]
             df_filtered = df[df["TIME SERIES"].isin(target_series_codes)]
             if df_filtered.empty:
-                print(
-                    f"警告：SBP 類型數據 ({config['url']}) 在篩選目標 TIME SERIES {target_series_codes} 後為空。"
-                )
+                logger.warning(f"SBP 類型數據 ({config['url']}) 在篩選目標 TIME SERIES {target_series_codes} 後為空。")
                 return pd.DataFrame(columns=["Date", "Total_Positions"])
             summed_df = df_filtered.groupby("Date")[value_col_name].sum().reset_index()
             summed_df.rename(columns={value_col_name: "Total_Positions"}, inplace=True)
@@ -212,82 +176,47 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
             summed_df.rename(columns={value_col_name: "Total_Positions"}, inplace=True)
             df_processed = summed_df
         else:
-            print(f"錯誤：未知的數據類型 '{config['type']}' for url {config['url']}")
+            logger.error(f"未知的數據類型 '{config['type']}' for url {config['url']}")
             return pd.DataFrame(columns=["Date", "Total_Positions"])
 
         df_processed.dropna(subset=["Date", "Total_Positions"], inplace=True)
         if df_processed.empty:
-            print(f"警告：處理後 DataFrame ({config['url']}) 為空。")
+            logger.warning(f"處理後 DataFrame ({config['url']}) 為空。")
             return pd.DataFrame(columns=["Date", "Total_Positions"])
 
         df_processed["Total_Positions"] = df_processed["Total_Positions"] * 1_000_000
         if df_processed["Date"].dt.tz is not None:
             df_processed["Date"] = df_processed["Date"].dt.tz_localize(None)
-        return (
-            df_processed[["Date", "Total_Positions"]]
-            .sort_values(by="Date")
-            .reset_index(drop=True)
-        )
+        return df_processed[["Date", "Total_Positions"]].sort_values(by="Date").reset_index(drop=True)
 
     def fetch_data(self, symbol: str = "", **kwargs) -> pd.DataFrame:
         """
         從 NY Fed API 獲取所有設定的一級交易商持有量數據，並進行合併和處理。
-        `symbol` 在此客戶端的當前實現中被忽略，因為它總是獲取所有配置的數據。
-        `force_refresh` 參數可控制是否繞過快取。
-
-        Args:
-            symbol (str): 此參數當前被忽略。
-            **kwargs: 可接受 `force_refresh: bool` 以控制快取行為。
-
-        Returns:
-            pd.DataFrame: 包含 'Date' 和 'Total_Positions' (單位：實際數值) 的時間序列數據。
-                          如果未能從任何來源獲取數據，則返回空的 DataFrame。
         """
         force_refresh = kwargs.get("force_refresh", False)
 
-        # 忽略 symbol，因為此客戶端總是獲取所有配置的數據
-        if symbol:  # 只是為了避免 linter 報未使用參數的警告
-            print(
-                f"資訊：NYFedClient.fetch_data 接收到 symbol='{symbol}'，但此參數當前被忽略。"
-            )
+        if symbol:
+            logger.debug(f"接收到 symbol='{symbol}'，但此參數當前被忽略。")
 
         all_data_frames: List[pd.DataFrame] = []
-        print(
-            f"資訊：NYFedClient 開始獲取所有一級交易商數據 (強制刷新={force_refresh})..."
-        )
+        logger.info(f"開始獲取所有一級交易商數據 (強制刷新={force_refresh})...")
 
-        # 使用 _get_request_context 控制整個 fetch_data 過程的快取行為
-        # 注意：對於 NYFedClient，它下載多個檔案。
-        # 如果 force_refresh=True，則所有檔案都會重新下載。
-        # 如果 force_refresh=False，則每個檔案都會獨立判斷是否使用快取。
         with self._get_request_context(force_refresh=force_refresh):
             for config in self.data_configs:
-                print(
-                    f"\n資訊：NYFedClient 處理配置: {config.get('notes', config['url'])}"
-                )
-                # _download_excel_to_dataframe 內部使用 self._session，
-                # 其快取行為已由外層的 _get_request_context 控制
+                logger.debug(f"處理配置: {config.get('notes', config['url'])}")
                 df_raw = self._download_excel_to_dataframe(config)
                 if df_raw is not None and not df_raw.empty:
                     df_parsed = self._parse_dealer_positions(df_raw, config)
                     if not df_parsed.empty:
                         all_data_frames.append(df_parsed)
-                        print(
-                            f"資訊：NYFedClient 成功解析來自 {config['url']} 的 {len(df_parsed)} 筆有效數據。"
-                        )
+                        logger.debug(f"成功解析來自 {config['url']} 的 {len(df_parsed)} 筆有效數據。")
                     else:
-                        print(
-                            f"警告：NYFedClient 解析來自 {config['url']} 的數據後無有效記錄。"
-                        )
+                        logger.warning(f"解析來自 {config['url']} 的數據後無有效記錄。")
                 else:
-                    print(
-                        f"警告：NYFedClient 下載或讀取來自 {config['url']} 的數據失敗或原始數據為空。"
-                    )
+                    logger.warning(f"下載或讀取來自 {config['url']} 的數據失敗或原始數據為空。")
 
         if not all_data_frames:
-            print(
-                "錯誤：NYFedClient 未能從任何 NY Fed 來源成功獲取和解析一級交易商數據。"
-            )
+            logger.error("未能從任何 NY Fed 來源成功獲取和解析一級交易商數據。")
             return pd.DataFrame(columns=["Date", "Total_Positions"])
 
         combined_df = pd.concat(all_data_frames, ignore_index=True)
@@ -295,9 +224,7 @@ class NYFedClient(BaseAPIClient):  # 類名從 NYFedAPIClient 改為 NYFedClient
         combined_df.drop_duplicates(subset=["Date"], keep="first", inplace=True)
         combined_df.reset_index(drop=True, inplace=True)
 
-        print(
-            f"\n資訊：NYFedClient 成功合併所有 NY Fed 一級交易商數據，最終共 {len(combined_df)} 筆唯一日期記錄。"
-        )
+        logger.info(f"成功合併所有 NY Fed 一級交易商數據，最終共 {len(combined_df)} 筆唯一日期記錄。")
         return combined_df
 
 

@@ -7,6 +7,9 @@ from prometheus.core.utils.helpers import (
     prospect_file_content,
     read_file_content,
 )
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("P1-Explorer")
 
 
 def get_header_fingerprint(header_line: str) -> str:
@@ -17,7 +20,7 @@ def get_header_fingerprint(header_line: str) -> str:
 
 def run_explorer(input_dir: str, db_path: str):
     registry = SchemaRegistry(db_path)
-    print(f"--- 開始掃描目錄: {input_dir} ---")
+    logger.info(f"開始掃描目錄: {input_dir}")
     new_formats = 0
     updated_formats = 0
 
@@ -42,12 +45,12 @@ def run_explorer(input_dir: str, db_path: str):
                     updated_formats += 1
 
         except Exception as e:
-            print(f"[ERROR] 處理檔案 {filename} 失敗: {e}")
+            logger.error(f"處理檔案 {filename} 失敗: {e}", exc_info=True)
 
     registry.close()
-    print("\n--- 格式探勘總結 ---")
-    print(f"  發現新格式: {new_formats} 種")
-    print(f"  更新現有格式計數: {updated_formats} 次")
+    logger.info("--- 格式探勘總結 ---")
+    logger.info(f"發現新格式: {new_formats} 種")
+    logger.info(f"更新現有格式計數: {updated_formats} 次")
 
 
 def main():

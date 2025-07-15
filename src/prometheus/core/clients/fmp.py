@@ -5,9 +5,12 @@ import os
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-import requests  # For requests.exceptions
+import requests
 
 from .base import BaseAPIClient
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("FMPClient")
 
 # 假設配置統一由 BaseAPIClient 或環境變數處理，不再從 core.config 導入 settings
 # 如果有統一的 settings 物件，可以後續加入
@@ -39,9 +42,7 @@ class FMPClient(BaseAPIClient):
 
         super().__init__(api_key=fmp_api_key, base_url=FMP_API_BASE_URL_NO_VERSION)
         self.default_api_version = default_api_version
-        print(
-            f"資訊：FMPClient 初始化完成，將使用 API Key，預設 API 版本 '{self.default_api_version}'。基礎 URL: {self.base_url}"
-        )
+        logger.info(f"FMPClient 初始化完成，預設 API 版本 '{self.default_api_version}'。")
 
     def _prepare_params(
         self, params: Optional[Dict[str, Any]] = None
@@ -111,103 +112,64 @@ class FMPClient(BaseAPIClient):
                 f"不支援的 data_type: {data_type}。支援的值為 'historical_price', 'income_statement', 'balance_sheet_statement', 'cash_flow_statement'。"
             )
 
-        # 準備請求參數 (包括 API key)
         final_params = self._prepare_params(params)
 
-        print(
-            f"資訊：FMPClient 正在獲取 '{data_type}' 數據，代碼: {symbol}, Endpoint template: {endpoint_path_template}, Params (不含apikey): {params}"
-        )
+        logger.debug(f"正在獲取 '{data_type}' 數據，代碼: {symbol}, Endpoint: {endpoint_path_template}, Params: {params}")
 
         try:
-            # 調用 BaseAPIClient 的 _perform_request 獲取原始 response
             response = super()._perform_request(
                 endpoint=endpoint_path_template, params=final_params, method="GET"
             )
-            json_response = response.json()  # 解析 JSON
+            json_response = response.json()
 
-            # 檢查 FMP API 特有的錯誤訊息格式 (雖然 BaseAPIClient.raise_for_status() 會處理 HTTP 錯誤)
-            # 但 FMP 有時在 200 OK 內返回錯誤
             if isinstance(json_response, dict) and "Error Message" in json_response:
                 error_msg = json_response["Error Message"]
-                print(
-                    f"錯誤：FMP API 在成功 HTTP 回應中返回業務邏輯錯誤：'{error_msg}' (Endpoint: {endpoint_path_template})"
-                )
+                logger.error(f"FMP API 返回業務邏輯錯誤：'{error_msg}' (Endpoint: {endpoint_path_template})")
                 return pd.DataFrame()
 
-            # 處理 FMP API 可能的幾種成功回應結構
             data_list: Optional[List[Dict[str, Any]]] = None
             if isinstance(json_response, list):
                 data_list = json_response
             elif isinstance(json_response, dict):
-                # 檢查常見的數據包裝鍵
-                possible_data_keys = ["historical"]  # 主要用於歷史價格
+                possible_data_keys = ["historical"]
                 found_key = False
                 for key in possible_data_keys:
                     if key in json_response and isinstance(json_response[key], list):
                         data_list = json_response[key]
                         found_key = True
                         break
-                if not found_key and data_type not in [
-                    "historical_price"
-                ]:  # 財報通常直接是列表
-                    print(
-                        f"警告：FMP API 返回了一個字典，但未在預期鍵下找到數據列表，也不是標準錯誤格式。Endpoint: {endpoint_path_template}"
-                    )
+                if not found_key and data_type not in ["historical_price"]:
+                    logger.warning(f"FMP API 返回了一個字典，但未在預期鍵下找到數據列表。Endpoint: {endpoint_path_template}")
                     return pd.DataFrame()
 
-            if (
-                data_list is None
-            ):  # 如果 data_list 仍然是 None (例如，json_response 是字典但不是已知結構)
-                print(
-                    f"警告：FMP API 回應無法解析為預期的列表結構。Endpoint: {endpoint_path_template}"
-                )
+            if data_list is None:
+                logger.warning(f"FMP API 回應無法解析為預期的列表結構。Endpoint: {endpoint_path_template}")
                 return pd.DataFrame()
 
-            if not data_list:  # API 成功返回，但 data_list 為空
-                print(
-                    f"資訊：FMP API 未返回 '{symbol}' 的 '{data_type}' 數據 (可能是日期範圍無數據或權限問題)。"
-                )
+            if not data_list:
+                logger.info(f"FMP API 未返回 '{symbol}' 的 '{data_type}' 數據。")
                 return pd.DataFrame()
 
             df = pd.DataFrame(data_list)
 
-            # 數據後處理 (例如日期轉換、排序)
             if "date" in df.columns:
                 df["date"] = pd.to_datetime(df["date"])
                 if data_type == "historical_price":
-                    # FMP 歷史數據通常從新到舊，我們將其反轉為從舊到新
                     df = df.sort_values(by="date").reset_index(drop=True)
-                elif data_type in [
-                    "income-statement",
-                    "balance-sheet-statement",
-                    "cash-flow-statement",
-                ]:
-                    # 財報數據通常按日期降序 (最新在前)，這裡保持 FMP 的順序
-                    df = df.sort_values(by="date", ascending=False).reset_index(
-                        drop=True
-                    )
+                elif data_type in ["income-statement", "balance-sheet-statement", "cash-flow-statement"]:
+                    df = df.sort_values(by="date", ascending=False).reset_index(drop=True)
 
-            print(
-                f"資訊：FMPClient 成功獲取並處理了 {len(df)} 筆 '{data_type}' 數據，代碼: {symbol}。"
-            )
+            logger.info(f"成功獲取並處理了 {len(df)} 筆 '{data_type}' 數據，代碼: {symbol}。")
             return df
 
         except requests.exceptions.HTTPError as http_err:
-            # 由 BaseAPIClient._request 中的 response.raise_for_status() 拋出
-            print(
-                f"錯誤：FMPClient 請求失敗 (HTTP 錯誤)：{http_err}。Endpoint: {endpoint_path_template}"
-            )
-            # response 文本可能在 http_err.response.text
+            logger.error(f"請求失敗 (HTTP 錯誤)：{http_err}。Endpoint: {endpoint_path_template}", exc_info=True)
             return pd.DataFrame()
-        except ValueError as json_err:  # requests.json() 可能引發的錯誤
-            print(
-                f"錯誤：FMPClient 解析 JSON 回應失敗：{json_err}。Endpoint: {endpoint_path_template}"
-            )
+        except ValueError as json_err:
+            logger.error(f"解析 JSON 回應失敗：{json_err}。Endpoint: {endpoint_path_template}", exc_info=True)
             return pd.DataFrame()
         except Exception as e:
-            print(
-                f"錯誤：FMPClient 處理數據時發生未知錯誤：{e}。Endpoint: {endpoint_path_template}"
-            )
+            logger.error(f"處理數據時發生未知錯誤：{e}。Endpoint: {endpoint_path_template}", exc_info=True)
             return pd.DataFrame()
 
 

@@ -11,6 +11,9 @@
 from contextlib import contextmanager
 
 import requests_cache
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("Helpers")
 
 # 定義快取檔案的路徑與名稱
 CACHE_NAME = ".financial_data_cache"
@@ -49,39 +52,39 @@ def temporary_disabled_cache(session: requests_cache.CachedSession):
 
 if __name__ == "__main__":
     # (自我測試代碼維持不變，用於驗證新策略)
-    print("--- [自我測試] 正在驗證中央快取引擎 (v2.0 永久保存模式) ---")
+    logger.info("--- [自我測試] 正在驗證中央快取引擎 (v2.0 永久保存模式) ---")
     test_url = "https://httpbin.org/delay/2"
     session = get_cached_session()
-    print("正在進行第一次請求 (應有 2 秒延遲)...")
+    logger.info("正在進行第一次請求 (應有 2 秒延遲)...")
     import time
 
     start_time = time.time()
     response1 = session.get(test_url)
     end_time = time.time()
-    print(
+    logger.info(
         f"第一次請求完成。耗時: {end_time - start_time:.2f} 秒。From Cache: {response1.from_cache}"
     )
 
-    print("\n正在進行第二次請求 (應立即完成)...")
+    logger.info("\n正在進行第二次請求 (應立即完成)...")
     start_time = time.time()
     response2 = session.get(test_url)
     end_time = time.time()
-    print(
+    logger.info(
         f"第二次請求完成。耗時: {end_time - start_time:.2f} 秒。From Cache: {response2.from_cache}"
     )
 
-    print("\n正在進行強制刷新請求 (應再次有 2 秒延遲)...")
+    logger.info("\n正在進行強制刷新請求 (應再次有 2 秒延遲)...")
     start_time = time.time()
     with temporary_disabled_cache(session):
         response3 = session.get(test_url)
     end_time = time.time()
-    print(
+    logger.info(
         f"強制刷新請求完成。耗時: {end_time - start_time:.2f} 秒。From Cache: {response3.from_cache}"
     )
 
-    print("\n--- [自我測試] 完成 ---")
+    logger.info("\n--- [自我測試] 完成 ---")
     session.cache.clear()
-    print("測試快取已清理。")
+    logger.info("測試快取已清理。")
 
 
 from pathlib import Path
@@ -113,7 +116,7 @@ def load_ohlcv_data(
     in_sample_df = df.iloc[:split_point]
     out_of_sample_df = df.iloc[split_point:]
 
-    print(
+    logger.info(
         f"[DataLoader] 數據已分割：樣本內 {len(in_sample_df)} 筆, 樣本外 {len(out_of_sample_df)} 筆。"
     )
 

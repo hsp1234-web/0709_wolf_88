@@ -1,4 +1,4 @@
-# 專案檔案詞彙表 (v2.1 萬象引擎版)
+# 專案檔案詞彙表 (v2.2 雅典娜之鏡版)
 
 本文件旨在提供一個完整、詳細的專案檔案地圖，說明每一個檔案與目錄在【普羅米修斯之火】框架中的功能與核心職責。
 
@@ -37,7 +37,7 @@
     *   `pytest-asyncio`: `^1.0.0`
     *   `ruff`: `^0.4.8` (Linter & Formatter)
 
-## **二、 檔案目錄結構 (v2.1)**
+## **二、 檔案目錄結構 (v2.2)**
 
 ```
 .
@@ -46,11 +46,96 @@
 ├── TEST_REPORT.md
 ├── config.yml
 ├── create_dummy_data.py
+├── data
+│   ├── checkpoints
+│   ├── db
+│   └── logs
+│       └── prometheus.log
 ├── mypy.ini
-├── ...
+├── poetry.lock
+├── pyproject.toml
+├── pytest.ini
+├── run.py
 ├── src
-│   └── core
-│       ├── ...
+│   ├── __init__.py
+│   └── prometheus
+│       ├── cli
+│       │   └── main.py
+│       ├── core
+│       │   ├── __init__.py
+│       │   ├── analysis
+│       │   │   ├── data_engine.py
+│       │   │   └── stress_index.py
+│       │   ├── analyzers
+│       │   │   ├── __init__.py
+│       │   │   └── base_analyzer.py
+│       │   ├── clients
+│       │   │   ├── __init__.py
+│       │   │   ├── base.py
+│       │   │   ├── client_factory.py
+│       │   │   ├── finmind.py
+│       │   │   ├── fmp.py
+│       │   │   ├── fred.py
+│       │   │   ├── nyfed.py
+│       │   │   ├── taifex_db.py
+│       │   │   └── yfinance.py
+│       │   ├── config.py
+│       │   ├── constants.py
+│       │   ├── context.py
+│       │   ├── db
+│       │   │   ├── __init__.py
+│       │   │   ├── data_warehouse.py
+│       │   │   ├── db_manager.py
+│       │   │   ├── evolution_logger.py
+│       │   │   ├── results_saver.py
+│       │   │   ├── schema_registry.py
+│       │   │   └── transactional_writer.py
+│       │   ├── engines
+│       │   │   ├── __init__.py
+│       │   │   └── robust_acquisition_engine.py
+│       │   ├── events
+│       │   │   ├── event_store.py
+│       │   │   └── event_types.py
+│       │   ├── logging
+│       │   │   └── log_manager.py
+│       │   ├── monitoring
+│       │   │   └── dashboard.py
+│       │   ├── pipelines
+│       │   │   ├── __init__.py
+│       │   │   ├── base_step.py
+│       │   │   ├── pipeline.py
+│       │   │   └── steps
+│       │   │       ├── __init__.py
+│       │   │       ├── aggregators.py
+│       │   │       ├── financial_steps.py
+│       │   │       └── loaders.py
+│       │   ├── py.typed
+│       │   ├── queue
+│       │   │   ├── __init__.py
+│       │   │   └── sqlite_queue.py
+│       │   └── utils
+│       │       ├── __init__.py
+│       │       └── helpers.py
+│       ├── entrypoints
+│       │   ├── __init__.py
+│       │   ├── ai_analyst_app.py
+│       │   ├── backtest_worker_app.py
+│       │   ├── evolution_app.py
+│       │   ├── optimizer_app.py
+│       │   ├── query_gateway.py
+│       │   ├── results_projector_app.py
+│       │   ├── tools
+│       │   │   ├── clear_results.py
+│       │   │   ├── report_generator_app.py
+│       │   │   ├── show_results.py
+│       │   │   └── task_adder_app.py
+│       │   └── validation_app.py
+│       ├── pipelines
+│       │   ├── __init__.py
+│       │   ├── p0_downloader.py
+│       │   ├── p1_explorer.py
+│       │   ├── p2_elt_pipeline.py
+│       │   └── p3_backfill_hourly_data.py
 │       └── services
 │           ├── __init__.py
 │           ├── backtesting_service.py
@@ -58,10 +143,42 @@
 │           ├── evolution_chamber.py
 │           └── optimizer_service.py
 └── tests
-    ├── ...
+    ├── conftest.py
+    ├── fixtures
+    │   ├── corrupted.zip
+    │   ├── no_data_response.html
+    │   └── sample_daily_ohlc_20250711.zip
+    ├── ignition_test.py
+    ├── integration
+    │   ├── analysis
+    │   │   └── test_data_engine_cache.py
+    │   ├── apps
+    │   │   └── test_analysis_pipeline.py
+    │   ├── pipelines
+    │   │   ├── test_data_pipeline.py
+    │   │   └── test_example_flow.py
+    │   └── test_e2e_workflow.py
+    ├── test_p0_downloader.py
+    ├── test_p1_explorer.py
+    ├── test_p2_elt_pipeline.py
     └── unit
-        └── services
-            └── test_omniverse_engine.py
+        ├── analysis
+        │   └── test_data_engine.py
+        ├── core
+        │   ├── analyzers
+        │   │   └── test_base_analyzer.py
+        │   ├── clients
+        │   │   ├── test_finmind.py
+        │   │   ├── test_fmp.py
+        │   │   ├── test_fred.py
+        │   │   ├── test_nyfed.py
+        │   │   └── test_yfinance.py
+        │   ├── logging
+        │   │   └── test_log_manager.py
+        │   └── test_queue.py
+        ├── services
+        │   └── test_omniverse_engine.py
+        └── test_feature_analyzer.py
 ```
 
 ## **三、 根目錄 (Root Directory)**
@@ -69,44 +186,44 @@
 -   `README.md`: **[文檔]** 開發者手冊，提供專案的整體介紹、技術棧、環境設定、主要功能用法、版本歷史與開發者指引。
 -   `PROJECT_FILES_GLOSSARY.md`: **[文檔]** (本檔案) 提供比 `README.md` 更詳細的、針對每一個檔案和目錄的功能說明。
 -   `run.py`: **[核心入口]** 專案的統一命令列介面 (CLI)，使用 `Typer` 建立。是執行所有主要任務（如演化、回測、測試、儀表板）的入口點。
--   `run_local_services.py`: **[輔助腳本]** 用於在本機同時啟動多個服務（如演化引擎和回測工作者）的腳本，模擬生產環境的運行方式。
--   `config.yml`: **[設定檔]** 全局設定檔。**在 v2.1 中，新增了 `factor_universe` 區塊，這是萬象引擎的核心設定，用於定義所有可供演化使用的因子、參數範圍與操作，實現了配置驅動的策略擴展。**
+-   `config.yml`: **[設定檔]** 全局設定檔。包含了 API 金鑰、資料庫路徑以及 `factor_universe`（因子宇宙）的定義。
 -   `pyproject.toml`: **[依賴管理]** `Poetry` 的專案設定檔。
 -   `poetry.lock`: **[依賴管理]** `Poetry` 的鎖定檔案。
 -   `pytest.ini`, `mypy.ini`: **[工具設定]** `Pytest` 和 `Mypy` 的設定檔。
 -   `create_dummy_data.py`: **[輔助腳本]** 用於生成測試或開發所需的虛擬數據。
+-   `data/`: **[數據目錄]** 存放所有數據相關檔案，包括日誌、檢查點和資料庫。
 
-## **四、 `src/apps/` - 應用程式層**
+## **四、 `src/prometheus/` - 原始碼主目錄**
 
-此目錄包含所有可執行的應用邏輯。
+-   `cli/`: **[命令列介面]**
+    -   `main.py`: `Typer` 應用的主要實作，定義了所有可用的命令列指令，如 `services start`, `pipelines`, `results` 等。
+-   `core/`: **[核心服務與商業邏輯層]**
+    -   `logging/log_manager.py`: **[核心服務]** 雅典娜之鏡的核心。一個採用單例模式的中央日誌管理器，負責將結構化日誌輸出到控制台和檔案。
+    -   `services/`:
+        -   `evolution_chamber.py`: **[核心服務]** 萬象引擎的大腦。讀取 `config.yml` 中的 `factor_universe`，動態地生成和操作複雜的策略基因體。
+        -   `backtesting_service.py`: **[核心服務]** 萬象引擎的執行者。一個動態的規則解釋器，能回測由多個條件組成的複雜基因體。
+    -   `clients/`: 包含所有與外部 API 互動的客戶端，如 `YFinanceClient`, `FredClient` 等。
+    -   `queue/sqlite_queue.py`: 一個基於 `sqlite3` 的、穩健的同步任務佇列，用於 `evolution_app` 和 `backtest_worker_app` 之間的通訊。
+    -   其他子目錄如 `analysis`, `db`, `engines` 等，包含了各種核心商業邏輯。
+-   `entrypoints/`: **[應用程式入口]**
+    -   `evolution_app.py`: 演化流程的主函數，負責驅動策略演化。
+    -   `backtest_worker_app.py`: 背景回測工作者的主函數，負責執行回測任務。
+    -   `validation_app.py`: 樣本外驗證流程的主函數。
+    -   `tools/`: 包含一系列用於開發和維護的命令列工具。
+-   `pipelines/`: **[數據處理管線]**
+    -   `p0_downloader.py`: P0 數據下載管線。
+    -   `p1_explorer.py`: P1 格式探勘管線。
+    -   `p2_elt_pipeline.py`: P2 ELT 處理管線。
+    -   `p3_backfill_hourly_data.py`: P3 數據回填管線。
 
--   `evolution_app.py`: **[核心應用-同步]** 演化流程的主函數。負責初始化並啟動 `EvolutionChamber`，驅動策略演化。它使用 `SQLiteQueue` 來分派回測任務。
--   `backtest_worker_app.py`: **[核心應用-同步]** 背景回測工作者的主函數。它從 `SQLiteQueue` 中獲取任務，使用 `BacktestingService` 執行回測，並將結果放回佇列。
--   `query_gateway.py`: **[核心應用-非同步]** 負責啟動 FastAPI Web 服務，為儀表板提供數據查詢的後端 API。
--   `tools/`: **[工具應用]** 包含一系列用於開發和維護的命令列工具，如清除結果、顯示結果、手動新增任務等。
-
-## **五、 `src/core/` - 核心服務與商業邏輯層**
-
-此目錄是專案的心臟，包含了所有共享的核心商業邏輯、服務與工具。
-
--   `context.py`: **[核心服務-非同步]** `AppContext` 的實作。一個非同步上下文管理器 (`async with`)，負責初始化並提供所有共享的 **非同步** 服務，如 `aiosqlite` 資料庫連線、`PersistentEventStream` 和 `ResultsSaver`。**注意：此元件目前主要由 `query_gateway.py` 使用，尚未整合至同步的演化流程中。**
--   `services/`:
-    -   `evolution_chamber.py`: **[核心服務-同步]** **萬象引擎的大腦**。重構後的演化室不再局限於特定策略，而是成為一個動態的基因體工廠。它讀取 `config.yml` 中的 `factor_universe`，動態地生成由多個「條件」組成的複雜基因體，並負責對這些基因體進行交叉與突變。
-    -   `backtesting_service.py`: **[核心服務-同步]** **萬象引擎的執行者**。重構後的回測服務成為一個動態的規則解釋器。它接收複雜的基因體，遍歷其中的每一個條件，動態調用 `pandas-ta` 計算對應的技術指標，並根據條件的運算子將指標序列轉化為交易信號，最終組合所有信號並執行 `vectorbt` 回測。
--   `queue/`:
-    -   `sqlite_queue.py`: **[核心通訊-同步]** 一個基於 `sqlite3` 的、穩健的 **同步** 任務佇列。是 `evolution_app` 和 `backtest_worker_app` 之間進行任務分派和結果回收的主要通訊機制。
--   `events/`:
-    -   `event_store.py`: **[核心通訊-非同步]** 一個基於 `aiosqlite` 的持久化 **非同步** 事件流。它實現了事件溯源模式，是系統中正在開發或用於特定非同步場景的元件。
--   `db/`:
-    -   `results_saver.py`: **[數據持久化-非同步]** 結果儲存器。使用 `aiosqlite` 以非同步方式將回測結果儲存到資料庫。
--   `logger.py`: **[核心服務]** `LogManager` 的實作，提供結構化的日誌記錄功能。
-
-## **六、 `tests/` - 自動化測試**
+## **五、 `tests/` - 自動化測試**
 
 此目錄包含所有自動化測試，確保程式碼的品質與穩定性。
 
--   `conftest.py`: **[測試設定]** `Pytest` 的本地插件檔案。
--   `unit/services/test_omniverse_engine.py`: **[單元測試]** **萬象引擎的專屬測試**。此檔案包含針對新架構下 `EvolutionChamber` 和 `BacktestingService` 的單元測試，用於驗證它們能否正確生成、操作和解釋複雜的基因體。
+-   `conftest.py`: **[測試設定]** `Pytest` 的本地插件檔案，用於定義所有測試共享的 `fixtures`。
+-   `unit/`: **[單元測試]** 專注於測試單一函式、類別或模組的功能是否正確。
+    -   `core/logging/test_log_manager.py`: **[單元測試]** 驗證 `LogManager` 的單例行為和日誌記錄功能。
+    -   `services/test_omniverse_engine.py`: **[單元測試]** 驗證萬象引擎核心服務 (`EvolutionChamber`, `BacktestingService`) 的正確性。
 -   `integration/`: **[整合測試]** 專注於測試多個模組協同工作時是否正確。
-
-[end of PROJECT_FILES_GLOSSARY.md]
+    -   `test_e2e_workflow.py`: **[端到端測試]** 模擬 `run.py services start` 的完整流程，驗證整個應用程式的行為。
+-   `fixtures/`: **[測試數據]** 存放所有測試案例所需的靜態數據檔案。

@@ -5,6 +5,10 @@ import abc
 from pathlib import Path
 from typing import Any, Optional
 
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("SQLiteQueue")
+
 
 class BaseQueue(abc.ABC):
     """
@@ -107,7 +111,7 @@ class SQLiteQueue(BaseQueue):
                         return json.loads(item_json)
             except sqlite3.Error as e:
                 # 如果發生資料庫錯誤，短暫等待後重試
-                print(f"Database error in get(): {e}")
+                logger.error(f"從佇列讀取時發生資料庫錯誤: {e}", exc_info=True)
                 time.sleep(0.1)
 
             if not block:

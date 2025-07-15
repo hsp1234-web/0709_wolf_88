@@ -7,8 +7,9 @@ import duckdb
 import pandas as pd
 
 from prometheus.core.clients.client_factory import ClientFactory
+from src.prometheus.core.logging.log_manager import LogManager
 
-# 假設這些是我們已經存在的客戶端
+logger = LogManager.get_instance().get_logger("DataEngine")
 
 
 class DataEngine:
@@ -32,25 +33,21 @@ class DataEngine:
         # --- 新增程式碼 ---
         if db_connection:
             self.db_con = db_connection
-            print("DataEngine: 使用傳入的 DuckDB 連接。")
+            logger.info("使用傳入的 DuckDB 連接。")
         else:
-            # 建立到 DuckDB 的持久連接
             db_path = Path("prometheus_fire.duckdb")
             self.db_con = duckdb.connect(database=str(db_path), read_only=False)
-            print("DataEngine: DuckDB 連接已建立。")
+            logger.info("DuckDB 連接已建立。")
 
         self._initialize_db()
 
     def _initialize_db(self):
         """如果 hourly_time_series 表不存在，則創建它。"""
         try:
-            # 檢查表是否存在
             self.db_con.execute("SELECT 1 FROM hourly_time_series LIMIT 1")
-            print("DataEngine: 'hourly_time_series' 表已存在。")
+            logger.debug("'hourly_time_series' 表已存在。")
         except duckdb.CatalogException:
-            # 表不存在，創建它
-            print("DataEngine: 'hourly_time_series' 表不存在，正在創建...")
-            # 根據 generate_snapshot 的結構定義欄位
+            logger.info("'hourly_time_series' 表不存在，正在創建...")
             schema = {
                 "timestamp": "TIMESTAMP",
                 "spy_open": "DOUBLE",
@@ -114,12 +111,11 @@ class DataEngine:
             )
             create_table_sql = f"CREATE TABLE hourly_time_series ({columns_def})"
             self.db_con.execute(create_table_sql)
-            print("DataEngine: 'hourly_time_series' 表已成功創建。")
+            logger.info("'hourly_time_series' 表已成功創建。")
 
-    # 建議增加一個關閉連接的方法，確保程式結束時能優雅關閉
     def close(self):
         self.db_con.close()
-        print("DataEngine: DuckDB 連接已關閉。")
+        logger.info("DuckDB 連接已關閉。")
 
     def _query_cache(self, dt):
         """
@@ -131,10 +127,10 @@ class DataEngine:
         result_df = self.db_con.execute(query, [dt]).fetch_df()
 
         if not result_df.empty:
-            print(f"CACHE HIT: 於 {dt} 找到數據。")
+            logger.debug(f"CACHE HIT: 於 {dt} 找到數據。")
             return result_df
         else:
-            print(f"CACHE MISS: 於 {dt} 未找到數據。")
+            logger.debug(f"CACHE MISS: 於 {dt} 未找到數據。")
             return None
 
     def _write_cache(self, data_df):
@@ -142,9 +138,8 @@ class DataEngine:
         將新的數據 DataFrame 寫入 DuckDB 快取。
         :param data_df: (pandas.DataFrame) 包含單行待寫入數據的 DataFrame。
         """
-        # 使用 'append' 模式將 DataFrame 寫入表格
         self.db_con.append("hourly_time_series", data_df)
-        print(f"CACHE WRITE: 已將 {data_df['timestamp'].iloc[0]} 的數據寫入快取。")
+        logger.debug(f"CACHE WRITE: 已將 {data_df['timestamp'].iloc[0]} 的數據寫入快取。")
 
     def _calculate_technicals(self, ohlcv: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -171,34 +166,34 @@ class DataEngine:
         計算近似信用利差 (HYG價格 / IEF價格)。
         """
         try:
-            hyg_data = self.yf_client.get_history("HYG", period="1d")
-            ief_data = self.yf_client.get_history("IEF", period="1d")
+            hyg_data = self.yf_client.fetch_data("HYG", period="1d")
+            ief_data = self.yf_client.fetch_data("IEF", period="1d")
 
             if (
                 hyg_data.empty
                 or "Close" not in hyg_data.columns
                 or hyg_data["Close"].iloc[-1] is None
             ):
-                print("警告: 無法獲取 HYG 的最新收盤價。")
+                logger.warning("無法獲取 HYG 的最新收盤價。")
                 return float("nan")
             if (
                 ief_data.empty
                 or "Close" not in ief_data.columns
                 or ief_data["Close"].iloc[-1] is None
             ):
-                print("警告: 無法獲取 IEF 的最新收盤價。")
+                logger.warning("無法獲取 IEF 的最新收盤價。")
                 return float("nan")
 
             hyg_price = hyg_data["Close"].iloc[-1]
             ief_price = ief_data["Close"].iloc[-1]
 
             if ief_price == 0:
-                print("警告: IEF 價格為零，無法計算信用利差。")
+                logger.warning("IEF 價格為零，無法計算信用利差。")
                 return float("nan")
 
             return round(hyg_price / ief_price, 4)
         except Exception as e:
-            print(f"計算近似信用利差時發生錯誤: {e}")
+            logger.error(f"計算近似信用利差時發生錯誤: {e}", exc_info=True)
             return float("nan")
 
     def _calculate_proxy_move(self) -> float:
@@ -206,18 +201,18 @@ class DataEngine:
         計算代理債市波動率 (TLT 60天日線數據的20天滾動標準差)。
         """
         try:
-            tlt_data = self.yf_client.get_history("TLT", period="60d")
+            tlt_data = self.yf_client.fetch_data("TLT", period="60d")
             if (
                 tlt_data.empty or "Close" not in tlt_data.columns or len(tlt_data) < 21
             ):  # Need at least 20 periods + 1 for pct_change
-                print("警告: TLT 數據不足以計算代理波動率。")
+                logger.warning("TLT 數據不足以計算代理波動率。")
                 return float("nan")
 
             daily_returns = tlt_data["Close"].pct_change()
             proxy_move = daily_returns.rolling(window=20).std().iloc[-1]
             return round(proxy_move, 4)
         except Exception as e:
-            print(f"計算代理債市波動率時發生錯誤: {e}")
+            logger.error(f"計算代理債市波動率時發生錯誤: {e}", exc_info=True)
             return float("nan")
 
     def _calculate_gold_copper_ratio(self) -> float:
@@ -225,34 +220,34 @@ class DataEngine:
         計算金銅比 (GLD價格 / HG=F價格)。
         """
         try:
-            gld_data = self.yf_client.get_history("GLD", period="1d")
-            copper_data = self.yf_client.get_history("HG=F", period="1d")
+            gld_data = self.yf_client.fetch_data("GLD", period="1d")
+            copper_data = self.yf_client.fetch_data("HG=F", period="1d")
 
             if (
                 gld_data.empty
                 or "Close" not in gld_data.columns
                 or gld_data["Close"].iloc[-1] is None
             ):
-                print("警告: 無法獲取 GLD 的最新收盤價。")
+                logger.warning("無法獲取 GLD 的最新收盤價。")
                 return float("nan")
             if (
                 copper_data.empty
                 or "Close" not in copper_data.columns
                 or copper_data["Close"].iloc[-1] is None
             ):
-                print("警告: 無法獲取 HG=F 的最新收盤價。")
+                logger.warning("無法獲取 HG=F 的最新收盤價。")
                 return float("nan")
 
             gld_price = gld_data["Close"].iloc[-1]
             copper_price = copper_data["Close"].iloc[-1]
 
             if copper_price == 0:
-                print("警告: 銅價為零，無法計算金銅比。")
+                logger.warning("銅價為零，無法計算金銅比。")
                 return float("nan")
 
             return round(gld_price / copper_price, 4)
         except Exception as e:
-            print(f"計算金銅比時發生錯誤: {e}")
+            logger.error(f"計算金銅比時發生錯誤: {e}", exc_info=True)
             return float("nan")
 
     def generate_snapshot(self, dt: datetime):

@@ -77,7 +77,7 @@ class RobustDataAcquisitionEngine:
         """
         # 1. 智慧降級探測
         try:
-            print(f"智慧降級探測: 正在為 {ticker} 獲取月線數據...")
+            logger.info(f"智慧降級探測: 正在為 {ticker} 獲取月線數據...")
             # 注意：yf.Ticker 的 session 參數是 yfinance 較新版本才支援的。
             # 我們目前 yfinance 是 0.2.60，它應該支援。
             # 根據 yfinance 的錯誤提示，移除 session 參數，讓 yfinance 自行處理請求。
@@ -90,17 +90,17 @@ class RobustDataAcquisitionEngine:
                 actions=False,
             )
             if not isinstance(probe_data, pd.DataFrame) or probe_data.empty:
-                print(
+                logger.info(
                     f"智慧降級: {ticker} 在月線探測中無有效數據或返回非預期類型。跳過。"
                 )
                 return ticker, None  # 返回Ticker和None表示探測失敗或無數據
         except Exception as e:
-            print(f"智慧降級: {ticker} 在月線探測中發生錯誤: {e}。跳過。")
+            logger.info(f"智慧降級: {ticker} 在月線探測中發生錯誤: {e}。跳過。")
             return ticker, None  # 返回Ticker和None表示探測失敗
 
-        print(f"智慧降級探測: {ticker} 通過。")
+        logger.info(f"智慧降級探測: {ticker} 通過。")
         # 2. 探測通過，執行真正的數據獲取，改用 yf.Ticker().history()
-        print(f"正在併發獲取 {ticker} 的 {interval} 數據 (週期: {period})...")
+        logger.info(f"正在併發獲取 {ticker} 的 {interval} 數據 (週期: {period})...")
         try:
             # probe_ticker_obj 已經在探測階段創建，這裡可以重用或重新創建均可
             # 為了邏輯清晰，重新獲取 ticker 物件
@@ -113,19 +113,19 @@ class RobustDataAcquisitionEngine:
                 actions=False,
             )
         except Exception as e:
-            print(f"錯誤: 在為 {ticker} 執行 Ticker.history() 時發生例外: {e}")
+            logger.info(f"錯誤: 在為 {ticker} 執行 Ticker.history() 時發生例外: {e}")
             return ticker, None  # 下載階段出錯
 
         # 3. 數據品質閘門
         if not isinstance(data, pd.DataFrame) or data.empty:
-            print(
+            logger.info(
                 f"警告: {ticker} Ticker.history() 返回了非 DataFrame 或空數據。獲取失敗。"
             )
             return ticker, None
 
         # yf.Ticker().history() 通常返回單層欄位，無需處理 MultiIndex
 
-        print(f"✔ 成功獲取 {ticker} 數據 (共 {len(data)} 筆)")
+        logger.info(f"✔ 成功獲取 {ticker} 數據 (共 {len(data)} 筆)")
         data.reset_index(inplace=True)
         date_col = next(
             (col for col in ["Datetime", "Date"] if col in data.columns), None
@@ -133,7 +133,7 @@ class RobustDataAcquisitionEngine:
         if date_col:
             data.rename(columns={date_col: "date"}, inplace=True)
         else:
-            print(f"警告: {ticker} 的數據中未找到 'Date' 或 'Datetime' 欄位。")
+            logger.info(f"警告: {ticker} 的數據中未找到 'Date' 或 'Datetime' 欄位。")
             return ticker, None  # 沒有日期欄位的數據是無效的
 
         return ticker, data
@@ -166,10 +166,10 @@ class RobustDataAcquisitionEngine:
             if col not in df_copy.columns:
                 if col in ["open", "high", "low", "close", "volume"]:
                     df_copy[col] = pd.NA  # DuckDB 會將 pd.NA 視為 NULL
-                    print(f"資訊: {ticker} 的數據缺少 '{col}' 欄位，已補為 NULL。")
+                    logger.info(f"資訊: {ticker} 的數據缺少 '{col}' 欄位，已補為 NULL。")
                 else:
                     # date, symbol, interval 應該總是存在，如果不存在則是非常嚴重的問題
-                    print(
+                    logger.info(
                         f"嚴重錯誤: {ticker} 的數據嚴重缺少關鍵欄位 '{col}'，無法處理。"
                     )
                     return None
@@ -181,13 +181,13 @@ class RobustDataAcquisitionEngine:
             try:
                 df_copy["date"] = pd.to_datetime(df_copy["date"])
             except Exception as e_date:
-                print(f"錯誤: 無法將 {ticker} 的 'date' 欄位轉換為 datetime: {e_date}")
+                logger.info(f"錯誤: 無法將 {ticker} 的 'date' 欄位轉換為 datetime: {e_date}")
                 return None
 
         try:
             return df_copy[required_cols_db]
         except KeyError as e_key:
-            print(
+            logger.info(
                 f"錯誤: 準備 {ticker} 數據時發生 KeyError (欄位缺失): {e_key}。可用欄位: {df_copy.columns.tolist()}"
             )
             return None
@@ -221,9 +221,9 @@ class RobustDataAcquisitionEngine:
         """
         try:
             self.db_connection.execute(upsert_query)
-            # print(f"✔ {df_to_store['symbol'].iloc[0]} ({len(df_to_store)} 筆) 數據已存入/更新至 DuckDB。")
+            # logger.info(f"✔ {df_to_store['symbol'].iloc[0]} ({len(df_to_store)} 筆) 數據已存入/更新至 DuckDB。")
         except Exception as e:
-            print(
+            logger.info(
                 f"錯誤: 存入/更新 {df_to_store['symbol'].iloc[0]} 數據至 DuckDB 時失敗: {e}"
             )
         finally:
@@ -242,24 +242,24 @@ class RobustDataAcquisitionEngine:
         for result in fetch_results:
             if isinstance(result, Exception):
                 # 斷路器或其他 asyncio.gather 捕獲的例外
-                print(f"引擎在 gather 階段捕獲到一個錯誤: {result}")
+                logger.info(f"引擎在 gather 階段捕獲到一個錯誤: {result}")
                 continue
 
             if result is None:  # 可能 fetch_single_ticker 內部已處理並返回 None
-                # print(f"引擎注意到一個任務未返回有效結果 (可能已在 fetch_single_ticker 中記錄)。")
+                # logger.info(f"引擎注意到一個任務未返回有效結果 (可能已在 fetch_single_ticker 中記錄)。")
                 continue
 
             ticker, df_raw = result  # 解包 (ticker, DataFrame) 或 (ticker, None)
 
             if df_raw is None or df_raw.empty:
-                # print(f"資訊: {ticker} 未獲取到有效數據，不進行處理。")
+                # logger.info(f"資訊: {ticker} 未獲取到有效數據，不進行處理。")
                 continue
 
             df_prepared = self._prepare_df_for_db(ticker, df_raw, interval="1d")
             if df_prepared is not None and not df_prepared.empty:
                 processed_data_for_batch_storage.append(df_prepared)
             else:
-                print(f"警告: {ticker} 的數據在準備階段後變為空或無效，不進行儲存。")
+                logger.info(f"警告: {ticker} 的數據在準備階段後變為空或無效，不進行儲存。")
 
         # 統一處理所有成功獲取的數據
         if processed_data_for_batch_storage:
@@ -267,19 +267,19 @@ class RobustDataAcquisitionEngine:
             # 這裡簡化為總體判斷一次，實際可更細緻
             memory_usage = psutil.virtual_memory().percent
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[{current_time}] 記憶體使用率: {memory_usage:.2f}%")
+            logger.info(f"[{current_time}] 記憶體使用率: {memory_usage:.2f}%")
 
             if memory_usage > MEMORY_USAGE_THRESHOLD:
-                print(
+                logger.info(
                     f"警告：記憶體使用率超過閾值 {MEMORY_USAGE_THRESHOLD}%。啟用批次 [本體硬碟模式] 儲存。"
                 )
                 for df_batch_item in processed_data_for_batch_storage:
                     self._store_data_duckdb(df_batch_item)  # 逐個 DataFrame 進行 UPSERT
-                print(
+                logger.info(
                     f"✔ 所有 {len(processed_data_for_batch_storage)} 個有效數據批次已嘗試存入/更新至 DuckDB。"
                 )
             else:
-                print(
+                logger.info(
                     f"記憶體使用率正常。將 {len(processed_data_for_batch_storage)} 個有效數據批次統一存入/更新至 DuckDB。"
                 )
                 # 即使記憶體正常，也執行資料庫儲存，因為這是永久儲存引擎
@@ -287,20 +287,20 @@ class RobustDataAcquisitionEngine:
                     self._store_data_duckdb(df_batch_item)
                 # 可以選擇將數據也保留在 self.in_memory_data_frames 供本次運行後續使用
                 self.in_memory_data_frames.extend(processed_data_for_batch_storage)
-                print(
+                logger.info(
                     f"✔ 所有 {len(processed_data_for_batch_storage)} 個有效數據批次已嘗試存入/更新至 DuckDB，並暫存於記憶體。"
                 )
         else:
-            print("引擎運行完畢，沒有需要儲存的新數據。")
+            logger.info("引擎運行完畢，沒有需要儲存的新數據。")
 
-        print("\n--- 作戰引擎執行完畢 ---")
+        logger.info("\n--- 作戰引擎執行完畢 ---")
 
     def force_recache(self, ticker_or_tickers):
         """
         手動清除指定標的快取，強制下次重新從網路獲取。
         參數 ticker_or_tickers 可以是單個 ticker 字串或 ticker 字串列表。
         """
-        print(f"收到指令：強制重新快取以下標的: {ticker_or_tickers}")
+        logger.info(f"收到指令：強制重新快取以下標的: {ticker_or_tickers}")
 
         # requests-cache的delete方法不直接接受ticker列表來構造URL，
         # 它需要完整的URL模式或精確的快取鍵。
@@ -313,7 +313,7 @@ class RobustDataAcquisitionEngine:
 
         # 一個簡單的實現是清除整個快取，如果精確刪除困難
         # self.resilient_session.cache.clear()
-        # print("警告：已執行全局快取清除，因為精確標的清除較複雜。")
+        # logger.info("警告：已執行全局快取清除，因為精確標的清除較複雜。")
 
         # 更精確的方法需要知道 yfinance 如何構建 URL。
         # 假設基礎 URL 是 'https://query1.finance.yahoo.com' 或 'https://query2.finance.yahoo.com'
@@ -330,19 +330,19 @@ class RobustDataAcquisitionEngine:
         # 實際上，requests-cache 的 `delete` 方法如果沒有 `urls` 參數，會刪除過期條目。
         # 這裡我們嘗試一個更激進的策略：清除所有快取。
         # 這是因為 yfinance 的 URL 模式多樣，精確刪除單個 ticker 的快取非常複雜。
-        print("注意: 'force_recache' 將清除所有API快取以確保指定標的被重新獲取。")
+        logger.info("注意: 'force_recache' 將清除所有API快取以確保指定標的被重新獲取。")
         self.resilient_session.cache.clear()
-        print("所有永久快取已清除。")
+        logger.info("所有永久快取已清除。")
 
     def close(self):
         if self.db_connection:
             self.db_connection.close()
-            print("資料庫連線已關閉。")
+            logger.info("資料庫連線已關閉。")
 
 
 # 主程式測試區塊 (可選，用於獨立測試引擎)
 if __name__ == "__main__":
-    print("--- RobustDataAcquisitionEngine 獨立測試 ---")
+    logger.info("--- RobustDataAcquisitionEngine 獨立測試 ---")
 
     test_tickers_main = [
         "AAPL",
@@ -358,35 +358,35 @@ if __name__ == "__main__":
 
     engine_main = RobustDataAcquisitionEngine(tickers=test_tickers_main)
 
-    print("\n[主測試] 第一次執行 (應從網路獲取並快取)...")
+    logger.info("\n[主測試] 第一次執行 (應從網路獲取並快取)...")
     start_time = time.time()
     asyncio.run(engine_main.run())
-    print(f"第一次執行耗時: {time.time() - start_time:.2f} 秒")
+    logger.info(f"第一次執行耗時: {time.time() - start_time:.2f} 秒")
 
-    print("\n[主測試] 第二次執行 (應從快取獲取)...")
+    logger.info("\n[主測試] 第二次執行 (應從快取獲取)...")
     start_time = time.time()
     asyncio.run(engine_main.run())  # 再次執行以測試快取
-    print(f"第二次執行耗時: {time.time() - start_time:.2f} 秒")
+    logger.info(f"第二次執行耗時: {time.time() - start_time:.2f} 秒")
 
-    print("\n[主測試] 強制重新快取 AAPL...")
+    logger.info("\n[主測試] 強制重新快取 AAPL...")
     engine_main.force_recache(ticker_or_tickers=["AAPL"])  # 雖然目前是全局清除
 
-    print("\n[主測試] 再次獲取 AAPL (應從網路獲取)...")
+    logger.info("\n[主測試] 再次獲取 AAPL (應從網路獲取)...")
     aapl_engine = RobustDataAcquisitionEngine(tickers=["AAPL"])
     start_time = time.time()
     asyncio.run(aapl_engine.run())
-    print(f"AAPL 重新獲取耗時: {time.time() - start_time:.2f} 秒")
+    logger.info(f"AAPL 重新獲取耗時: {time.time() - start_time:.2f} 秒")
     aapl_engine.close()  # 單獨關閉這個引擎實例的連接
 
-    print("\n[主測試] 最終資料庫內容預覽:")
+    logger.info("\n[主測試] 最終資料庫內容預覽:")
     try:
         # 使用主引擎的連接來查詢
         summary_df = engine_main.db_connection.execute(
             "SELECT symbol, interval, COUNT(*) as count, MIN(date)::DATE as first, MAX(date)::DATE as last FROM historical_ohlcv GROUP BY symbol, interval ORDER BY symbol"
         ).fetchdf()
-        print(summary_df)
+        logger.info(summary_df)
     except Exception as e:
-        print(f"查詢資料庫時出錯: {e}")
+        logger.info(f"查詢資料庫時出錯: {e}")
     finally:
         engine_main.close()  # 關閉主引擎的連接
 
@@ -395,4 +395,4 @@ if __name__ == "__main__":
     #     os.remove(DB_FILE)
     # if os.path.exists('permanent_api_cache.sqlite'):
     #     os.remove('permanent_api_cache.sqlite')
-    print("--- RobustDataAcquisitionEngine 獨立測試結束 ---")
+    logger.info("--- RobustDataAcquisitionEngine 獨立測試結束 ---")

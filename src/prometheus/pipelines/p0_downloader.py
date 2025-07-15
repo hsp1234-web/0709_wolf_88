@@ -9,6 +9,9 @@ from datetime import datetime, timedelta
 import requests
 
 from prometheus.core.config import config
+from src.prometheus.core.logging.log_manager import LogManager
+
+logger = LogManager.get_instance().get_logger("P0-Downloader")
 
 
 def execute_download(session, task_info, output_dir):
@@ -65,9 +68,9 @@ def execute_download(session, task_info, output_dir):
 
 
 def run_downloader(start_date: str, end_date: str, output_dir: str, max_workers: int):
-    print("--- 啟動數據採集任務 ---")
-    print(f"時間範圍: {start_date} 到 {end_date}")
-    print(f"輸出目錄: {output_dir}")
+    logger.info("--- 啟動數據採集任務 ---")
+    logger.info(f"時間範圍: {start_date} 到 {end_date}")
+    logger.info(f"輸出目錄: {output_dir}")
 
     tasks = []
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -100,13 +103,13 @@ def run_downloader(start_date: str, end_date: str, output_dir: str, max_workers:
                 try:
                     status, message = future.result()
                     results_counter[status] += 1
-                    print(f"[{status.upper()}] {message}")
+                    logger.info(f"[{status.upper()}] {message}")
                 except Exception as exc:
-                    print(f"[CRITICAL] 任務執行異常: {exc}")
+                    logger.info(f"[CRITICAL] 任務執行異常: {exc}")
 
-    print("\n--- 採集任務總結 ---")
+    logger.info("\n--- 採集任務總結 ---")
     for status, count in results_counter.items():
-        print(f"  {status}: {count} 個")
+        logger.info(f"  {status}: {count} 個")
 
 
 def main():
