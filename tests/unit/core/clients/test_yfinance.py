@@ -11,7 +11,7 @@ import requests  # 導入 requests 以修復 NameError
 from pandas.testing import assert_frame_equal
 
 # 更新導入以反映重構後的客戶端
-from core.clients.yfinance import YFinanceClient
+from prometheus.core.clients.yfinance import YFinanceClient
 
 
 @pytest.fixture

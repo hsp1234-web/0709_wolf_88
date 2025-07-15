@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 # 導入我們要測試的目標
-from core.analysis.data_engine import DataEngine
+from prometheus.core.analysis.data_engine import DataEngine
 
 
 @pytest.fixture
@@ -61,7 +61,6 @@ def mock_clients():
     mock_fred.fetch_data.return_value = pd.DataFrame({"VIXCLS": [25.5]})
 
     return mock_yf, mock_fred, mock_taifex
-
 
 
 def test_data_engine_logic(mock_clients):

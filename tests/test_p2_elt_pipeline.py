@@ -89,9 +89,9 @@ def test_full_elt_pipeline_flow(elt_test_environment):
     with patch.object(sys, "argv", ["pipelines/p1_explorer/run.py"] + p1_args):
         p1_explorer_main()
 
-    assert os.path.exists(elt_test_environment["schema_db_path"]), (
-        "P1 did not create schema_registry.db"
-    )
+    assert os.path.exists(
+        elt_test_environment["schema_db_path"]
+    ), "P1 did not create schema_registry.db"
 
     # --- Act: Run P2 ELT Pipeline ---
     p2_args = [
@@ -110,9 +110,9 @@ def test_full_elt_pipeline_flow(elt_test_environment):
     with patch.object(sys, "argv", ["pipelines/p2_elt_pipeline/run_elt.py"] + p2_args):
         p2_elt_main()
 
-    assert os.path.exists(elt_test_environment["analytics_db_path"]), (
-        "P2 did not create analytics_taifex.duckdb"
-    )
+    assert os.path.exists(
+        elt_test_environment["analytics_db_path"]
+    ), "P2 did not create analytics_taifex.duckdb"
 
     # --- Assert: Verify analytics_taifex.duckdb ---
     conn = duckdb.connect(elt_test_environment["analytics_db_path"])

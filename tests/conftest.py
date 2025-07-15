@@ -1,7 +1,7 @@
 # import pytest
 # import asyncio
 # import uuid
-# from src.core.context import AppContext
+# from prometheus.core.context import AppContext
 
 # @pytest.fixture(scope="function")
 # async def app_context() -> AppContext:

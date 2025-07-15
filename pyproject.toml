@@ -9,7 +9,8 @@ packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.14"
-typer = {extras = ["all"], version = "^0.12.3"}
+typer = {extras = ["all"], version = "*"}
+click = "*"
 pandas = "^2.2.2"
 numpy = "<2.0"
 pandas-ta = "0.3.14b0"
@@ -49,11 +50,11 @@ asyncio_mode = "auto"
 # --- 如果不存在則新增，如果存在則更新 [tool.ruff] 和 [tool.ruff.lint] ---
 [tool.ruff]
 line-length = 88
+# 告知 Ruff 我們的原始碼目錄
+src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
-# 告知 Ruff 我們的原始碼目錄
-src = ["src", "tests"]
 
 [build-system]
 requires = ["poetry-core"]

@@ -1,8 +1,8 @@
 # tests/integration/pipelines/test_example_flow.py
 import pandas as pd
 
-from core.pipelines.base_step import BaseETLStep  # 修正導入
-from core.pipelines.pipeline import DataPipeline
+from prometheus.core.pipelines.base_step import BaseETLStep  # 修正導入
+from prometheus.core.pipelines.pipeline import DataPipeline
 
 
 # 模擬一個 Loader 步驟
@@ -44,7 +44,7 @@ def test_full_etl_flow_replaces_old_pipeline():
 
     # 3. 驗證最終結果
     expected_result = 21
-    assert result == expected_result, (
-        f"Pipeline result '{result}' did not match expected '{expected_result}'"
-    )
+    assert (
+        result == expected_result
+    ), f"Pipeline result '{result}' did not match expected '{expected_result}'"
     print(f"--- [Success] Pipeline final result is {result}, as expected. ---")

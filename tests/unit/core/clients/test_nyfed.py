@@ -10,7 +10,10 @@ import requests  # 用於 requests.exceptions
 from pandas.testing import assert_frame_equal
 
 # 更新導入以反映重構後的客戶端
-from core.clients.nyfed import NYFED_DATA_CONFIGS, NYFedClient  # 導入新的 Client
+from prometheus.core.clients.nyfed import (
+    NYFED_DATA_CONFIGS,
+    NYFedClient,
+)
 
 
 # 輔助函數和 mock 數據保持不變

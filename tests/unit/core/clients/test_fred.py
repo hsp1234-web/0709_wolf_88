@@ -8,7 +8,7 @@ import pytest
 from pandas.testing import assert_frame_equal
 
 # 更新導入以反映重構後的客戶端
-from core.clients.fred import FredClient  # Corrected import name
+from prometheus.core.clients.fred import FredClient  # Corrected import name
 
 # FRED_API_HOST, FRED_OBSERVATIONS_ENDPOINT are not defined in the new client, remove imports
 
@@ -21,7 +21,7 @@ TEST_FRED_API_KEY = (
 @pytest.fixture
 def mock_get_fred_api_key():
     """Mocks core.config.get_fred_api_key."""
-    with patch("core.clients.fred.get_fred_api_key") as mock_get_key:
+    with patch("prometheus.core.clients.fred.get_fred_api_key") as mock_get_key:
         yield mock_get_key
 
 

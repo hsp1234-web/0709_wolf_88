@@ -1,9 +1,9 @@
 import logging
 import os  # For potential db cleanup, though steps should manage their test dbs
 
-from core.pipelines.pipeline import DataPipeline
-from core.pipelines.steps.aggregators import TimeAggregatorStep
-from core.pipelines.steps.loaders import TaifexTickLoaderStep
+from prometheus.core.pipelines.pipeline import DataPipeline
+from prometheus.core.pipelines.steps.aggregators import TimeAggregatorStep
+from prometheus.core.pipelines.steps.loaders import TaifexTickLoaderStep
 
 # 配置基本的日誌記錄，以便觀察管線執行過程
 logging.basicConfig(

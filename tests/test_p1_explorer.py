@@ -5,7 +5,6 @@ import sys
 from unittest.mock import patch  # For more complex patching if main() calls other funcs
 
 import pytest
-
 from pipelines.p1_explorer.run import (
     get_header_fingerprint,
 )
@@ -103,9 +102,9 @@ def test_p1_explorer_scan_fixtures(p1_test_environment):
 
     # Verify results
     # 現在我們期望 sample_options_delta_20250711.csv 也被正確處理
-    assert len(results) == 2, (
-        "Should register exactly two valid formats (ohlc.zip and options_delta.csv)."
-    )
+    assert (
+        len(results) == 2
+    ), "Should register exactly two valid formats (ohlc.zip and options_delta.csv)."
 
     registered_fingerprints = [row[0] for row in results]
     assert expected_ohlc_fingerprint in registered_fingerprints

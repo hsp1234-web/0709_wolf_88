@@ -10,10 +10,10 @@ import requests  # 用於 requests.exceptions
 from pandas.testing import assert_frame_equal
 
 # 更新導入以反映重構後的客戶端
-from core.clients.fmp import (
+from prometheus.core.clients.fmp import (
     FMP_API_BASE_URL_NO_VERSION,
     FMPClient,
-)  # 導入新的 Client 和 base URL
+)
 
 # 測試用的 API Key
 TEST_FMP_API_KEY = "test_fmp_api_key_123"

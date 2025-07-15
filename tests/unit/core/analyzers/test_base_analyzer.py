@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest  # 導入 pytest 以便使用 mocker fixture
 
-from core.analyzers.base_analyzer import BaseAnalyzer
+from prometheus.core.analyzers.base_analyzer import BaseAnalyzer
 
 
 # 為了測試，創建一個最小化的具體實現子類
@@ -181,9 +181,9 @@ def test_base_analyzer_initialization_logs_name(mocker):
         if call_args[0][0] == f"分析器 '{analyzer_name}' 已初始化。":
             found_init_log = True
             break
-    assert found_init_log, (
-        f"預期的初始化日誌 '分析器 '{analyzer_name}' 已初始化。' 未找到。"
-    )
+    assert (
+        found_init_log
+    ), f"預期的初始化日誌 '分析器 '{analyzer_name}' 已初始化。' 未找到。"
 
 
 pytest_plugins = [

@@ -11,7 +11,7 @@ import requests
 from pandas.testing import assert_frame_equal
 
 # 更新導入以反映重構後的客戶端
-from core.clients.finmind import FINMIND_API_BASE_URL, FinMindClient
+from prometheus.core.clients.finmind import FINMIND_API_BASE_URL, FinMindClient
 
 # 測試用的 API Token
 TEST_API_TOKEN = "test_token_123"
@@ -226,9 +226,7 @@ class TestFinMindClientFetchData:
     ):
         mock_internal_request.return_value = pd.DataFrame()  # 返回不重要
 
-        with patch(
-            "core.clients.finmind.datetime"
-        ) as mock_dt:  # Patch datetime in finmind.py
+        with patch("prometheus.core.clients.finmind.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = (
                 "2023-12-25"  # Mocked current date
             )
