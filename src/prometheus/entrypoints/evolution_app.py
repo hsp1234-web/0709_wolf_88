@@ -59,7 +59,10 @@ def evolution_loop(
         if HALL_OF_FAME_PATH.exists():
             try:
                 with open(HALL_OF_FAME_PATH, "r") as f:
-                    best_known_strategy = json.load(f)
+                    best_known_strategies = json.load(f)
+                if not best_known_strategies:
+                    raise ValueError("名人堂檔案為空，無法播種。")
+                best_known_strategy = best_known_strategies[0]
                 params = best_known_strategy["params"]
                 # 注意：這裡的基因體結構必須與 EvolutionChamber 中的定義完全匹配
                 elite_seed = creator.Individual(
@@ -179,10 +182,12 @@ def evolution_loop(
                 # 【核心改變】將適應度儲存為字典格式，以符合驗證 App 的預期
                 fitness_data = {"sharpe_ratio": best_overall.fitness.values[0]}
                 json.dump(
-                    {
-                        "params": {"fast": best_overall[0], "slow": best_overall[1]},
-                        "fitness": fitness_data,
-                    },
+                    [
+                        {
+                            "params": {"fast": best_overall[0], "slow": best_overall[1]},
+                            "fitness": fitness_data,
+                        }
+                    ],
                     f,
                     indent=4,
                 )

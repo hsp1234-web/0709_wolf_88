@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
-from prometheus.core.logger import LogManager
+from prometheus.core.logging.log_manager import LogManager
 
 
 class AIReportGenerator:

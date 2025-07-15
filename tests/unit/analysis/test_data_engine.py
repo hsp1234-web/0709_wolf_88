@@ -59,23 +59,19 @@ def test_data_engine_logic(mock_get_client, mock_clients):
     assert snapshot["timestamp"].iloc[0] == dt
 
 
-@patch("src.prometheus.core.clients.client_factory.ClientFactory.get_client")
-def test_calculate_approx_credit_spread_with_mock_data(
-    mock_get_client, mock_clients
-):
+def test_calculate_approx_credit_spread_with_mock_data():
     """測試 _calculate_approx_credit_spread 方法的邏輯。"""
-    mock_yf, mock_fred, mock_taifex = mock_clients
-    mock_get_client.side_effect = [mock_yf, mock_fred, mock_taifex]
-    engine = DataEngine()
+    engine = DataEngine(db_connection=MagicMock())
 
-    # 模擬 yfinance 客戶端的 get_history 方法
-    mock_yf.get_history.side_effect = [
-        create_mock_history_df({"Date": ["2025-07-11"], "Close": [75.0]}),  # HYG
-        create_mock_history_df({"Date": ["2025-07-11"], "Close": [100.0]}),  # IEF
-    ]
+    with patch.object(engine, 'yf_client', new_callable=MagicMock) as mock_yf_client:
+        # 模擬 yfinance 客戶端的 get_history 方法
+        mock_yf_client.get_history.side_effect = [
+            create_mock_history_df({"Date": ["2025-07-11"], "Close": [75.0]}),  # HYG
+            create_mock_history_df({"Date": ["2025-07-11"], "Close": [100.0]}),  # IEF
+        ]
 
-    credit_spread = engine._calculate_approx_credit_spread()
-    assert credit_spread == 0.7500
+        credit_spread = engine._calculate_approx_credit_spread()
+        assert credit_spread == 0.7500
 
 
 @patch("src.prometheus.core.clients.client_factory.ClientFactory.get_client")
@@ -83,7 +79,7 @@ def test_calculate_proxy_move_with_mock_data(mock_get_client, mock_clients):
     """測試 _calculate_proxy_move 方法的邏輯。"""
     mock_yf, mock_fred, mock_taifex = mock_clients
     mock_get_client.side_effect = [mock_yf, mock_fred, mock_taifex]
-    engine = DataEngine()
+    engine = DataEngine(db_connection=MagicMock())
 
     # 創建足夠的數據來計算 20 天滾動標準差
     dates = pd.to_datetime(pd.date_range(start="2025-06-01", periods=60, freq="D"))
@@ -95,20 +91,18 @@ def test_calculate_proxy_move_with_mock_data(mock_get_client, mock_clients):
     assert isinstance(proxy_move, float)
 
 
-@patch("src.prometheus.core.clients.client_factory.ClientFactory.get_client")
-def test_calculate_gold_copper_ratio_with_mock_data(mock_get_client, mock_clients):
+def test_calculate_gold_copper_ratio_with_mock_data():
     """測試 _calculate_gold_copper_ratio 方法的邏輯。"""
-    mock_yf, mock_fred, mock_taifex = mock_clients
-    mock_get_client.side_effect = [mock_yf, mock_fred, mock_taifex]
-    engine = DataEngine()
+    engine = DataEngine(db_connection=MagicMock())
 
-    mock_yf.get_history.side_effect = [
-        create_mock_history_df({"Date": ["2025-07-11"], "Close": [200.0]}),  # GLD
-        create_mock_history_df({"Date": ["2025-07-11"], "Close": [4.0]}),  # HG=F
-    ]
+    with patch.object(engine, 'yf_client', new_callable=MagicMock) as mock_yf_client:
+        mock_yf_client.get_history.side_effect = [
+            create_mock_history_df({"Date": ["2025-07-11"], "Close": [200.0]}),  # GLD
+            create_mock_history_df({"Date": ["2025-07-11"], "Close": [4.0]}),  # HG=F
+        ]
 
-    gold_copper_ratio = engine._calculate_gold_copper_ratio()
-    assert gold_copper_ratio == 50.0
+        gold_copper_ratio = engine._calculate_gold_copper_ratio()
+        assert gold_copper_ratio == 50.0
 
 
 if __name__ == "__main__":

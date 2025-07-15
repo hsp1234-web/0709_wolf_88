@@ -82,3 +82,75 @@ if __name__ == "__main__":
     print("\n--- [自我測試] 完成 ---")
     session.cache.clear()
     print("測試快取已清理。")
+
+
+from pathlib import Path
+from typing import Tuple
+
+import pandas as pd
+
+
+def load_ohlcv_data(
+    file_path: Path, split_ratio: float = 0.7
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    從 CSV 檔案加載 OHLCV 數據，並將其分割為樣本內和樣本外數據集。
+
+    :param file_path: CSV 檔案的路徑。
+    :param split_ratio: 樣本內數據所佔的比例 (例如 0.7 代表 70%)。
+    :return: 一個包含 (in_sample_df, out_of_sample_df) 的元組。
+    """
+    if not file_path.exists():
+        raise FileNotFoundError(f"數據檔案不存在: {file_path}")
+
+    # 根據作戰手冊，索引應為 'Date' 且欄位名稱應為小寫
+    df = pd.read_csv(file_path, index_col="Date", parse_dates=True)
+    df.columns = [col.lower() for col in df.columns]
+
+    # 根據比例計算分割點
+    split_point = int(len(df) * split_ratio)
+
+    in_sample_df = df.iloc[:split_point]
+    out_of_sample_df = df.iloc[split_point:]
+
+    print(
+        f"[DataLoader] 數據已分割：樣本內 {len(in_sample_df)} 筆, 樣本外 {len(out_of_sample_df)} 筆。"
+    )
+
+    return in_sample_df, out_of_sample_df
+
+
+import zipfile
+from typing import Dict, Optional
+
+
+def prospect_file_content(file_bytes: bytes) -> Dict[str, str]:
+    """嘗試解碼並讀取第一行(標頭)。"""
+    for encoding in ["ms950", "big5", "utf-8", "utf-8-sig"]:
+        try:
+            content = file_bytes.decode(encoding)
+            header = content.splitlines()[0].strip()
+            return {"status": "success", "encoding": encoding, "header": header}
+        except (UnicodeDecodeError, IndexError):
+            continue
+    return {"status": "failure", "error": "無法解碼或檔案為空"}
+
+
+def read_file_content(file_path: str) -> Optional[bytes]:
+    """讀取檔案內容，支援 ZIP 檔案。"""
+    if zipfile.is_zipfile(file_path):
+        try:
+            with zipfile.ZipFile(file_path, "r") as zf:
+                for member_name in zf.namelist():
+                    if member_name.lower().endswith((".csv", ".txt")):
+                        return zf.read(member_name)
+        except zipfile.BadZipFile:
+            return None
+    elif file_path.lower().endswith((".csv", ".txt")):
+        with open(file_path, "rb") as f:
+            return f.read()
+    return None
+
+
+def correct_path():
+    pass

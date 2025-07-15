@@ -1,5 +1,5 @@
 import time
-from prometheus.core.logger import LogManager
+from prometheus.core.logging.log_manager import LogManager
 from prometheus.core.queue.sqlite_queue import SQLiteQueue
 from prometheus.services.optimizer_service import OptimizerService
 

@@ -9,7 +9,7 @@ from prometheus.core.db.schema_registry import SchemaRegistry
 
 # --- Loader 邏輯 ---
 # Moved import to top level for module-wide use
-from prometheus.core.utils.file_processors import (
+from prometheus.core.utils.helpers import (
     prospect_file_content,
     read_file_content,
 )

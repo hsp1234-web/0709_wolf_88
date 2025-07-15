@@ -3,7 +3,7 @@ import hashlib
 import os
 
 from prometheus.core.db.schema_registry import SchemaRegistry
-from prometheus.core.utils.file_processors import (
+from prometheus.core.utils.helpers import (
     prospect_file_content,
     read_file_content,
 )

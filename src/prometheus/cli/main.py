@@ -8,9 +8,9 @@ import pytest
 import typer
 
 from prometheus.core.context import AppContext
-from prometheus.core.logger import LogManager
+from prometheus.core.logging.log_manager import LogManager
 from prometheus.core.queue.sqlite_queue import SQLiteQueue
-from prometheus.core.utils.data_loader import load_ohlcv_data
+from prometheus.core.utils.helpers import load_ohlcv_data
 from prometheus.entrypoints.ai_analyst_app import analyst_job
 from prometheus.entrypoints.backtest_worker_app import (
     POISON_PILL as WORKER_PILL,

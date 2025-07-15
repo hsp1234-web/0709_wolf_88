@@ -1,6 +1,6 @@
 import json
 import duckdb
-from prometheus.core.logger import LogManager
+from prometheus.core.logging.log_manager import LogManager
 from prometheus.core.db import get_db_connection
 from prometheus.core.config import config
 

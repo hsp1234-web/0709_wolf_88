@@ -15,7 +15,7 @@ import requests
 
 # 從我們的通用工具模組導入快取工具
 # 這裡我們使用之前建立的同步版本
-from prometheus.core.utils.caching import get_cached_session, temporary_disabled_cache
+from prometheus.core.utils.helpers import get_cached_session, temporary_disabled_cache
 
 
 class BaseAPIClient:

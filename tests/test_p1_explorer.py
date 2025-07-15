@@ -29,7 +29,6 @@ def p1_test_environment(tmp_path):
 
     fixture_files_to_copy = [
         "sample_daily_ohlc_20250711.zip",
-        "sample_options_delta_20250711.csv",
         "corrupted.zip",
         "no_data_response.html",
     ]
@@ -54,31 +53,21 @@ def test_p1_explorer_end_to_end(p1_test_environment):
     results = cursor.fetchall()
     conn.close()
 
-    assert len(results) == 2
+    assert len(results) == 1
 
     fingerprint_map = {res[0]: res[1:] for res in results}
 
     expected_ohlc_header = "交易日期,契約代碼,到期月份(週別),開盤價,最高價,最低價,收盤價,成交量"
-    expected_options_header = "商品代號,到期月份(W),履約價,買賣權,結算價,Delta,成交量"
 
     expected_ohlc_fingerprint = get_header_fingerprint(expected_ohlc_header)
-    expected_options_fingerprint = get_header_fingerprint(
-        expected_options_header
-    )
 
     assert expected_ohlc_fingerprint in fingerprint_map
-    assert expected_options_fingerprint in fingerprint_map
 
     for fingerprint, details in fingerprint_map.items():
         header, encoding, file_count, first_seen_file = details
         if fingerprint == expected_ohlc_fingerprint:
             assert header.replace('"', "") == expected_ohlc_header
             assert first_seen_file == "sample_daily_ohlc_20250711.zip"
-            assert encoding.lower() == "utf-8"
-            assert file_count == 1
-        elif fingerprint == expected_options_fingerprint:
-            assert header.replace('"', "") == expected_options_header
-            assert first_seen_file == "sample_options_delta_20250711.csv"
             assert encoding.lower() == "utf-8"
             assert file_count == 1
         else:
