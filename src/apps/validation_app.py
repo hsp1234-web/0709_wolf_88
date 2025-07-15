@@ -63,6 +63,13 @@ def validation_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue):
             else:
                 print("結論：[警告] 策略在樣本外表現不佳，可能存在過擬合風險。")
 
+            # 【核心改變】將驗證結果儲存到檔案
+            VALIDATION_REPORT_PATH = Path("data/validation_report.json")
+            VALIDATION_REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(VALIDATION_REPORT_PATH, 'w', encoding='utf-8') as f:
+                json.dump(result_payload, f, indent=4)
+            print(f"[Validator] 驗證結果已儲存至 {VALIDATION_REPORT_PATH}")
+
     except Exception as e:
         print(f"!!!!!! [Validator] 驗證過程中發生錯誤: {e} !!!!!!")
 
