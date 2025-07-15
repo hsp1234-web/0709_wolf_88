@@ -29,6 +29,7 @@ vectorbt = "^0.28.0"
 setuptools = "^80.9.0"
 aiosqlite = "^0.21.0"
 rich = "^14.0.0"
+pandas-ta-openbb = "^0.4.22"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"

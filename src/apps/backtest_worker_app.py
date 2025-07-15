@@ -1,76 +1,45 @@
-import asyncio
-import json
-from src.core.context import AppContext
-from src.core.events.event_types import BacktestCompleted
+import time
+from src.core.queue.sqlite_queue import SQLiteQueue
 from src.core.services.backtesting_service import BacktestingService
+from src.core.data.data_loader import load_ohlcv_data # 導入數據加載器
+from pathlib import Path
 
-class BacktestWorker:
-    def __init__(self, context: AppContext):
-        self.context = context
-        self.consumer_id = "backtest_worker"
-        self.backtester = BacktestingService(context)
-        self.last_processed_id = 0
-        self._running = True
+def backtest_worker_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue, price_data, worker_id: int):
+    """
+    升級版的回測工作者，執行真實的回測計算。
+    """
+    print(f"[Worker-Backtest-{worker_id}] 回測工作者已啟動...")
+    backtester = BacktestingService(price_data)
 
-    async def run(self):
-        """主運行循環，持續從事件流中讀取並處理事件。"""
-        self.last_processed_id = await self.context.event_stream.get_checkpoint(self.consumer_id)
-        print(f"回測工作者已啟動，從事件 ID {self.last_processed_id} 開始處理。")
+    while True:
+        try:
+            task = task_queue.get(block=True)
+            if task is None: continue
 
-        while self._running:
-            events = await self.context.event_stream.subscribe(self.last_processed_id)
-            if not events:
-                await asyncio.sleep(1)
-                continue
+            item_id, genome_task = task
 
-            for event_id, event_type, data_str in events:
-                if event_type == "SystemShutdown":
-                    print("回測工作者：收到關機信號，準備退出。")
-                    self.stop()
-                    break
+            if not isinstance(genome_task, dict) or "params" not in genome_task:
+                raise TypeError(f"接收到格式錯誤的任務 #{item_id}")
 
-                if event_type == "GenomeGenerated":
-                    try:
-                        data = json.loads(data_str)
-                        # 執行回測...
-                        sharpe_ratio = await self.backtester.run_backtest(data['genome'])
+            params = genome_task['params']
+            print(f"[Worker-Backtest-{worker_id}] 正在回測任務 #{item_id}: {params}")
 
-                        # 產生一個完成事件
-                        completed_event = BacktestCompleted(
-                            genome_id=data['genome_id'],
-                            sharpe_ratio=sharpe_ratio,
-                            generation=data['generation'],
-                            genome=data['genome']
-                        )
-                        # 將完成事件寫回流中
-                        await self.context.event_stream.append(completed_event)
-                        print(f"已處理 genome_id: {data['genome_id']}，夏普比率: {sharpe_ratio:.2f}")
+            # 【核心改變】調用真實的回測服務
+            report = backtester.run_sma_crossover_strategy(
+                fast_window=params.get('fast', 10),
+                slow_window=params.get('slow', 20)
+            )
 
-                    except json.JSONDecodeError:
-                        print(f"錯誤：無法解析事件 ID {event_id} 的資料。")
-                    except Exception as e:
-                        print(f"處理事件 ID {event_id} 時發生未知錯誤: {e}")
+            result_payload = {
+                "genome_id": genome_task.get('id', 'N/A'),
+                "params": params,
+                "report": report,
+                "processed_by": worker_id
+            }
 
-                # 無論事件類型如何，都更新已處理的 ID
-                self.last_processed_id = event_id
+            results_queue.put(result_payload)
+            print(f"[Worker-Backtest-{worker_id}] 任務 #{item_id} 回測完成。")
 
-            if events:
-                await self.context.event_stream.update_checkpoint(self.consumer_id, self.last_processed_id)
-
-            if not self._running:
-                break
-        print("回測工作者已停止。")
-
-    def stop(self):
-        """停止工作循環。"""
-        self._running = False
-        print("正在停止回測工作者...")
-
-async def main(context: AppContext):
-    """應用程式主入口點"""
-    worker = BacktestWorker(context)
-    try:
-        await worker.run()
-    except asyncio.CancelledError:
-        worker.stop()
-        print("工作者任務被取消並已妥善處理。")
+        except Exception as e:
+            print(f"!!!!!! [Worker-Backtest-{worker_id}] 處理任務時發生錯誤: {e} !!!!!!")
+            time.sleep(5)

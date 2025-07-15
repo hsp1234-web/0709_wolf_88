@@ -1,50 +1,65 @@
 import pandas as pd
-import pandas_ta as ta
 import vectorbt as vbt
-from typing import Dict, Any
-from src.core.context import AppContext
-import random
-
-def create_mock_price_data() -> pd.DataFrame:
-    """創建一個模擬的、有趨勢性的價格數據，以便夏普比率不是 NaN。"""
-    dates = pd.to_datetime(pd.date_range(start="2023-01-01", periods=200))
-    # 加上一個小趨勢以避免零標準差
-    price_data = [100 + i * 0.1 + (random.random() - 0.5) * 10 for i in range(200)]
-    return pd.DataFrame({'Close': price_data}, index=dates)
+import pandas_ta as ta
 
 class BacktestingService:
-    def __init__(self, context: AppContext):
-        self.context = context
-        # 模擬價格數據在服務實例化時創建一次
-        self.price_df = create_mock_price_data()
+    """
+    一個封裝了因子計算與向量化回測的核心服務。
+    """
+    def __init__(self, price_data: pd.DataFrame):
+        if not isinstance(price_data, pd.DataFrame) or 'close' not in price_data.columns:
+            raise ValueError("必須提供包含 'close' 欄位的 Pandas DataFrame。")
+        self.price_data = price_data
 
-    async def run_backtest(self, genome: Dict[str, Any]) -> float:
+    def run_sma_crossover_strategy(self, fast_window: int, slow_window: int) -> dict:
         """
-        根據給定的基因體（策略參數）運行回測。
-        注意：此函數現在是同步的，因為 vectorbt 是同步庫。
-        我們會在非同步的 worker 中調用它。
+        執行一個簡單的均線交叉策略。
+
+        :param fast_window: 快速移動平均線的窗口大小。
+        :param slow_window: 慢速移動平均線的窗口大小。
+        :return: 一個包含關鍵績效指標 (KPIs) 的字典。
         """
-        price = self.price_df['Close']
+        if fast_window >= slow_window:
+            # 這是一個無效的策略，直接返回差的績效
+            return {
+                "sharpe_ratio": -1.0,
+                "total_return": -1.0,
+                "max_drawdown": -1.0,
+                "win_rate": 0.0,
+                "is_valid": False
+            }
 
-        # 從基因體中安全地提取參數
-        rsi_period = int(genome.get("params", {}).get("rsi_period", 14))
-        buy_threshold = float(genome.get("params", {}).get("buy_threshold", 30))
-        # 增加一個賣出門檻以形成有效策略
-        sell_threshold = float(genome.get("params", {}).get("sell_threshold", 70))
+        try:
+            # 1. 計算因子 (SMA)
+            fast_sma = self.price_data.ta.sma(length=fast_window)
+            slow_sma = self.price_data.ta.sma(length=slow_window)
 
-        # 計算指標
-        rsi = self.price_df.ta.rsi(length=rsi_period)
+            # 2. 產生交易信號
+            entries = fast_sma > slow_sma
+            exits = fast_sma < slow_sma
 
-        # 產生交易信號
-        entries = rsi < buy_threshold
-        exits = rsi > sell_threshold
+            # 3. 執行向量化回測
+            portfolio = vbt.Portfolio.from_signals(
+                self.price_data['close'],
+                entries=entries,
+                exits=exits,
+                freq='D', # 假設是日線數據
+                init_cash=100000 # 初始資金
+            )
 
-        # 執行回測
-        if entries.any() and exits.any():
-            portfolio = vbt.Portfolio.from_signals(price, entries, exits, init_cash=100000, freq="D")
-            sharpe_ratio = portfolio.sharpe_ratio()
-        else:
-            sharpe_ratio = 0.0 # 如果沒有交易，則夏普比率為 0
+            # 4. 提取並返回績效統計
+            stats = portfolio.stats()
 
-        # 返回一個浮點數，處理 NaN 的情況
-        return float(sharpe_ratio) if pd.notna(sharpe_ratio) else 0.0
+            return {
+                "sharpe_ratio": round(stats['Sharpe Ratio'], 2),
+                "total_return": round(stats['Total Return [%]'], 2),
+                "max_drawdown": round(stats['Max Drawdown [%]'], 2),
+                "win_rate": round(stats['Win Rate [%]'], 2),
+                "is_valid": True
+            }
+        except Exception as e:
+            # 捕捉任何在回測中可能發生的錯誤
+            return {
+                "error": str(e),
+                "is_valid": False
+            }
