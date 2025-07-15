@@ -7,13 +7,16 @@ from src.core.services.backtesting_service import BacktestingService
 class BacktestWorker:
     def __init__(self, context: AppContext):
         self.context = context
+        self.consumer_id = "backtest_worker"
         self.backtester = BacktestingService(context)
         self.last_processed_id = 0
         self._running = True
 
     async def run(self):
         """主運行循環，持續從事件流中讀取並處理事件。"""
-        print("回測工作者已啟動，正在監聽 'GenomeGenerated' 事件...")
+        self.last_processed_id = await self.context.event_stream.get_checkpoint(self.consumer_id)
+        print(f"回測工作者已啟動，從事件 ID {self.last_processed_id} 開始處理。")
+
         while self._running:
             events = await self.context.event_stream.subscribe(self.last_processed_id)
             if not events:
@@ -50,6 +53,9 @@ class BacktestWorker:
 
                 # 無論事件類型如何，都更新已處理的 ID
                 self.last_processed_id = event_id
+
+            if events:
+                await self.context.event_stream.update_checkpoint(self.consumer_id, self.last_processed_id)
 
             if not self._running:
                 break

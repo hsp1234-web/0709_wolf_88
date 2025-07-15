@@ -33,3 +33,8 @@ class ResultsSaver:
         async with self.conn.execute("SELECT COUNT(*) FROM backtest_results") as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
+
+    async def clear_all(self):
+        """清空所有回測結果。"""
+        await self.conn.execute("DELETE FROM backtest_results")
+        await self.conn.commit()

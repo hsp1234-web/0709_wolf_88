@@ -15,15 +15,21 @@ class ResultsProjector:
     """
     def __init__(self, context: AppContext):
         self.context = context
+        self.consumer_id = "results_projector" # 為消費者定義一個唯一的ID
         self.last_processed_id = 0
         self._running = True
 
-    async def run(self):
+    async def run(self, run_once=False):
         """啟動投影者，持續從事件流中讀取並處理事件。"""
-        print("結果投影者已啟動，正在等待事件...")
+        self.last_processed_id = await self.context.event_stream.get_checkpoint(self.consumer_id)
+        print(f"結果投影者已啟動，從事件 ID {self.last_processed_id} 開始處理。")
+
         while self._running:
             events = await self.context.event_stream.subscribe(self.last_processed_id)
             if not events:
+                if run_once:
+                    print("投影者 (run_once): 無更多事件，任務完成。")
+                    break
                 await asyncio.sleep(1)
                 continue
 
@@ -47,6 +53,9 @@ class ResultsProjector:
                 # 更新已處理的事件 ID，確保不重複處理
                 self.last_processed_id = event_id
 
+            if events:
+                await self.context.event_stream.update_checkpoint(self.consumer_id, self.last_processed_id)
+
             if not self._running:
                 break
 
@@ -54,11 +63,11 @@ class ResultsProjector:
         """停止投影者的運行循環。"""
         self._running = False
 
-async def main(context: AppContext):
+async def main(context: AppContext, run_once: bool = False):
     """應用程式主入口點。"""
     projector = ResultsProjector(context)
     try:
-        await projector.run()
+        await projector.run(run_once=run_once)
     except asyncio.CancelledError:
         projector.stop()
         print("結果投影者任務被取消並已妥善處理。")

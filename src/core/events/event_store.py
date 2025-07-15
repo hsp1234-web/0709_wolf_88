@@ -13,7 +13,7 @@ class PersistentEventStream:
         self._lock = asyncio.Lock()
 
     async def initialize(self):
-        """初始化事件儲存，建立必要的資料表。"""
+        """初始化事件儲存與檢查點儲存。"""
         async with self._lock:
             await self._conn.execute("""
             CREATE TABLE IF NOT EXISTS events (
@@ -21,6 +21,12 @@ class PersistentEventStream:
                 event_type TEXT NOT NULL,
                 data TEXT NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+            await self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS consumer_checkpoints (
+                consumer_id TEXT PRIMARY KEY,
+                last_processed_id INTEGER NOT NULL
             )
             """)
             await self._conn.commit()
@@ -44,3 +50,25 @@ class PersistentEventStream:
             (last_seen_id, batch_size)
         )
         return await cursor.fetchall()
+
+    async def get_checkpoint(self, consumer_id: str) -> int:
+        """獲取指定消費者的最後處理事件ID。"""
+        cursor = await self._conn.execute(
+            "SELECT last_processed_id FROM consumer_checkpoints WHERE consumer_id = ?",
+            (consumer_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+    async def update_checkpoint(self, consumer_id: str, last_processed_id: int):
+        """更新指定消費者的檢查點。"""
+        async with self._lock:
+            await self._conn.execute(
+                """
+                INSERT INTO consumer_checkpoints (consumer_id, last_processed_id)
+                VALUES (?, ?)
+                ON CONFLICT(consumer_id) DO UPDATE SET last_processed_id = excluded.last_processed_id
+                """,
+                (consumer_id, last_processed_id)
+            )
+            await self._conn.commit()
