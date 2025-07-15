@@ -1,7 +1,7 @@
 import time
 from src.core.queue.sqlite_queue import SQLiteQueue
 from src.core.services.backtesting_service import BacktestingService
-from src.core.data.data_loader import load_ohlcv_data # 導入數據加載器
+from src.core.utils.data_loader import load_ohlcv_data # 導入數據加載器
 from pathlib import Path
 
 def backtest_worker_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue, price_data, worker_id: int):

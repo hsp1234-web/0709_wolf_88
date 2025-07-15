@@ -1,57 +1,86 @@
+import random
 from deap import base, creator, tools
-from src.core.events.event_types import GenomeGenerated
-from src.core.context import AppContext
-from src.core.services.checkpoint_manager import CheckpointManager
-
-# DEAP setup
-creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-creator.create("Individual", dict, fitness=creator.FitnessMax)
 
 class EvolutionChamber:
-    def __init__(self, context: AppContext):
-        self.context = context
+    """
+    封裝了 DEAP 基因演算法所有核心設定的演化室。
+    """
+    def __init__(self, min_fast=5, max_fast=50, min_slow=10, max_slow=100):
+        # 建立適應度函數，目標是最大化單一目標 (夏普比率)
+        creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+        # 建立個體 (基因體)，它是一個列表，並帶有適應度屬性
+        creator.create("Individual", list, fitness=creator.FitnessMax)
+
         self.toolbox = base.Toolbox()
-        # ... (DEAP registrations can be added here if needed) ...
-        self.checkpoint_manager = CheckpointManager()
 
-    async def evolve(self, generations: int, population_size: int = 10, resume: bool = False):
-        start_gen = 0
-        population = None
+        # --- 基因 (Gene) 的定義 ---
+        # 基因0: 快速均線窗口，整數，範圍在 min_fast 到 max_fast
+        self.toolbox.register("attr_fast", random.randint, min_fast, max_fast)
+        # 基因1: 慢速均線窗口，整數，範圍在 min_slow 到 max_slow
+        self.toolbox.register("attr_slow", random.randint, min_slow, max_slow)
 
-        if resume:
-            checkpoint = self.checkpoint_manager.load()
-            if checkpoint:
-                population = checkpoint.get("population")
-                start_gen = checkpoint.get("generation", 0) + 1
-                print(f"方舟：從第 {start_gen} 代恢復演化。")
+        # --- 個體 (Individual) 的定義 ---
+        # 一個個體由 2 個基因組成
+        self.toolbox.register("individual", tools.initCycle, creator.Individual,
+                              (self.toolbox.attr_fast, self.toolbox.attr_slow), n=1)
 
-        if population is None:
-            population = [self._create_dummy_genome() for _ in range(population_size)]
+        # --- 族群 (Population) 的定義 ---
+        self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
 
-        for gen in range(start_gen, generations):
-            # In a real scenario, you'd have selection, crossover, mutation
-            for i, ind in enumerate(population):
-                genome_id = f"gen_{gen}_ind_{i}"
-                event = GenomeGenerated(
-                    genome_id=genome_id,
-                    genome=ind,
-                    generation=gen
-                )
-                await self.context.event_stream.append(event)
+        # --- 演化操作子的定義 ---
+        self.toolbox.register("evaluate", self._evaluate_fitness) # 評估函數
+        self.toolbox.register("mate", tools.cxTwoPoint)          # 交叉 (交配)
+        self.toolbox.register("mutate", self._mutate_individual, indpb=0.2) # 突變
+        self.toolbox.register("select", tools.selTournament, tournsize=3) # 選擇
 
-            # Save checkpoint at the end of each generation
-            checkpoint_data = {"population": population, "generation": gen}
-            self.checkpoint_manager.save(checkpoint_data)
+    def _evaluate_fitness(self, individual):
+        # 這只是一個佔位符。真正的適應度是在主迴圈中從回測結果賦值的。
+        # 我們返回一個元組，因為 DEAP 的適應度可以是多目標的。
+        return 0.0,
 
-            print(f"第 {gen} 代完成，已發佈 {len(population)} 個基因組。")
+    def _mutate_individual(self, individual, indpb):
+        """自定義突變函數，確保 fast_window 永遠小於 slow_window。"""
+        # 突變 fast_window
+        if random.random() < indpb:
+            individual[0] = self.toolbox.attr_fast()
 
-        print(f"演化完成。總共執行了 {generations - start_gen} 代。")
+        # 突變 slow_window
+        if random.random() < indpb:
+            individual[1] = self.toolbox.attr_slow()
 
-    def _create_dummy_genome(self):
-        return {
-            "strategy": "RSI_Crossover",
-            "params": {
-                "rsi_period": tools.mutGaussian([14], 7, 1, 1.0)[0][0],
-                "buy_threshold": tools.mutGaussian([30], 5, 1, 1.0)[0][0]
-            }
-        }
+        # 【核心約束】如果突變後 fast >= slow，則進行修正
+        if individual[0] >= individual[1]:
+            # 簡單的修正策略：將 fast 設為 slow 的一半
+            individual[0] = individual[1] // 2
+            if individual[0] == 0: # 避免為 0
+                individual[0] = 1
+
+        return individual,
+
+    def create_population(self, n=10):
+        """創建一個指定大小的初始族群。"""
+        return self.toolbox.population(n=n)
+
+    def select_offspring(self, population):
+        """從當前族群中選擇後代。"""
+        return self.toolbox.select(population, len(population))
+
+    def mate_and_mutate(self, offspring):
+        """對後代進行交叉和突變。"""
+        # 複製後代以避免修改原始列表
+        offspring = list(map(self.toolbox.clone, offspring))
+
+        # 交叉
+        for child1, child2 in zip(offspring[::2], offspring[1::2]):
+            if random.random() < 0.5:
+                self.toolbox.mate(child1, child2)
+                del child1.fitness.values
+                del child2.fitness.values
+
+        # 突變
+        for mutant in offspring:
+            if random.random() < 0.2:
+                self.toolbox.mutate(mutant)
+                del mutant.fitness.values
+
+        return offspring

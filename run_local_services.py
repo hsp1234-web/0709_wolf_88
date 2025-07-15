@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 
 from src.core.queue.sqlite_queue import SQLiteQueue
-from src.core.data.data_loader import load_ohlcv_data
+from src.core.utils.data_loader import load_ohlcv_data
 from src.apps.evolution_app import main as evolution_main
 from src.apps.backtest_worker_app import backtest_worker_loop
 from src.apps.results_projector_app import main as projector_main
@@ -36,7 +36,7 @@ async def main():
         worker_thread_2 = loop.run_in_executor(None, backtest_worker_loop, task_queue, results_queue, price_data, 2)
 
         # 異步任務
-        evolution_task = asyncio.create_task(evolution_main(context))
+        evolution_task = asyncio.create_task(evolution_main(task_queue, results_queue))
         projector_task = asyncio.create_task(projector_main(context))
 
         try:
