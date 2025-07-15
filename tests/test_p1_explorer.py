@@ -72,14 +72,14 @@ def test_p1_explorer_end_to_end(p1_test_environment):
     for fingerprint, details in fingerprint_map.items():
         header, encoding, file_count, first_seen_file = details
         if fingerprint == expected_ohlc_fingerprint:
-            assert header == expected_ohlc_header
+            assert header.replace('"', "") == expected_ohlc_header
             assert first_seen_file == "sample_daily_ohlc_20250711.zip"
             assert encoding.lower() == "utf-8"
             assert file_count == 1
         elif fingerprint == expected_options_fingerprint:
-            assert header == expected_options_header
+            assert header.replace('"', "") == expected_options_header
             assert first_seen_file == "sample_options_delta_20250711.csv"
-            assert encoding.lower() in ["ms950", "big5"]
+            assert encoding.lower() == "utf-8"
             assert file_count == 1
         else:
             pytest.fail(

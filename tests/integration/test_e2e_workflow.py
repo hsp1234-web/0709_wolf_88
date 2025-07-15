@@ -20,8 +20,6 @@ def setup_and_teardown_dbs():
     if RESULTS_QUEUE_PATH.exists():
         RESULTS_QUEUE_PATH.unlink()
 
-    DB_DIR.mkdir(exist_ok=True)
-
     yield
 
     # 測試後清理

@@ -12,6 +12,7 @@ from src.prometheus.core.analysis.data_engine import DataEngine
 def mock_clients():
     """提供一組模擬的數據客戶端。"""
     mock_yf = MagicMock()
+    mock_yf.get_history = MagicMock()
     mock_fred = MagicMock()
     mock_taifex = MagicMock()
     return mock_yf, mock_fred, mock_taifex

@@ -11,7 +11,7 @@ from prometheus.core.utils.file_processors import (
 
 def get_header_fingerprint(header_line: str) -> str:
     """對標準化後的標頭計算指紋。"""
-    normalized_header = "".join(header_line.lower().split())
+    normalized_header = "".join(header_line.lower().split()).replace('"', "")
     return hashlib.sha256(normalized_header.encode("utf-8")).hexdigest()
 
 
