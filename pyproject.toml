@@ -5,7 +5,7 @@ version = "0.9.0"
 description = "Advanced Quantitative Research Framework"
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
-packages = [{include = "apps", from = "src"}, {include = "core", from = "src"}]
+packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.14"
@@ -41,10 +41,9 @@ pytest-timeout = "^2.3.1"
 [tool.pytest.ini_options]
 # 為每個測試設定 60 秒的超時熔斷
 timeout = 60
-# 讓 pytest-asyncio 自動偵測異步測試
-asyncio_mode = "auto"
 # 告知 Pytest 我們的原始碼現在位於 src 目錄下
 pythonpath = ["src"]
+asyncio_mode = "auto"
 
 # --- 如果不存在則新增，如果存在則更新 [tool.ruff] 和 [tool.ruff.lint] ---
 [tool.ruff]

@@ -27,14 +27,13 @@ class BacktestWorker:
                 if event_type == "SystemShutdown":
                     print("回測工作者：收到關機信號，準備退出。")
                     self.stop()
-                    return
+                    break
 
                 if event_type == "GenomeGenerated":
                     try:
                         data = json.loads(data_str)
                         # 執行回測...
                         sharpe_ratio = await self.backtester.run_backtest(data['genome'])
-                        await asyncio.sleep(1) # 人為增加延遲
 
                         # 產生一個完成事件
                         completed_event = BacktestCompleted(

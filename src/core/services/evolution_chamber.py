@@ -1,27 +1,35 @@
 from deap import base, creator, tools
 from src.core.events.event_types import GenomeGenerated
 from src.core.context import AppContext
+from src.core.services.checkpoint_manager import CheckpointManager
 
-# DEAP setup remains the same
+# DEAP setup
 creator.create("FitnessMax", base.Fitness, weights=(1.0,))
 creator.create("Individual", dict, fitness=creator.FitnessMax)
-
-# Helper functions for DEAP (create_rsi_genome, mutate_genome, mate_genomes) can remain the same
-# For brevity, they are not repeated here, but they are part of the class now or imported.
 
 class EvolutionChamber:
     def __init__(self, context: AppContext):
         self.context = context
         self.toolbox = base.Toolbox()
-        # ... register DEAP functions ...
+        # ... (DEAP registrations can be added here if needed) ...
+        self.checkpoint_manager = CheckpointManager()
 
-    async def evolve(self, generations: int, population_size: int = 10):
-        # In a real scenario, you'd have more sophisticated population initialization
-        # and evolution logic (selection, crossover, mutation) from DEAP.
-        # This is a simplified loop to demonstrate event generation.
-        population = [self._create_dummy_genome() for _ in range(population_size)] # Dummy population
+    async def evolve(self, generations: int, population_size: int = 10, resume: bool = False):
+        start_gen = 0
+        population = None
 
-        for gen in range(generations):
+        if resume:
+            checkpoint = self.checkpoint_manager.load()
+            if checkpoint:
+                population = checkpoint.get("population")
+                start_gen = checkpoint.get("generation", 0) + 1
+                print(f"方舟：從第 {start_gen} 代恢復演化。")
+
+        if population is None:
+            population = [self._create_dummy_genome() for _ in range(population_size)]
+
+        for gen in range(start_gen, generations):
+            # In a real scenario, you'd have selection, crossover, mutation
             for i, ind in enumerate(population):
                 genome_id = f"gen_{gen}_ind_{i}"
                 event = GenomeGenerated(
@@ -30,17 +38,16 @@ class EvolutionChamber:
                     generation=gen
                 )
                 await self.context.event_stream.append(event)
-            # NOTE: The producer's job is done. It no longer waits for results.
-            # The population for the *next* generation would be derived from
-            # the results of this generation's backtests, which are read from
-            # the event stream by a separate process. For this example, we
-            # just re-use the same population.
-        print(f"已發佈 {generations * population_size} 個 GenomeGenerated 事件。")
+
+            # Save checkpoint at the end of each generation
+            checkpoint_data = {"population": population, "generation": gen}
+            self.checkpoint_manager.save(checkpoint_data)
+
+            print(f"第 {gen} 代完成，已發佈 {len(population)} 個基因組。")
+
+        print(f"演化完成。總共執行了 {generations - start_gen} 代。")
 
     def _create_dummy_genome(self):
-        # Simplified for this example
-        # The first argument to mutGaussian must be a list of values to mutate.
-        # The fourth argument, indpb, is the probability of each attribute to be mutated.
         return {
             "strategy": "RSI_Crossover",
             "params": {
