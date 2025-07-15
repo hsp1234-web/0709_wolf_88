@@ -23,7 +23,17 @@ def backtest_worker_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue, pr
                 print(f"[Worker-Backtest-{worker_id}] 收到關閉信號，正在優雅退出...")
                 break # 退出 while 迴圈
 
+            # 【核心改變】在解包前，先確保 task 不是 None 或其他非預期類型
+            if not isinstance(task, (list, tuple)) or len(task) != 2:
+                print(f"[Worker-Backtest-{worker_id}] 收到無效任務格式，已忽略: {task}")
+                continue
+
             item_id, genome_task = task
+
+            if not isinstance(genome_task, dict):
+                print(f"[Worker-Backtest-{worker_id}] 收到無效的 genome_task 格式，已忽略: {genome_task}")
+                continue
+
             params = genome_task.get("params", {})
             print(f"[Worker-Backtest-{worker_id}] 正在回測任務 #{item_id}: {params}")
 

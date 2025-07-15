@@ -158,9 +158,13 @@ def evolution_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue, resume: 
         try:
             HALL_OF_FAME_PATH.parent.mkdir(exist_ok=True, parents=True)
             with open(HALL_OF_FAME_PATH, 'w') as f:
+                # 【核心改變】將適應度儲存為字典格式，以符合驗證 App 的預期
+                fitness_data = {
+                    "sharpe_ratio": best_overall.fitness.values[0]
+                }
                 json.dump({
                     "params": {"fast": best_overall[0], "slow": best_overall[1]},
-                    "fitness": best_overall.fitness.values[0]
+                    "fitness": fitness_data
                 }, f, indent=4)
             print(f"[Evolution-Engine] 名人堂已儲存至: {HALL_OF_FAME_PATH}")
         except Exception as e:
