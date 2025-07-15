@@ -1,77 +1,50 @@
-# 檔案: core/services/optimizer_service.py
 import json
-
 import duckdb
-from core.logger import LogManager
-from core.queue.base import BaseQueue
+from prometheus.core.logger import LogManager
+from prometheus.core.db import get_db_connection
+from prometheus.core.config import config
 
+class OptimizerService:
+    def __init__(self, db_path=None, table_name="optimized_strategies"):
+        self.db_path = db_path or config.get("database.main_db_path")
+        self.table_name = table_name
+        self.log_manager = LogManager(session_name="optimizer_service")
+        self._initialize_db()
 
-class StrategyOptimizer:
-    """
-    策略優化器，負責分析結果並創造新任務。
-    """
-
-    def __init__(self, queue: BaseQueue, log_manager: LogManager):
-        self.queue = queue
-        self.log = log_manager
-        self.db_path = "prometheus_fire.duckdb"
-        self.table_name = "backtest_results"
-
-    def run_once(self):
-        """
-        執行一次優化流程。
-        """
-        self.log.log("INFO", "優化器啟動，正在分析歷史結果...")
-
-        try:
-            conn = duckdb.connect(self.db_path, read_only=True)
-
-            # === 第一道防線：檢查資料表是否存在 ===
-            tables = conn.execute("SHOW TABLES").fetchall()
-            table_names = [table[0] for table in tables]
-            if self.table_name not in table_names:
-                self.log.log(
-                    "WARNING",
-                    f"結果資料表 '{self.table_name}' 不存在，優化器跳過本次執行。",
+    def _initialize_db(self):
+        with get_db_connection(self.db_path) as conn:
+            conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS {self.table_name} (
+                    strategy_id VARCHAR PRIMARY KEY,
+                    params VARCHAR,
+                    fitness_score FLOAT,
+                    crossover_points INTEGER
                 )
-                conn.close()
-                return
+            """)
 
-            # === 第二道防線：檢查資料表是否為空 ===
-            best_result = conn.execute(
-                f"SELECT params FROM {self.table_name} ORDER BY crossover_points DESC LIMIT 1"
-            ).fetchone()
-            conn.close()
+    def get_best_strategy(self):
+        with get_db_connection(self.db_path) as conn:
+            try:
+                best_result = conn.execute(
+                    f"SELECT params FROM {self.table_name} ORDER BY crossover_points DESC LIMIT 1"
+                ).fetchone()
+                if best_result:
+                    return json.loads(best_result[0])
+            except duckdb.CatalogException:
+                self.log_manager.log_error(f"Table {self.table_name} not found.")
+            return None
 
-            if not best_result:
-                self.log.log(
-                    "WARNING", "結果資料表中無任何數據可供分析，優化器跳過本次執行。"
-                )
-                return
+    def save_strategy(self, strategy_id, params, fitness_score, crossover_points):
+        with get_db_connection(self.db_path) as conn:
+            conn.execute(
+                f"INSERT OR REPLACE INTO {self.table_name} VALUES (?, ?, ?, ?)",
+                (strategy_id, json.dumps(params), fitness_score, crossover_points)
+            )
+        self.log_manager.log_info(f"Strategy {strategy_id} saved successfully.")
 
-            # ... (後續邏輯不變) ...
-            best_params_str = best_result[0]
-            best_params = json.loads(best_params_str)
-            self.log.log("SUCCESS", f"找到當前最優參數: {best_params}")
-
-            mutated_params = {
-                "fast": best_params.get("fast", 5) + 1,
-                "slow": best_params.get("slow", 10) - 1,
-            }
-            # 確保慢線週期大於快線週期
-            if mutated_params["slow"] <= mutated_params["fast"]:
-                mutated_params["slow"] = mutated_params["fast"] + 2
-
-            self.log.log("INFO", f"產生進化後的新參數: {mutated_params}")
-
-            # === 將新任務投入佇列 ===
-            new_task = {
-                "strategy": "SMA_crossover_mutated",
-                "symbol": "OPTIMIZED_STOCK",
-                "params": mutated_params,
-            }
-            self.queue.put(new_task)
-            self.log.log("SUCCESS", f"已將進化後的新任務投入佇列: {new_task}")
-
-        except Exception as e:
-            self.log.log("ERROR", f"優化過程中發生錯誤: {e}")
+if __name__ == "__main__":
+    service = OptimizerService()
+    # Example usage:
+    # service.save_strategy("strategy_1", {"param1": 10}, 0.95, 5)
+    # best_params = service.get_best_strategy()
+    # print(f"Best strategy params: {best_params}")

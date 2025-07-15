@@ -1,16 +1,20 @@
-# 檔案: apps/optimizer_app.py
+import time
+from prometheus.core.logger import LogManager
+from prometheus.core.queue.sqlite_queue import SQLiteQueue
+from prometheus.services.optimizer_service import OptimizerService
 
-from core.logger import LogManager
-from core.queue.sqlite_queue import SQLiteQueue
-from core.services.optimizer_service import StrategyOptimizer
+def optimizer_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue):
+    log_manager = LogManager(session_name="optimizer_app")
+    optimizer = OptimizerService()
 
-QUEUE_DB_PATH = "output/task_queue.db"
+    while True:
+        log_manager.log_info("Optimizer loop running...")
+        # This is a placeholder for the actual optimization logic.
+        # In a real scenario, this would involve reading from the results_queue,
+        # running some optimization algorithm, and putting new tasks into the task_queue.
+        time.sleep(10)
 
-
-def run_optimizer(log_manager: LogManager):
-    """
-    初始化並執行一次策略優化流程。
-    """
-    queue = SQLiteQueue(db_path=QUEUE_DB_PATH)
-    optimizer = StrategyOptimizer(queue=queue, log_manager=log_manager)
-    optimizer.run_once()
+if __name__ == '__main__':
+    task_q = SQLiteQueue("task_queue.db")
+    results_q = SQLiteQueue("results_queue.db")
+    optimizer_loop(task_q, results_q)

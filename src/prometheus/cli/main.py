@@ -25,6 +25,10 @@ from prometheus.entrypoints.tools.report_generator_app import AIReportGenerator
 from prometheus.entrypoints.tools.show_results import show_results
 from prometheus.entrypoints.tools.task_adder_app import add_tasks
 from prometheus.entrypoints.validation_app import validation_loop
+from prometheus.pipelines.p0_downloader import run_downloader
+from prometheus.pipelines.p1_explorer import run_explorer
+from prometheus.pipelines.p2_elt_pipeline import run_elt_pipeline
+from prometheus.pipelines.p3_backfill_hourly_data import run_backfill
 
 # --- 設定 ---
 DATA_DIR = Path("data")
@@ -37,6 +41,9 @@ NUM_BACKTEST_WORKERS = 2
 app = typer.Typer()
 services_app = typer.Typer()
 app.add_typer(services_app, name="services")
+
+pipelines_app = typer.Typer()
+app.add_typer(pipelines_app, name="pipelines")
 
 
 class RunMode(str, Enum):
@@ -166,7 +173,8 @@ def services_start(
             print(f"[Conductor] 等待主服務 ({target_name}) 完成任務...")
             main_thread.join()
             print(
-                f"\n[Conductor] 偵測到主服務 ({target_name}) 已完成！正在準備關閉所有背景服務..."
+                f"\n[Conductor] 偵測到主服務 ({target_name}) 已完成！"
+                "正在準備關閉所有背景服務..."
             )
         else:
             while True:
@@ -256,6 +264,56 @@ def cli_clear_results(
         clear_results(app_context)
     finally:
         app_context.log_manager.close_and_archive()
+
+
+@pipelines_app.command("download")
+def pipeline_download(
+    start_date: str = typer.Option(..., help="下載開始日期 (YYYY-MM-DD)"),
+    end_date: str = typer.Option(..., help="下載結束日期 (YYYY-MM-DD)"),
+    output_dir: str = typer.Option("data/downloads", help="檔案儲存目錄"),
+    max_workers: int = typer.Option(16, help="最大同時下載任務數"),
+):
+    """執行 P0 下載管線"""
+    run_downloader(start_date, end_date, output_dir, max_workers)
+
+
+@pipelines_app.command("explore")
+def pipeline_explore(
+    input_dir: str = typer.Option("data/downloads", help="掃描的原始檔案目錄"),
+    db_path: str = typer.Option(
+        "data/metadata/schema_registry.db", help="格式註冊表資料庫路徑"
+    ),
+):
+    """執行 P1 探勘管線"""
+    run_explorer(input_dir, db_path)
+
+
+@pipelines_app.command("elt")
+def pipeline_elt(
+    input_dir: str = typer.Option(
+        "data/downloads", help="下載檔案的來源目錄 (供 Loader 使用)"
+    ),
+    raw_db_path: str = typer.Option(
+        "data/raw_warehouse/raw_taifex.duckdb", help="原始數據艙資料庫路徑"
+    ),
+    schema_db_path: str = typer.Option(
+        "data/metadata/schema_registry.db", help="格式註冊表資料庫路徑"
+    ),
+    analytics_db_path: str = typer.Option(
+        "data/analytics_warehouse/analytics_taifex.duckdb", help="分析數據庫路徑"
+    ),
+):
+    """執行 P2 ELT 管線"""
+    run_elt_pipeline(input_dir, raw_db_path, schema_db_path, analytics_db_path)
+
+
+@pipelines_app.command("backfill")
+def pipeline_backfill(
+    start_date: str = typer.Option(..., help="回填開始日期 (YYYY-MM-DD)"),
+    end_date: str = typer.Option(..., help="回填結束日期 (YYYY-MM-DD)"),
+):
+    """執行 P3 回填管線"""
+    run_backfill(start_date, end_date)
 
 
 @app.command(name="pre-check")

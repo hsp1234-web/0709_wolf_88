@@ -28,7 +28,7 @@ import pytest
 # 定義專案的根目錄，這裡我們假設 `tests` 目錄位於專案根目錄下
 PROJECT_ROOT = Path(__file__).parent.parent
 # 定義要進行導入測試的源碼目錄
-SOURCE_DIRECTORIES = ["apps", "core"]
+SOURCE_DIRECTORIES = ["src"]
 # 定義需要從測試中排除的特定檔案或目錄
 EXCLUDE_PATTERNS = [
     "__pycache__",  # 排除 Python 的快取目錄
@@ -79,8 +79,8 @@ def discover_modules(root_dir: Path, source_dirs: list[str]) -> list[str]:
                     # 檢查檔案是否應被排除
                     if not is_excluded(file_path, root_dir):
                         # 將檔案系統路徑轉換為 Python 的模組導入路徑
-                        # 例如：/path/to/project/core/utils/helpers.py -> core.utils.helpers
-                        relative_path = file_path.relative_to(root_dir)
+                        # 例如：/path/to/project/src/prometheus/core/utils.py -> prometheus.core.utils
+                        relative_path = file_path.relative_to(root_dir / "src")
                         # 移除 .py 副檔名
                         module_path_without_ext = relative_path.with_suffix("")
                         # 將路徑分隔符轉換為點

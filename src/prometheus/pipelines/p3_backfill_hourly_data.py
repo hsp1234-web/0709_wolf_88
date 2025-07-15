@@ -9,8 +9,8 @@ sys.path.append(str(project_root))
 
 
 def run_backfill(start_date_str, end_date_str):
-    from core.analysis.data_engine import DataEngine
-    from core.config import config
+    from prometheus.core.analysis.data_engine import DataEngine
+    from prometheus.core.clients.client_factory import ClientFactory
 
     """
     執行歷史數據回填管線。
@@ -25,16 +25,7 @@ def run_backfill(start_date_str, end_date_str):
     print(f"--- 開始執行數據回填作業：從 {start_date_str} 到 {end_date_str} ---")
 
     # 步驟 1: 初始化
-    from core.clients.fred import FredClient
-    from core.clients.taifex_db import TaifexDBClient
-    from core.clients.yfinance import YFinanceClient
-
-    yf_client = YFinanceClient()
-    fred_client = FredClient(api_key=config.get("api_keys.fred"))
-    taifex_client = TaifexDBClient()
-    data_engine = DataEngine(
-        yf_client=yf_client, fred_client=fred_client, taifex_client=taifex_client
-    )
+    data_engine = DataEngine()
 
     # 步驟 2: 產生時間戳
     hourly_timestamps = pd.date_range(start=start_date_str, end=end_date_str, freq="H")
@@ -51,6 +42,7 @@ def run_backfill(start_date_str, end_date_str):
 
     # 關閉資源
     data_engine.close()
+    ClientFactory.close_all()
     print("--- 數據回填作業完成 ---")
 
 

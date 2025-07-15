@@ -6,11 +6,9 @@ from typing import Any, Dict
 import duckdb
 import pandas as pd
 
-from prometheus.core.clients.fred import FredClient
-from prometheus.core.clients.taifex_db import TaifexDBClient
+from prometheus.core.clients.client_factory import ClientFactory
 
 # 假設這些是我們已經存在的客戶端
-from prometheus.core.clients.yfinance import YFinanceClient
 
 
 class DataEngine:
@@ -22,17 +20,14 @@ class DataEngine:
 
     def __init__(
         self,
-        yf_client: YFinanceClient,
-        fred_client: FredClient,
-        taifex_client: TaifexDBClient,
         db_connection=None,
     ):
         """
         透過依賴注入初始化，傳入所有需要的數據客戶端。
         """
-        self.yf_client = yf_client
-        self.fred_client = fred_client
-        self.taifex_client = taifex_client
+        self.yf_client = ClientFactory.get_client("yfinance")
+        self.fred_client = ClientFactory.get_client("fred")
+        self.taifex_client = ClientFactory.get_client("taifex")
 
         # --- 新增程式碼 ---
         if db_connection:
