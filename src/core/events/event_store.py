@@ -72,3 +72,14 @@ class PersistentEventStream:
                 (consumer_id, last_processed_id)
             )
             await self._conn.commit()
+
+    async def get_total_event_count(self) -> int:
+        """獲取事件流中的事件總數。"""
+        cursor = await self._conn.execute("SELECT MAX(id) FROM events")
+        row = await cursor.fetchone()
+        return row[0] if row and row[0] is not None else 0
+
+    async def get_all_checkpoints(self) -> dict[str, int]:
+        """獲取所有消費者的檢查點。"""
+        cursor = await self._conn.execute("SELECT consumer_id, last_processed_id FROM consumer_checkpoints")
+        return dict(await cursor.fetchall())

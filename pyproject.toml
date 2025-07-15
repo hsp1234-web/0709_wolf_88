@@ -28,6 +28,7 @@ pytest-asyncio = "^1.0.0"
 vectorbt = "^0.28.0"
 setuptools = "^80.9.0"
 aiosqlite = "^0.21.0"
+rich = "^14.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
