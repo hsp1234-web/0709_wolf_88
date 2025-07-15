@@ -34,7 +34,7 @@ def evolution_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue):
                 "id": task_id,
                 "params": {"fast": fast_window, "slow": slow_window}
             }
-            task_queue.put(genome_task)
+            task_queue.put((task_id, genome_task))
             pending_tasks[task_id] = individual
             print(f"[Evolution-Engine] 已發送任務: {genome_task}")
 
@@ -42,9 +42,17 @@ def evolution_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue):
         print("[Evolution-Engine] 等待所有回測結果...")
         evaluated_count = 0
         while evaluated_count < len(pending_tasks):
-            result = results_queue.get(block=True)
+            result = results_queue.get(block=True, timeout=10) # 增加超時
             if result:
-                _, result_payload = result
+                # 確保我們處理的是元組 (item_id, payload)
+                if isinstance(result, tuple) and len(result) == 2:
+                    _, result_payload = result
+                else:
+                    # 假設如果不是元組，就是 payload 本身
+                    result_payload = result
+
+                if not result_payload: continue
+
                 genome_id = result_payload.get("genome_id")
 
                 if genome_id in pending_tasks:
@@ -52,11 +60,19 @@ def evolution_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue):
                     report = result_payload.get("report", {})
                     fitness = report.get("sharpe_ratio", -1.0) # 使用夏普比率作為適應度
 
+                    # 處理無效的適應度值
+                    if fitness is None or fitness == float('inf') or fitness == float('-inf'):
+                        fitness = -1.0
+
                     # 為個體賦予適應度分數
                     individual.fitness.values = (fitness,)
 
                     evaluated_count += 1
                     print(f"[Evolution-Engine] 收到結果: {genome_id}, 適應度: {fitness:.2f} ({evaluated_count}/{len(pending_tasks)})")
+            else:
+                # 如果超時後仍未收到結果，可能是有工作者已死亡
+                print("[Evolution-Engine] 警告：等待結果超時，可能部分任務已丟失。")
+                evaluated_count += 1 # 避免無限等待
 
         # 4. 記錄本代最佳個體
         best_ind = tools.selBest(population, 1)[0]
@@ -88,17 +104,3 @@ def evolution_loop(task_queue: SQLiteQueue, results_queue: SQLiteQueue):
     print("[Evolution-Engine] 演化引擎已停止。")
 
     # 讓主執行緒知道可以關閉了 (透過讓迴圈結束)
-
-async def main(task_queue: SQLiteQueue, results_queue: SQLiteQueue):
-    """
-    異步的主進入點，啟動演化循環。
-    """
-    # 由於 evolution_loop 是同步的，我們需要在一個執行器中運行它
-    # 以避免阻塞異步事件循環。
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(
-        None,           # 使用默認的 ThreadPoolExecutor
-        evolution_loop, # 要運行的同步函數
-        task_queue,     # 傳遞給函數的第一個參數
-        results_queue   # 傳遞給函數的第二個參數
-    )

@@ -1,18 +1,17 @@
 import sqlite3
 import json
+import time
 import uuid
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Any, Optional, Tuple
 
-from .base import BaseQueue
-
-class SQLiteQueue(BaseQueue):
+class SQLiteQueue:
     """
-    一個基於 SQLite 的、絕對穩健的持久化任務佇列。
-    其核心依賴 SQLite 的事務性與明確的狀態管理欄位。
+    一個基於 SQLite 的、支持阻塞和毒丸關閉的持久化佇列。
     """
-    def __init__(self, db_path: str | Path = "output/task_queue.db"):
+    def __init__(self, db_path: str | Path, table_name: str = "queue"):
         self.db_path = Path(db_path)
+        self.table_name = table_name
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # 允許多執行緒共享同一個連線，並增加超時
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=10)
@@ -20,60 +19,61 @@ class SQLiteQueue(BaseQueue):
 
     def _init_db(self):
         with self.conn:
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS tasks (
-                    id TEXT PRIMARY KEY,
-                    payload TEXT NOT NULL,
-                    status TEXT DEFAULT 'pending',  -- 'pending'|'running'|'completed'
+            self.conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS {self.table_name} (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
-    def put(self, task_data: Dict) -> str:
-        """將一個新任務放入佇列，並返回任務 ID。"""
-        task_id = str(uuid.uuid4())
+    def put(self, item: Any):
+        """將一個項目放入佇列。"""
         with self.conn:
             self.conn.execute(
-                "INSERT INTO tasks (id, payload) VALUES (?, ?)",
-                (task_id, json.dumps(task_data))
+                f"INSERT INTO {self.table_name} (item) VALUES (?)",
+                (json.dumps(item),)
             )
-        return task_id
 
-    def get(self) -> Optional[Dict]:
-        """以原子操作從佇列中取出一個任務。"""
-        with self.conn:
-            cursor = self.conn.cursor()
-            # 找出一個待處理的任務
-            cursor.execute("""
-                SELECT id, payload FROM tasks
-                WHERE status = 'pending'
-                ORDER BY created_at
-                LIMIT 1
-            """)
-            task = cursor.fetchone()
+    def get(self, block: bool = True, timeout: Optional[float] = None) -> Optional[Any]:
+        """
+        從佇列中取出一個項目。
+        如果 block=True，則會等待直到有項目可用。
+        """
+        start_time = time.time()
+        while True:
+            try:
+                with self.conn:
+                    cursor = self.conn.cursor()
+                    cursor.execute(f"SELECT id, item FROM {self.table_name} ORDER BY id LIMIT 1")
+                    row = cursor.fetchone()
 
-            if task:
-                task_id, payload_str = task
-                # 鎖定該任務
-                self.conn.execute(
-                    "UPDATE tasks SET status = 'running' WHERE id = ?",
-                    (task_id,)
-                )
-                task_data = json.loads(payload_str)
-                task_data['_task_id'] = task_id # 將 ID 注入
-                return task_data
-        return None
+                    if row:
+                        item_id, item_json = row
+                        cursor.execute(f"DELETE FROM {self.table_name} WHERE id = ?", (item_id,))
+                        return json.loads(item_json)
+            except sqlite3.Error as e:
+                # 如果發生資料庫錯誤，短暫等待後重試
+                print(f"Database error in get(): {e}")
+                time.sleep(0.1)
 
-    def task_done(self, task_id: str) -> None:
-        """標記一個任務已完成。"""
-        with self.conn:
-            self.conn.execute(
-                "UPDATE tasks SET status = 'completed' WHERE id = ?",
-                (task_id,)
-            )
+            if not block:
+                return None
+
+            if timeout and (time.time() - start_time) > timeout:
+                return None
+
+            time.sleep(0.1) # 避免過於頻繁地查詢
 
     def qsize(self) -> int:
-        """返回待處理任務的數量。"""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM tasks WHERE status = 'pending'")
-        return cursor.fetchone()[0]
+        """返回佇列中的項目數量。"""
+        with self.conn:
+            cursor = self.conn.cursor()
+            cursor.execute(f"SELECT COUNT(*) FROM {self.table_name}")
+            return cursor.fetchone()[0]
+
+    def close(self):
+        """關閉資料庫連線。"""
+        if self.conn:
+            self.conn.close()
+            self.conn = None
