@@ -41,6 +41,8 @@ pytest-timeout = "^2.3.1"
 [tool.pytest.ini_options]
 # 為每個測試設定 60 秒的超時熔斷
 timeout = 60
+# 讓 pytest-asyncio 自動偵測異步測試
+asyncio_mode = "auto"
 # 告知 Pytest 我們的原始碼現在位於 src 目錄下
 pythonpath = ["src"]
 

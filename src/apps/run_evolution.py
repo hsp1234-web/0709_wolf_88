@@ -40,11 +40,13 @@ async def main(monitor: bool, db_path: str = "output/results.sqlite"):
         await context.event_stream.append(SystemShutdown(reason="Evolution completed."))
 
         # --- 等待所有背景服務優雅關閉 ---
-        await asyncio.sleep(2) # 給予一點時間讓消費者處理關機信號
+        # 移除固定的 sleep，改為等待核心任務完成
+        shutdown_tasks = [t for t in tasks if t is not monitor_task]
+        await asyncio.gather(*shutdown_tasks)
+
         if monitor_task:
             monitor_task.cancel()
-
-        await asyncio.gather(*[t for t in tasks if not t.done()])
+            await asyncio.gather(monitor_task, return_exceptions=True)
 
         print("主控台：所有服務已關閉。系統結束。")
 

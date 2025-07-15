@@ -10,5 +10,5 @@ async def main(context: AppContext):
     print("演化流程開始...")
     chamber = EvolutionChamber(context)
     # 這裡的參數可以來自配置文件或命令列參數
-    await chamber.evolve(generations=1, population_size=10)
+    await chamber.evolve(generations=100, population_size=100)
     print("演化流程完成，基因體事件已全部發布。")
