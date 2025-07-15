@@ -1,14 +1,36 @@
-# 檔案: src/apps/evolution_app.py
-from src.core.context import AppContext
-from src.core.services.evolution_chamber import EvolutionChamber
+import time
+from src.core.queue.sqlite_queue import SQLiteQueue
 
-async def main(context: AppContext, resume: bool = False):
+def evolution_loop(queue: SQLiteQueue, worker_id: int):
     """
-    應用程式主入口點：初始化並運行演化室。
-    這個應用現在只負責“生產”基因體事件。
+    一個簡單、獨立、永不崩潰的演化工作者。
     """
-    print("演化流程開始...")
-    chamber = EvolutionChamber(context)
-    # 這裡的參數可以來自配置文件或命令列參數
-    await chamber.evolve(generations=5, population_size=10, resume=resume)
-    print("演化流程完成，基因體事件已全部發布。")
+    print(f"[Worker-{worker_id}] 演化工作者已啟動，正在等待任務...")
+
+    while True:
+        try:
+            # 從佇列中獲取任務
+            task = queue.get(block=True)
+
+            if task is None:
+                continue
+
+            item_id, evolution_task = task
+            print(f"[Worker-{worker_id}] 接收到演化任務 #{item_id}: {evolution_task}")
+
+            # --- 模擬演化工作 ---
+            if "error" in evolution_task:
+                raise ValueError("這是一個模擬的演化計算錯誤！")
+
+            time.sleep(3) # 模擬耗時的演化計算
+            print(f"[Worker-{worker_id}] 任務 #{item_id} 演化完成。")
+            # --- 模擬結束 ---
+
+            queue.task_done(item_id)
+
+        except Exception as e:
+            print(f"!!!!!! [Worker-{worker_id}] 發生嚴重錯誤 !!!!!!")
+            print(f"錯誤類型: {type(e).__name__}")
+            print(f"錯誤訊息: {e}")
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            time.sleep(5)

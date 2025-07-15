@@ -1,79 +1,68 @@
+# 檔案: src/core/queue/sqlite_queue.py
 import sqlite3
-import json
-import uuid
+import pickle
+import time
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Any, Optional
 
-from .base import BaseQueue
-
-class SQLiteQueue(BaseQueue):
+class SQLiteQueue:
     """
-    一個基於 SQLite 的、絕對穩健的持久化任務佇列。
-    其核心依賴 SQLite 的事務性與明確的狀態管理欄位。
+    一個基於 SQLite 的、進程/執行緒安全的、持久化的訊息佇列。
     """
-    def __init__(self, db_path: str | Path = "output/task_queue.db"):
-        self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        # 允許多執行緒共享同一個連線，並增加超時
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=10)
-        self._init_db()
-
-    def _init_db(self):
-        with self.conn:
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS tasks (
-                    id TEXT PRIMARY KEY,
-                    payload TEXT NOT NULL,
-                    status TEXT DEFAULT 'pending',  -- 'pending'|'running'|'completed'
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-    def put(self, task_data: Dict) -> str:
-        """將一個新任務放入佇列，並返回任務 ID。"""
-        task_id = str(uuid.uuid4())
-        with self.conn:
-            self.conn.execute(
-                "INSERT INTO tasks (id, payload) VALUES (?, ?)",
-                (task_id, json.dumps(task_data))
+    def __init__(self, db_path: Path):
+        self._db_path = db_path
+        # isolation_level=None 啟用 autocommit 模式
+        # check_same_thread=False 允許在多執行緒中使用
+        self._conn = sqlite3.connect(db_path, isolation_level=None, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL;")
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                payload BLOB NOT NULL,
+                is_done BOOLEAN DEFAULT 0
             )
-        return task_id
+        """)
 
-    def get(self) -> Optional[Dict]:
-        """以原子操作從佇列中取出一個任務。"""
-        with self.conn:
-            cursor = self.conn.cursor()
-            # 找出一個待處理的任務
-            cursor.execute("""
-                SELECT id, payload FROM tasks
-                WHERE status = 'pending'
-                ORDER BY created_at
-                LIMIT 1
-            """)
-            task = cursor.fetchone()
+    def put(self, item: Any):
+        """將一個項目放入佇列。"""
+        payload = pickle.dumps(item)
+        self._conn.execute("INSERT INTO queue (payload) VALUES (?)", (payload,))
 
-            if task:
-                task_id, payload_str = task
-                # 鎖定該任務
-                self.conn.execute(
-                    "UPDATE tasks SET status = 'running' WHERE id = ?",
-                    (task_id,)
-                )
-                task_data = json.loads(payload_str)
-                task_data['_task_id'] = task_id # 將 ID 注入
-                return task_data
-        return None
+    def get(self, block: bool = True, timeout: float = 0.1) -> Optional[Any]:
+        """
+        從佇列中獲取一個未完成的項目，並將其鎖定 (但不刪除)。
+        返回 (item_id, item) 或 None。
+        """
+        while True:
+            # 使用 BEGIN IMMEDIATE 來獲取一個寫入鎖，防止其他執行緒同時獲取任務
+            cursor = self._conn.execute("BEGIN IMMEDIATE;")
+            try:
+                cursor.execute("SELECT id, payload FROM queue WHERE is_done = 0 ORDER BY id ASC LIMIT 1")
+                row = cursor.fetchone()
+                if row:
+                    item_id, payload = row
+                    # 這裡我們先不更新 is_done，而是由 task_done 來完成
+                    # 這樣可以模擬一個任務被"取出"並處理的過程
+                    self._conn.commit()
+                    return item_id, pickle.loads(payload)
+                else:
+                    self._conn.commit() # 沒有任務，釋放鎖
+                    if not block:
+                        return None
+                    time.sleep(timeout) # 等待一小段時間再重試
+            except sqlite3.OperationalError as e:
+                # 如果是資料庫被鎖定，則稍後重試
+                if "database is locked" in str(e):
+                    self._conn.rollback()
+                    time.sleep(timeout)
+                    continue
+                else:
+                    raise
 
-    def task_done(self, task_id: str) -> None:
+    def task_done(self, item_id: int):
         """標記一個任務已完成。"""
-        with self.conn:
-            self.conn.execute(
-                "UPDATE tasks SET status = 'completed' WHERE id = ?",
-                (task_id,)
-            )
+        self._conn.execute("UPDATE queue SET is_done = 1 WHERE id = ?", (item_id,))
 
-    def qsize(self) -> int:
-        """返回待處理任務的數量。"""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM tasks WHERE status = 'pending'")
-        return cursor.fetchone()[0]
+    def close(self):
+        """關閉資料庫連線。"""
+        self._conn.close()
