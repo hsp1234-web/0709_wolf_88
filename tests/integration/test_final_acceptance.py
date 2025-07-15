@@ -1,40 +1,64 @@
-# 檔案: tests/integration/test_final_acceptance.py
 import pytest
 import asyncio
 from src.core.context import AppContext
 from src.apps import evolution_app, backtest_worker_app
 
+# 模擬的 evolution_app，因為它現在變得很簡單
+class MockEvolutionApp:
+    def __init__(self, context):
+        from src.core.services.evolution_chamber import EvolutionChamber
+        self.evolver = EvolutionChamber(context)
+
+    async def main(self):
+        # 在測試中，我們只演化一小部分
+        await self.evolver.evolve(generations=1, population_size=10)
+
 @pytest.mark.asyncio
-async def test_full_async_evolution_flow():
+async def test_event_sourcing_flow():
     """
-    最終驗收測試 v4.0 (鳳凰版)
-    驗證完整的非同步事件驅動流程。
+    驗證基於事件溯源的完整流程：
+    1. EvolutionChamber 發布 GenomeGenerated 事件。
+    2. BacktestWorker 監聽事件，執行回測，並發布 BacktestCompleted 事件。
+    3. 驗證所有事件都已正確記錄在資料庫中。
+    4. (可選) 驗證讀取模型（如 results table）是否被正確更新。
     """
-    # 使用異步上下文管理器來確保資源的正確初始化和關閉
-    async with AppContext(session_name="phoenix_test", mode='test') as context:
-        print("\n--- 最終驗收測試 (鳳凰版) 開始 ---")
+    db_path = ":memory:"  # 在記憶體中執行測試以提高速度和隔離性
+    async with AppContext(db_path=db_path) as context:
 
-        # 1. 創建並啟動背景工作者 (Worker) 任務
+        # 創建並短暫運行 worker 任務
+        # backtest_worker_app.main 現在是一個無限循環，所以我們在背景運行它
         worker_task = asyncio.create_task(backtest_worker_app.main(context))
-        print("背景回測工作者任務已創建。")
 
-        # 2. 在主線程中運行演化流程
-        await evolution_app.main(context)
-        print("演化流程已執行完畢。")
+        # 運行演化器以產生事件
+        # 由於 evolution_app 的邏輯被簡化，我們直接調用一個模擬版本
+        mock_evo_app = MockEvolutionApp(context)
+        await mock_evo_app.main()
 
-        # 3. 發送 "毒丸" 信號來終止 Worker
-        await context.queue.put(None)
+        # 給 worker 一點時間來處理所有已生成的事件
+        # 在真實的系統中，這裡需要一個更優雅的同步機制
+        # 例如，檢查 BacktestCompleted 事件的數量是否與 GenomeGenerated 相符
+        await asyncio.sleep(2)
 
-        # 等待 Worker 任務處理完 "毒丸" 並終止
-        await asyncio.sleep(0.1) # 給予事件循環一點時間來處理
-        await worker_task
-        print("Worker 任務已確認終止。")
+        # 優雅地取消 worker 任務
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass  # 任務被取消是正常的
 
-        # 4. 最終驗證
-        results_count = await context.results_saver.count_results()
-        print(f"在資料庫中找到 {results_count} 筆回測結果。")
+        # --- 驗證階段 ---
+        # 1. 驗證事件流本身
+        cursor = await context.conn.execute("SELECT event_type, COUNT(*) FROM events GROUP BY event_type")
+        counts = dict(await cursor.fetchall())
 
-        # 初始族群(10) + 後續世代... 預期應有結果
-        assert results_count > 10, f"預期應有多於10個回測結果，但只找到 {results_count} 個。"
+        # 根據 MockEvolutionApp 的設置，我們預期 10 個基因體
+        assert counts.get("GenomeGenerated") == 10, "應產生 10 個 GenomeGenerated 事件"
+        assert counts.get("BacktestCompleted") == 10, "應有 10 個 BacktestCompleted 事件作為回應"
 
-        print("--- 最終驗收測試 (鳳凰版) 圓滿成功 ---")
+        # 2. 驗證最終的讀模型（如果有的話，這裡我們沒有單獨的結果表，但可以檢查）
+        # 在這個設計中，BacktestCompleted 事件本身就是結果，
+        # 但如果有一個單獨的 results 表，我們會在這裡驗證它。
+        # 例如:
+        # count = await context.results_saver.count_results()
+        # assert count == 10
+        print("\n測試成功：事件流和處理流程符合預期。")

@@ -4,30 +4,29 @@ import json
 from typing import Dict, Any
 
 class ResultsSaver:
-    """結果儲存器 v3.0 (非同步版)"""
-    def __init__(self, connection: aiosqlite.Connection):
-        self.conn = connection
+    """結果儲存器"""
+    def __init__(self, conn: aiosqlite.Connection):
+        self.conn = conn
 
-    async def setup_database(self):
+    async def initialize(self):
+        """初始化資料庫，建立結果表。"""
         await self.conn.execute("""
-            CREATE TABLE IF NOT EXISTS backtest_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                backtest_id TEXT UNIQUE,
-                strategy_name TEXT,
-                parameters TEXT,
-                metrics TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
+        CREATE TABLE IF NOT EXISTS backtest_results (
+            genome_id TEXT PRIMARY KEY,
+            sharpe_ratio REAL,
+            generation INTEGER,
+            genome TEXT
+        )
         """)
         await self.conn.commit()
 
-    async def save_result(self, backtest_id: str, strategy_name: str, parameters: Dict, metrics: Dict):
-        params_json = json.dumps(parameters)
-        metrics_json = json.dumps(metrics)
-        await self.conn.execute("""
-            INSERT INTO backtest_results (backtest_id, strategy_name, parameters, metrics)
-            VALUES (?, ?, ?, ?)
-        """, (backtest_id, strategy_name, params_json, metrics_json))
+    async def save_result(self, genome_id: str, sharpe_ratio: float, generation: int, genome: Dict[str, Any]):
+        """儲存單一基因體的回測結果。"""
+        genome_str = json.dumps(genome)
+        await self.conn.execute(
+            "INSERT OR REPLACE INTO backtest_results (genome_id, sharpe_ratio, generation, genome) VALUES (?, ?, ?, ?)",
+            (genome_id, sharpe_ratio, generation, genome_str)
+        )
         await self.conn.commit()
 
     async def count_results(self) -> int:
