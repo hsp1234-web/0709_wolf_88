@@ -1,5 +1,6 @@
 # 檔案: src/core/context.py
 import aiosqlite
+import os
 from src.core.events.event_store import PersistentEventStream
 from src.core.db.results_saver import ResultsSaver
 
@@ -11,6 +12,10 @@ class AppContext:
         self.results_saver: ResultsSaver | None = None
 
     async def __aenter__(self):
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+
         self.conn = await aiosqlite.connect(self.db_path)
         # 啟用 WAL 模式以獲得更好的並發性能
         await self.conn.execute("PRAGMA journal_mode=WAL;")

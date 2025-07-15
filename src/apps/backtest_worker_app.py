@@ -17,11 +17,15 @@ class BacktestWorker:
         while self._running:
             events = await self.context.event_stream.subscribe(self.last_processed_id)
             if not events:
-                await asyncio.sleep(1)  # 如果沒有新事件，稍作等待
+                await asyncio.sleep(1)
                 continue
 
-            print(f"偵測到 {len(events)} 個新事件。")
             for event_id, event_type, data_str in events:
+                if event_type == "SystemShutdown":
+                    print("回測工作者：收到關機信號，準備退出。")
+                    self.stop()
+                    break
+
                 if event_type == "GenomeGenerated":
                     try:
                         data = json.loads(data_str)
@@ -46,6 +50,9 @@ class BacktestWorker:
 
                 # 無論事件類型如何，都更新已處理的 ID
                 self.last_processed_id = event_id
+
+            if not self._running:
+                break
         print("回測工作者已停止。")
 
     def stop(self):

@@ -24,10 +24,15 @@ class ResultsProjector:
         while self._running:
             events = await self.context.event_stream.subscribe(self.last_processed_id)
             if not events:
-                await asyncio.sleep(1)  # 無新事件，短暫休眠
+                await asyncio.sleep(1)
                 continue
 
             for event_id, event_type, data_str in events:
+                if event_type == "SystemShutdown":
+                    print("投影者：收到關機信號，準備退出。")
+                    self.stop()
+                    break
+
                 if event_type == "BacktestCompleted":
                     data = json.loads(data_str)
                     # 調用 ResultsSaver 將事件數據寫入讀模型
@@ -41,6 +46,9 @@ class ResultsProjector:
 
                 # 更新已處理的事件 ID，確保不重複處理
                 self.last_processed_id = event_id
+
+            if not self._running:
+                break
 
     def stop(self):
         """停止投影者的運行循環。"""

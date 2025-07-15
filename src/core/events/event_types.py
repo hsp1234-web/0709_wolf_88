@@ -24,3 +24,8 @@ class BacktestCompleted(BaseEvent):
     sharpe_ratio: float
     generation: int
     genome: Dict[str, Any]
+
+@dataclasses.dataclass(frozen=True)
+class SystemShutdown(BaseEvent):
+    """一個特殊的信號事件，通知所有消費者優雅地關閉。"""
+    reason: str
