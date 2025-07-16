@@ -614,6 +614,9 @@ def run_pipeline(
     if name == "p1_factor_generation":
         from prometheus.pipelines.p1_factor_generation import p1_factor_generation_pipeline
         p1_factor_generation_pipeline.run(context=pipeline_context)
+    elif name == "p2_index_factor_generation":
+        from prometheus.pipelines.p2_index_factor_generation import p2_index_factor_pipeline
+        p2_index_factor_pipeline.run(context=pipeline_context)
     else:
         logger.error(f"錯誤：找不到名為 '{name}' 的管線。")
         raise typer.Exit(code=1)
