@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from inject_env import inject_poetry_env
+inject_poetry_env()
+
 from prometheus.core.queue.sqlite_queue import SQLiteQueue
 from rich.console import Console
 import os

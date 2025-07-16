@@ -4,9 +4,14 @@
 集群啟動器 (Launcher)
 一個極簡的、只負責下達命令的啟動器，用於並行啟動所有獨立的工人進程。
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from inject_env import inject_poetry_env
+inject_poetry_env()
+
 import subprocess
 import os
-import sys
 from rich.console import Console
 
 console = Console()
@@ -48,20 +53,37 @@ def main():
 
         console.print(f"  [grey50]正在準備啟動工人 {i}: {' '.join(command)}[/grey50]")
 
-        # 3. 使用 subprocess.Popen 並行地啟動所有獨立的工人進程
-        # 我們不捕獲輸出，因為每個工人都會將日誌寫入自己的檔案
-        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        processes.append(process)
+        # 3. 為每個工人創建專屬的日誌檔案
+        log_dir = Path("data/logs")
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        stdout_log_path = log_dir / f"recon_worker_{i}_stdout.log"
+        stderr_log_path = log_dir / f"recon_worker_{i}_stderr.log"
+
+        # 4. 使用 subprocess.Popen 並行地啟動所有獨立的工人進程
+        #    並將 stdout/stderr 重定向到各自的日誌檔案
+        stdout_log = open(stdout_log_path, 'w')
+        stderr_log = open(stderr_log_path, 'w')
+
+        process = subprocess.Popen(
+            command,
+            stdout=stdout_log,
+            stderr=stderr_log
+        )
+        processes.append((process, stdout_log, stderr_log))
 
     console.print(f"\n[bold green]✅ 所有 {num_workers} 個工人已成功啟動。現在等待它們完成任務...[/bold green]")
     console.print("[italic]您可以通過監控 'data/logs/' 和 'data/db/' 目錄來觀察進度。[/italic]")
 
-    # 4. 等待所有子進程執行完畢
-    for i, process in enumerate(processes):
+    # 5. 等待所有子進程執行完畢並關閉日誌檔案
+    for i, (process, stdout_log, stderr_log) in enumerate(processes):
         process.wait()
+        stdout_log.close()
+        stderr_log.close()
+
         if process.returncode != 0:
             console.print(f"[bold red]警告: 工人 {i} 以錯誤碼 {process.returncode} 退出。[/bold red]")
-            console.print(f"[red]請檢查日誌檔案 'data/logs/recon_worker_{i}.log' 以獲取詳細資訊。[/red]")
+            console.print(f"[red]請檢查日誌檔案 'data/logs/recon_worker_{i}_stderr.log' 以獲取詳細資訊。[/red]")
 
     console.print("\n[bold green]🎉 所有工人進程均已執行完畢。集群攻擊結束。[/bold green]")
 
