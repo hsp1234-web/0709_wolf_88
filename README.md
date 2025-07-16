@@ -49,7 +49,7 @@
     *   `pytest-asyncio`: `^1.0.0`
     *   `ruff`: `^0.4.8` (Linter & Formatter)
 
-## **三、 完整檔案目錄結構 (v2.0)**
+## **三、 完整檔案目錄結構 (v3.0 - 終極整合)**
 
 > **[文件化說明]**
 > 關於下表中每一個檔案的詳細功能、職責與執行邏輯，請參閱 **[`PROJECT_FILES_GLOSSARY.md`](./PROJECT_FILES_GLOSSARY.md)** 檔案。
@@ -60,15 +60,11 @@
 ├── README.md
 ├── TEST_REPORT.md
 ├── config.yml
-├── create_dummy_data.py
 ├── mypy.ini
-├── pipelines
-│   ├── ... (歷史數據管線)
 ├── poetry.lock
 ├── pyproject.toml
 ├── pytest.ini
 ├── run.py
-├── run_local_services.py
 ├── src
 │   ├── ... (應用程式與核心邏輯)
 └── tests
@@ -85,40 +81,63 @@
 
 ## **五、 主要功能執行與測試**
 
-本專案提供兩種主要的執行方式：透過統一的 CLI 入口 `run.py`，或使用 `run_local_services.py` 進行模擬部署。
+本專案的所有功能，皆透過統一的 CLI 入口 `run.py` 進行操作。
 
-### **5.1 透過 `run.py` CLI 執行單個任務**
+### **5.1 透過 `run.py` CLI 執行任務**
 
-`run.py` 是專案的統一命令列介面，你可以用它來執行各種獨立的任務。
+`run.py` 是專案的唯一命令列介面，你可以用它來執行各種獨立的任務。
 
 *   **查看所有可用指令**:
     ```bash
     poetry run python run.py --help
     ```
-*   **執行一次完整的策略演化**:
+
+*   **數據管理 (`data`)**:
     ```bash
-    poetry run python run.py evolve
+    # 建立虛構數據
+    poetry run python run.py data create-dummy
     ```
-*   **啟動儀表板後端服務**:
+
+*   **數據管線 (`pipelines`)**:
     ```bash
+    # 執行數據下載
+    poetry run python run.py pipelines run-downloader --start-date 2023-01-01 --end-date 2023-01-31
+
+    # 執行格式探勘
+    poetry run python run.py pipelines run-explorer
+
+    # 執行 ELT 流程
+    poetry run python run.py pipelines run-elt
+
+    # 執行歷史數據回填
+    poetry run python run.py pipelines run-backfill --start-date 2023-01-01 --end-date 2023-01-31
+    ```
+
+*   **結果管理 (`results`)**:
+    ```bash
+    # 清除所有結果
+    poetry run python run.py results clear
+
+    # 顯示回測結果
+    poetry run python run.py results show
+
+    # 添加回測任務
+    poetry run python run.py results add-tasks --num-tasks 50
+
+    # 生成測試報告
+    poetry run python run.py results generate-report
+    ```
+
+*   **核心應用**:
+    ```bash
+    # 啟動儀表板後端服務
     poetry run python run.py dashboard --host 127.0.0.1 --port 8000
+
+    # 執行一次完整的策略演化
+    poetry run python run.py analyze
     ```
-*   **清除所有回測結果**:
-    ```bash
-    poetry run python run.py clear-results --force
-    ```
 
-### **5.2 透過 `run_local_services.py` 模擬生產環境**
-
-為了模擬生產環境中「生產者-消費者」並行工作的場景，我們提供了 `run_local_services.py` 腳本。它會同時啟動一個演化引擎（生產者）和多個回測工作者（消費者）。
-
-*   **啟動本地服務集群**:
-    ```bash
-    poetry run python run_local_services.py
-    ```
-    這會啟動一個 `evolution_app` 和預設數量的 `backtest_worker_app`。你將在終端機中看到它們並行工作的日誌。按 `Ctrl+C` 可以優雅地關閉所有服務。
-
-### **5.3 執行自動化測試**
+### **5.2 執行自動化測試**
 
 *   **運行所有測試**:
     ```bash
@@ -127,9 +146,8 @@
 *   **運行測試並生成報告**:
     `run.py` 也整合了測試和報告生成的功能。
     ```bash
-    poetry run python run.py run-tests
+    poetry run python run.py results generate-report
     ```
-    此指令會執行所有測試，並在 `output/reports/` 目錄下生成 `report.xml`，同時在根目錄下生成 `TEST_REPORT.md`。
 
 ## **六、 開發者指引**
 

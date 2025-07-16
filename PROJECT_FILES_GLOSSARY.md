@@ -37,7 +37,7 @@
     *   `pytest-asyncio`: `^1.0.0`
     *   `ruff`: `^0.4.8` (Linter & Formatter)
 
-## **二、 檔案目錄結構 (v2.2)**
+## **二、 檔案目錄結構 (v3.0 - 終極整合)**
 
 ```
 .
@@ -45,7 +45,6 @@
 ├── README.md
 ├── TEST_REPORT.md
 ├── config.yml
-├── create_dummy_data.py
 ├── data
 │   ├── checkpoints
 │   ├── db
@@ -124,18 +123,7 @@
 │       │   ├── optimizer_app.py
 │       │   ├── query_gateway.py
 │       │   ├── results_projector_app.py
-│       │   ├── tools
-│       │   │   ├── clear_results.py
-│       │   │   ├── report_generator_app.py
-│       │   │   ├── show_results.py
-│       │   │   └── task_adder_app.py
 │       │   └── validation_app.py
-│       ├── pipelines
-│       │   ├── __init__.py
-│       │   ├── p0_downloader.py
-│       │   ├── p1_explorer.py
-│       │   ├── p2_elt_pipeline.py
-│       │   └── p3_backfill_hourly_data.py
 │       └── services
 │           ├── __init__.py
 │           ├── backtesting_service.py
@@ -185,18 +173,17 @@
 
 -   `README.md`: **[文檔]** 開發者手冊，提供專案的整體介紹、技術棧、環境設定、主要功能用法、版本歷史與開發者指引。
 -   `PROJECT_FILES_GLOSSARY.md`: **[文檔]** (本檔案) 提供比 `README.md` 更詳細的、針對每一個檔案和目錄的功能說明。
--   `run.py`: **[核心入口]** 專案的統一命令列介面 (CLI)，使用 `Typer` 建立。是執行所有主要任務（如演化、回測、測試、儀表板）的入口點。
+-   `run.py`: **[核心入口]** 專案的統一命令列介面 (CLI)，使用 `Typer` 建立。是執行所有主要任務的唯一入口點。
 -   `config.yml`: **[設定檔]** 全局設定檔。包含了 API 金鑰、資料庫路徑以及 `factor_universe`（因子宇宙）的定義。
 -   `pyproject.toml`: **[依賴管理]** `Poetry` 的專案設定檔。
 -   `poetry.lock`: **[依賴管理]** `Poetry` 的鎖定檔案。
 -   `pytest.ini`, `mypy.ini`: **[工具設定]** `Pytest` 和 `Mypy` 的設定檔。
--   `create_dummy_data.py`: **[輔助腳本]** 用於生成測試或開發所需的虛擬數據。
 -   `data/`: **[數據目錄]** 存放所有數據相關檔案，包括日誌、檢查點和資料庫。
 
 ## **四、 `src/prometheus/` - 原始碼主目錄**
 
 -   `cli/`: **[命令列介面]**
-    -   `main.py`: `Typer` 應用的主要實作，定義了所有可用的命令列指令，如 `services start`, `pipelines`, `results` 等。
+    -   `main.py`: `Typer` 應用的主要實作，定義了所有可用的命令列指令，如 `data`、`pipelines`、`results`、`dashboard` 和 `analyze`。
 -   `core/`: **[核心服務與商業邏輯層]**
     -   `logging/log_manager.py`: **[核心服務]** 雅典娜之鏡的核心。一個採用單例模式的中央日誌管理器，負責將結構化日誌輸出到控制台和檔案。
     -   `services/`:
@@ -209,12 +196,6 @@
     -   `evolution_app.py`: 演化流程的主函數，負責驅動策略演化。
     -   `backtest_worker_app.py`: 背景回測工作者的主函數，負責執行回測任務。
     -   `validation_app.py`: 樣本外驗證流程的主函數。
-    -   `tools/`: 包含一系列用於開發和維護的命令列工具。
--   `pipelines/`: **[數據處理管線]**
-    -   `p0_downloader.py`: P0 數據下載管線。
-    -   `p1_explorer.py`: P1 格式探勘管線。
-    -   `p2_elt_pipeline.py`: P2 ELT 處理管線。
-    -   `p3_backfill_hourly_data.py`: P3 數據回填管線。
 
 ## **五、 `tests/` - 自動化測試**
 
