@@ -18,7 +18,7 @@ class CalculateUniversalFactorsStep(BaseETLStep):
     def __init__(self):
         self.engine = UniversalFactorEngine()
 
-    def execute(self, data: pd.DataFrame | None = None) -> pd.DataFrame | None:
+    def execute(self, data: pd.DataFrame | None = None, **kwargs) -> pd.DataFrame | None:
         if data is None or data.empty:
             return pd.DataFrame()
 
@@ -30,7 +30,7 @@ class CalculateUniversalFactorsStep(BaseETLStep):
 # 重新定義管線，加入驗證步驟
 p1_factor_generation_pipeline = DataPipeline(
     steps=[
-        LoadRawDataFromWarehouseStep(ticker="SPY"),
+        LoadRawDataFromWarehouseStep(),
         CalculateUniversalFactorsStep(),
         # 在計算之後、儲存之前，注入真理血清
         VerifyDataFrameNotEmptyStep(),

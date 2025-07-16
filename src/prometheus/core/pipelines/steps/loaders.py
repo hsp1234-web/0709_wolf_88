@@ -139,12 +139,15 @@ except ImportError as e:
 
 
 class LoadRawDataFromWarehouseStep(BaseETLStep):
-    def __init__(self, ticker: str):
-        self.ticker = ticker
+    def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def execute(self, data: pd.DataFrame | None = None) -> pd.DataFrame:
-        self.logger.info(f"從數據倉庫加載 '{self.ticker}' 的原始數據...")
+    def execute(self, data: pd.DataFrame | None = None, **kwargs) -> pd.DataFrame:
+        ticker = kwargs.get("ticker")
+        if not ticker:
+            raise ValueError("執行錯誤：LoadRawDataFromWarehouseStep 未在上下文中收到 ticker！")
+
+        self.logger.info(f"正在為資產 {ticker} 載入原始數據...")
         # 模擬返回一個包含虛擬數據的 DataFrame
         date_range = pd.to_datetime(
             pd.date_range(start="2022-01-01", periods=300, freq="D")
@@ -172,7 +175,7 @@ class TaifexTickLoaderStep(BaseETLStep):
             f"TaifexTickLoaderStep initialized. DB: '{self.db_path}', Table: '{self.table_name}'. Imported app deps: {IMPORTED_APP_DEPS}"
         )
 
-    def execute(self, data: pd.DataFrame | None = None) -> pd.DataFrame | None:
+    def execute(self, data: pd.DataFrame | None = None, **kwargs) -> pd.DataFrame | None:
         self.logger.info(
             f"Executing TaifexTickLoaderStep. Output to table '{self.table_name}' in db '{self.db_path}'."
         )

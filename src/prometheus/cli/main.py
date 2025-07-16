@@ -600,15 +600,25 @@ def run_transformer(raw_db_path, schema_db_path, analytics_db_path):
     logger.info(f"Transformer 完成，成功轉換 {transformed_count} 筆記錄。")
 
 
-@pipelines_app.command("run-factor-generation")
-def run_p1_factor_generation():
+@pipelines_app.command("run")
+def run_pipeline(
+    name: str = typer.Option(..., help="要執行的管線名稱"),
+    ticker: str = typer.Option(None, "--ticker", "-t", help="要處理的資產代號")
+):
     """
-    執行 p1_factor_generation 管線。
+    執行指定的數據管線。
     """
-    from prometheus.pipelines.p1_factor_generation import p1_factor_generation_pipeline
-    logger.info("--- 啟動 p1_factor_generation 管線 ---")
-    p1_factor_generation_pipeline.run()
-    logger.info("--- p1_factor_generation 管線執行完畢 ---")
+    pipeline_context = {"ticker": ticker} if ticker else {}
+    logger.info(f"--- 啟動 {name} 管線，上下文: {pipeline_context} ---")
+
+    if name == "p1_factor_generation":
+        from prometheus.pipelines.p1_factor_generation import p1_factor_generation_pipeline
+        p1_factor_generation_pipeline.run(context=pipeline_context)
+    else:
+        logger.error(f"錯誤：找不到名為 '{name}' 的管線。")
+        raise typer.Exit(code=1)
+
+    logger.info(f"--- {name} 管線執行完畢 ---")
 
 
 @pipelines_app.command("run-backfill")

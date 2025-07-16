@@ -13,12 +13,13 @@ class BaseETLStep(ABC):
     """
 
     @abstractmethod
-    def execute(self, data: pd.DataFrame | None = None) -> pd.DataFrame | None:
+    def execute(self, data: pd.DataFrame | None = None, **kwargs) -> pd.DataFrame | None:
         """
         執行此步驟的核心邏輯。
 
         Args:
             data: 上一個步驟傳入的數據，對於第一個步驟，此項為 None。
+            **kwargs: 可選的關鍵字參數。
 
         Returns:
             處理完成後，傳遞給下一步驟的數據。如果此步驟為終點，可返回 None。
