@@ -51,10 +51,10 @@ def _create_permanent_resilient_session():
 
 
 class RobustDataAcquisitionEngine:
-    def __init__(self, tickers):
+    def __init__(self, tickers, db_path=DB_FILE):
         self.tickers = tickers
         self.resilient_session = _create_permanent_resilient_session()
-        self.db_connection = duckdb.connect(DB_FILE, read_only=True)
+        self.db_connection = duckdb.connect(db_path, read_only=False)
         # 用於暫存從網路獲取但在記憶體閾值內的數據
         self.in_memory_data_frames = []
 

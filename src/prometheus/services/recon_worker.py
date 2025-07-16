@@ -50,7 +50,7 @@ class ReconWorker:
         """初始化共享的中央任務佇列。"""
         queue_path = "recon_tasks.sqlite"
         self.logger.info(f"任務佇列連接到 {queue_path}")
-        return SQLiteQueue(db_path=queue_path)
+        return SQLiteQueue(db_path=queue_path, table_name="recon_tasks")
 
     def _analyze_data_and_get_stats(self, ticker: str, data, interval: str, label: str):
         """
@@ -91,7 +91,8 @@ class ReconWorker:
         # 為了避免每個循環都重新創建 session 和斷路器，我們在循環外初始化引擎。
         # 注意：engine 的 __init__ 需要 tickers 列表，但我們在循環中處理單個 ticker。
         # 我們傳入一個空列表來初始化，然後在循環中調用 `fetch_single_ticker`。
-        self.acquisition_engine = RobustDataAcquisitionEngine(tickers=[])
+        db_path = f"data/db/recon_worker_{self.worker_id}.duckdb"
+        self.acquisition_engine = RobustDataAcquisitionEngine(tickers=[], db_path=db_path)
 
         while True:
             try:

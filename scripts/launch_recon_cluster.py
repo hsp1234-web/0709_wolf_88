@@ -53,9 +53,11 @@ def main():
 
         console.print(f"  [grey50]正在準備啟動工人 {i}: {' '.join(command)}[/grey50]")
 
-        # 3. 為每個工人創建專屬的日誌檔案
+        # 3. 為每個工人創建專屬的日誌和數據庫目錄
         log_dir = Path("data/logs")
+        db_dir = Path("data/db")
         log_dir.mkdir(parents=True, exist_ok=True)
+        db_dir.mkdir(parents=True, exist_ok=True)
 
         stdout_log_path = log_dir / f"recon_worker_{i}_stdout.log"
         stderr_log_path = log_dir / f"recon_worker_{i}_stderr.log"
@@ -86,6 +88,19 @@ def main():
             console.print(f"[red]請檢查日誌檔案 'data/logs/recon_worker_{i}_stderr.log' 以獲取詳細資訊。[/red]")
 
     console.print("\n[bold green]🎉 所有工人進程均已執行完畢。集群攻擊結束。[/bold green]")
+
+    # 階段 2: 執行結果收集腳本
+    console.print("\n[bold blue]--- [階段 2] 開始收集與匯總戰果 ---[/bold blue]")
+    try:
+        gather_command = [python_executable, "scripts/gather_recon_results.py"]
+        # 使用 check=True 會在命令返回非零碼時拋出 CalledProcessError
+        subprocess.run(gather_command, check=True)
+    except FileNotFoundError:
+        console.print("[bold red]錯誤: 找不到 'scripts/gather_recon_results.py'。[/bold red]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[bold red]結果收集腳本執行失敗，返回碼: {e.returncode}[/bold red]")
+    except Exception as e:
+        console.print(f"[bold red]執行結果收集時發生未知錯誤: {e}[/bold red]")
 
 if __name__ == "__main__":
     main()
