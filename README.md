@@ -1,4 +1,4 @@
-# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v2.1**
+# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v3.0**
 
 ## **一、 專案概覽與目的**
 
@@ -66,9 +66,40 @@
 ├── pytest.ini
 ├── run.py
 ├── src
-│   ├── ... (應用程式與核心邏輯)
+│   ├── __init__.py
+│   └── prometheus
+│       ├── cli
+│       │   └── main.py
+│       ├── core
+│       │   ├── __init__.py
+│       │   ├── analysis
+│       │   ├── analyzers
+│       │   ├── clients
+│       │   ├── config.py
+│       │   ├── constants.py
+│       │   ├── context.py
+│       │   ├── db
+│       │   ├── engines
+│       │   ├── events
+│       │   ├── logging
+│       │   ├── monitoring
+│       │   ├── pipelines
+│       │   ├── py.typed
+│       │   ├── queue
+│       │   └── utils
+│       ├── entrypoints
+│       ├── services
+│       └── web
+│           └── dashboard.html
 └── tests
-    ├── ... (測試相關檔案)
+    ├── conftest.py
+    ├── fixtures
+    ├── ignition_test.py
+    ├── integration
+    ├── test_p0_downloader.py
+    ├── test_p1_explorer.py
+    ├── test_p2_elt_pipeline.py
+    └── unit
 ```
 
 ## **四、 環境設定與執行**

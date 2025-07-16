@@ -1,4 +1,4 @@
-# 專案檔案詞彙表 (v2.2 雅典娜之鏡版)
+# 專案檔案詞彙表 (v3.0 終極整合版)
 
 本文件旨在提供一個完整、詳細的專案檔案地圖，說明每一個檔案與目錄在【普羅米修斯之火】框架中的功能與核心職責。
 
@@ -124,12 +124,14 @@
 │       │   ├── query_gateway.py
 │       │   ├── results_projector_app.py
 │       │   └── validation_app.py
-│       └── services
-│           ├── __init__.py
-│           ├── backtesting_service.py
-│           ├── checkpoint_manager.py
-│           ├── evolution_chamber.py
-│           └── optimizer_service.py
+│       ├── services
+│       │   ├── __init__.py
+│       │   ├── backtesting_service.py
+│       │   ├── checkpoint_manager.py
+│       │   ├── evolution_chamber.py
+│       │   └── optimizer_service.py
+│       └── web
+│           └── dashboard.html
 └── tests
     ├── conftest.py
     ├── fixtures
@@ -195,7 +197,9 @@
 -   `entrypoints/`: **[應用程式入口]**
     -   `evolution_app.py`: 演化流程的主函數，負責驅動策略演化。
     -   `backtest_worker_app.py`: 背景回測工作者的主函數，負責執行回測任務。
-    -   `validation_app.py`: 樣本外驗證流程的主函數。
+    *   `validation_app.py`: 樣本外驗證流程的主函數。
+-   `web/`: **[Web 介面]**
+    -   `dashboard.html`: **[靜態檔案]** 儀表板的前端 HTML 檔案，用於視覺化回測結果。
 
 ## **五、 `tests/` - 自動化測試**
 
