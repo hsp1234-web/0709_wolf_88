@@ -600,6 +600,17 @@ def run_transformer(raw_db_path, schema_db_path, analytics_db_path):
     logger.info(f"Transformer 完成，成功轉換 {transformed_count} 筆記錄。")
 
 
+@pipelines_app.command("run-factor-generation")
+def run_p1_factor_generation():
+    """
+    執行 p1_factor_generation 管線。
+    """
+    from prometheus.pipelines.p1_factor_generation import p1_factor_generation_pipeline
+    logger.info("--- 啟動 p1_factor_generation 管線 ---")
+    p1_factor_generation_pipeline.run()
+    logger.info("--- p1_factor_generation 管線執行完畢 ---")
+
+
 @pipelines_app.command("run-backfill")
 def run_backfill_cli(
     start_date: str = typer.Option(..., help="回填開始日期 (YYYY-MM-DD)"),

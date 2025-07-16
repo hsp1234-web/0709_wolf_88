@@ -137,6 +137,16 @@ except ImportError as e:
                 self.logger.info("Fallback: No data to insert.")
 
 
+class LoadRawDataFromWarehouseStep(BaseETLStep):
+    def __init__(self, ticker: str):
+        self.ticker = ticker
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    def execute(self, data: pd.DataFrame | None = None) -> pd.DataFrame:
+        self.logger.info(f"從數據倉庫加載 '{self.ticker}' 的原始數據...")
+        # 模擬返回一個空的 DataFrame
+        return pd.DataFrame()
+
 class TaifexTickLoaderStep(BaseETLStep):
     def __init__(
         self,
