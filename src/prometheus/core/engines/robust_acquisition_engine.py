@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time  # For time.time()
 from datetime import datetime  # 修正導入
 
@@ -14,6 +15,10 @@ from urllib3.util.retry import Retry
 # --- 核心配置 ---
 MEMORY_USAGE_THRESHOLD = 70.0
 DB_FILE = "permanent_financial_data.duckdb"
+
+# --- 日誌配置 ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # --- 斷路器配置：5次失敗後跳閘，阻斷請求60秒 ---
 # [cite_start]您的研究報告中提到了斷路器模式 [cite: 540-544]
