@@ -12,10 +12,19 @@ from prometheus.core.pipelines.steps.savers import SaveFactorsToWarehouseStep
 from prometheus.core.pipelines.base_step import BaseETLStep
 import pandas as pd
 
-# This is a placeholder class.
+from prometheus.core.engines.universal_factor_engine import UniversalFactorEngine
+
 class CalculateUniversalFactorsStep(BaseETLStep):
+    def __init__(self):
+        self.engine = UniversalFactorEngine()
+
     def execute(self, data: pd.DataFrame | None = None) -> pd.DataFrame | None:
-        return pd.DataFrame()
+        if data is None or data.empty:
+            return pd.DataFrame()
+
+        # 呼叫因子引擎進行計算
+        factor_df = self.engine.calculate(data)
+        return factor_df
 
 
 # 重新定義管線，加入驗證步驟

@@ -7,6 +7,7 @@ import os
 
 import duckdb
 import pandas as pd
+import numpy as np
 
 from prometheus.core.pipelines.base_step import BaseETLStep
 
@@ -144,8 +145,19 @@ class LoadRawDataFromWarehouseStep(BaseETLStep):
 
     def execute(self, data: pd.DataFrame | None = None) -> pd.DataFrame:
         self.logger.info(f"從數據倉庫加載 '{self.ticker}' 的原始數據...")
-        # 模擬返回一個空的 DataFrame
-        return pd.DataFrame()
+        # 模擬返回一個包含虛擬數據的 DataFrame
+        date_range = pd.to_datetime(
+            pd.date_range(start="2022-01-01", periods=300, freq="D")
+        )
+        open_prices = np.random.uniform(90, 110, size=300)
+        df = pd.DataFrame({
+            "Open": open_prices,
+            "High": open_prices + np.random.uniform(0, 5, size=300),
+            "Low": open_prices - np.random.uniform(0, 5, size=300),
+            "Close": open_prices + np.random.uniform(-2, 2, size=300),
+            "Volume": np.random.randint(100000, 500000, size=300),
+        }, index=date_range)
+        return df
 
 class TaifexTickLoaderStep(BaseETLStep):
     def __init__(
