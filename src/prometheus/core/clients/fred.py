@@ -9,7 +9,7 @@ import pandas as pd
 
 from fredapi import Fred as FredAPILib
 
-from prometheus.core.config import get_fred_api_key
+from src.prometheus.core.config import get_fred_api_key
 from src.prometheus.core.logging.log_manager import LogManager
 
 from .base import BaseAPIClient

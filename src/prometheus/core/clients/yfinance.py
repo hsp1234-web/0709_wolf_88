@@ -32,98 +32,97 @@ class YFinanceClient(BaseAPIClient):
         super().__init__(api_key=None, base_url=None)
         logger.info("YFinanceClient 初始化完成。")
 
-    def fetch_data(
+    async def fetch_data(
         self, symbol: str, **kwargs
-    ) -> (
-        pd.DataFrame
-    ):  # Return type changed to pd.DataFrame from Optional[pd.DataFrame]
+    ) -> pd.DataFrame:
         """
-        從 Yahoo Finance 抓取指定商品代碼的每日 OHLCV 數據。
+        非同步地從 Yahoo Finance 抓取指定商品代碼的 OHLCV 數據。
         """
+        import asyncio
+
         start_date = kwargs.get("start_date")
         end_date = kwargs.get("end_date")
         period = kwargs.get("period")
 
-        if not period and (not start_date or not end_date):
-            raise ValueError(
-                "必須提供 'period' 或 'start_date' 與 'end_date' 其中之一。"
-            )
+        # if not period and (not start_date or not end_date):
+        #     raise ValueError(
+        #         "必須提供 'period' 或 'start_date' 與 'end_date' 其中之一。"
+        #     )
 
-        # 基礎參數
         history_params = {
             "start": start_date,
             "end": end_date,
             "auto_adjust": kwargs.get("auto_adjust", False),
-            # "progress": kwargs.get("progress", False), # yfinance 0.2.40 不支援此參數
             "interval": kwargs.get("interval", "1d"),
             "actions": kwargs.get("actions", False),
         }
-        # 如果提供了 period，則優先使用 period 並移除 start/end
         if period:
             history_params["period"] = period
             history_params.pop("start", None)
             history_params.pop("end", None)
 
-        # 移除 progress=False，因為 yfinance 0.2.40 的 ticker.history() 不接受此參數
         logger.info(f"開始抓取數據：商品 {symbol}, 參數: {history_params}")
 
-        try:
-            ticker_obj: Any = yf.Ticker(symbol)
-            history_params.pop("progress", None)
-            hist_data: Any = ticker_obj.history(**history_params)
+        def _sync_fetch():
+            try:
+                ticker_obj: Any = yf.Ticker(symbol)
+                history_params.pop("progress", None)
+                hist_data: Any = ticker_obj.history(**history_params)
 
-            if hist_data is None or hist_data.empty:
-                logger.warning(f"商品 {symbol} 使用參數 {history_params} 未找到數據或返回為空。")
+                if hist_data is None or hist_data.empty:
+                    logger.warning(f"商品 {symbol} 使用參數 {history_params} 未找到數據或返回為空。")
+                    return pd.DataFrame()
+
+                hist_data = cast(pd.DataFrame, hist_data)
+                hist_data.reset_index(inplace=True)
+                hist_data["symbol"] = symbol
+
+                date_col_name = "Datetime" if "Datetime" in hist_data.columns else "Date"
+                if date_col_name not in hist_data.columns:
+                    logger.warning(f"未找到預期的日期欄位 ('Date' 或 'Datetime')。可用欄位: {hist_data.columns.tolist()}")
+                    return pd.DataFrame()
+
+                hist_data[date_col_name] = pd.to_datetime(hist_data[date_col_name], utc=True)
+                hist_data[date_col_name] = hist_data[date_col_name].dt.tz_convert(None)
+
+                if date_col_name != "Date" and "Date" not in hist_data.columns:
+                    hist_data.rename(columns={date_col_name: "Date"}, inplace=True)
+
+                rename_map = {"Adj Close": "Adj_Close"}
+                final_df = hist_data.rename(columns=rename_map)
+                final_df["Date"] = pd.to_datetime(final_df["Date"])
+
+                required_cols = ["Date", "symbol", "Open", "High", "Low", "Close", "Adj_Close", "Volume"]
+                cols_to_keep = []
+                missing_cols = []
+
+                for col in required_cols:
+                    if col in final_df.columns:
+                        cols_to_keep.append(col)
+                    elif col == "Adj_Close" and "Close" in final_df.columns and history_params.get("auto_adjust") is True:
+                        final_df["Adj_Close"] = final_df["Close"]
+                        cols_to_keep.append("Adj_Close")
+                    elif col not in final_df.columns:
+                        missing_cols.append(col)
+
+                if missing_cols:
+                    logger.warning(f"抓取的數據中缺少以下預期欄位: {missing_cols} (Symbol: {symbol})。")
+
+                valid_cols_to_keep = [col for col in cols_to_keep if col in final_df.columns]
+                if not valid_cols_to_keep:
+                    logger.warning(f"沒有有效的欄位可供選擇 (Symbol: {symbol})")
+                    return pd.DataFrame()
+
+                final_df = final_df[valid_cols_to_keep]
+
+                logger.info(f"成功抓取並處理 {len(final_df)} 筆數據，商品: {symbol}。")
+                return final_df
+
+            except Exception as e:
+                logger.error(f"抓取數據時發生錯誤 (Symbol: {symbol})：{e}", exc_info=True)
                 return pd.DataFrame()
 
-            hist_data = cast(pd.DataFrame, hist_data)
-            hist_data.reset_index(inplace=True)
-            hist_data["symbol"] = symbol
-
-            date_col_name = "Datetime" if "Datetime" in hist_data.columns else "Date"
-            if date_col_name not in hist_data.columns:
-                logger.warning(f"未找到預期的日期欄位 ('Date' 或 'Datetime')。可用欄位: {hist_data.columns.tolist()}")
-                return pd.DataFrame()
-
-            hist_data[date_col_name] = pd.to_datetime(hist_data[date_col_name], utc=True)
-            hist_data[date_col_name] = hist_data[date_col_name].dt.tz_convert(None)
-
-            if date_col_name != "Date" and "Date" not in hist_data.columns:
-                hist_data.rename(columns={date_col_name: "Date"}, inplace=True)
-
-            rename_map = {"Adj Close": "Adj_Close"}
-            final_df = hist_data.rename(columns=rename_map)
-            final_df["Date"] = pd.to_datetime(final_df["Date"])
-
-            required_cols = ["Date", "symbol", "Open", "High", "Low", "Close", "Adj_Close", "Volume"]
-            cols_to_keep = []
-            missing_cols = []
-
-            for col in required_cols:
-                if col in final_df.columns:
-                    cols_to_keep.append(col)
-                elif col == "Adj_Close" and "Close" in final_df.columns and history_params["auto_adjust"] is True:
-                    final_df["Adj_Close"] = final_df["Close"]
-                    cols_to_keep.append("Adj_Close")
-                elif col not in final_df.columns:
-                    missing_cols.append(col)
-
-            if missing_cols:
-                logger.warning(f"抓取的數據中缺少以下預期欄位: {missing_cols} (Symbol: {symbol})。")
-
-            valid_cols_to_keep = [col for col in cols_to_keep if col in final_df.columns]
-            if not valid_cols_to_keep:
-                logger.warning(f"沒有有效的欄位可供選擇 (Symbol: {symbol})")
-                return pd.DataFrame()
-
-            final_df = final_df[valid_cols_to_keep]
-
-            logger.info(f"成功抓取並處理 {len(final_df)} 筆數據，商品: {symbol}。")
-            return final_df
-
-        except Exception as e:
-            logger.error(f"抓取數據時發生錯誤 (Symbol: {symbol})：{e}", exc_info=True)
-            return pd.DataFrame()
+        return await asyncio.to_thread(_sync_fetch)
 
     def fetch_multiple_symbols_data(self, symbols: List[str], **kwargs) -> pd.DataFrame:
         if not isinstance(symbols, list) or not symbols:

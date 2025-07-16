@@ -13,7 +13,7 @@ from typing import Iterator, Optional
 
 import requests
 
-from prometheus.core.utils.helpers import get_cached_session, temporary_disabled_cache
+from src.prometheus.core.utils.helpers import get_cached_session, temporary_disabled_cache
 from src.prometheus.core.logging.log_manager import LogManager
 
 logger = LogManager.get_instance().get_logger("BaseAPIClient")
