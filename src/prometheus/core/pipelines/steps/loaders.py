@@ -8,8 +8,10 @@ import os
 import duckdb
 import pandas as pd
 import numpy as np
+from typing import List, Dict, Any
 
-from prometheus.core.pipelines.base_step import BaseETLStep
+from prometheus.core.pipelines.base_step import BaseETLStep, BaseStep
+from src.prometheus.core.clients.client_factory import ClientFactory
 
 # --- 依賴管理的說明 ---
 # 理想情況下，`DatabaseManager` 和 `TaifexTick` 應該是 `core` 的一部分，
@@ -253,6 +255,60 @@ class TaifexTickLoaderStep(BaseETLStep):
 
         self.logger.info("TaifexTickLoaderStep execution finished.")
         return ticks_df
+
+
+class LoadStockDataStep(BaseStep):
+    """
+    一個 Pipeline 步驟，用於從 yfinance 加載股票數據。
+    """
+
+    def __init__(self, symbols: List[str], client_factory: ClientFactory):
+        """
+        初始化步驟。
+
+        :param symbols: 要加載的股票代號列表。
+        :param client_factory: 客戶端工廠。
+        """
+        self.symbols = symbols
+        self.yfinance_client = client_factory.get_client('yfinance')
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    async def run(self, data: Any = None, context: Dict[str, Any] = None) -> pd.DataFrame:
+        """
+        執行數據加載。
+
+        :param data: 上一步的輸出 (在此被忽略)。
+        :param context: Pipeline 的共享上下文。
+        :return: 包含所有股票數據的單一 DataFrame。
+        """
+        self.logger.info(f"開始從 yfinance 加載股票數據，目標: {self.symbols}")
+        all_data = []
+
+        for symbol in self.symbols:
+            try:
+                self.logger.debug(f"正在為 {symbol} 獲取數據...")
+                stock_data = await self.yfinance_client.fetch_data(symbol, period="1y") # 載入一年數據作為範例
+                if stock_data.empty:
+                    self.logger.warning(f"無法為 {symbol} 獲取數據，可能該代號無效或無數據。")
+                    continue
+
+                stock_data['symbol'] = symbol
+                all_data.append(stock_data)
+                self.logger.debug(f"成功加載 {symbol} 的 {len(stock_data)} 筆數據。")
+
+            except Exception as e:
+                self.logger.error(f"加載 {symbol} 數據時出錯: {e}", exc_info=True)
+
+        if not all_data:
+            self.logger.error("未能加載任何股票數據。")
+            # 返回一個空的 DataFrame，下游步驟應能處理這種情況
+            return pd.DataFrame()
+
+        # 將所有數據合併成一個大的 DataFrame
+        combined_df = pd.concat(all_data)
+        self.logger.info(f"成功加載並合併了 {len(all_data)} 支股票的數據。")
+
+        return combined_df
 
 
 if __name__ == "__main__":

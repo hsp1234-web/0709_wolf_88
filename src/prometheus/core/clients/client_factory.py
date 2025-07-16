@@ -19,6 +19,9 @@ class ClientFactory:
                 cls._clients[client_name] = YFinanceClient()
             elif client_name == "taifex":
                 cls._clients[client_name] = TaifexDBClient()
+            elif client_name == "finmind":
+                from .finmind import FinMindClient
+                cls._clients[client_name] = FinMindClient(api_token=config.get("api_keys.finmind"))
             else:
                 raise ValueError(f"Unknown client: {client_name}")
         return cls._clients[client_name]

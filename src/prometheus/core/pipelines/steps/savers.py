@@ -1,8 +1,11 @@
 import pandas as pd
-from prometheus.core.pipelines.base_step import BaseETLStep
+from prometheus.core.pipelines.base_step import BaseETLStep, BaseStep
 from prometheus.core.logging.log_manager import LogManager
 import duckdb
 import os
+from typing import Dict, Any
+from src.prometheus.core.db.db_manager import DBManager
+
 
 class SaveFactorsToWarehouseStep(BaseETLStep):
     def __init__(self, table_name: str, db_path: str = "data/analytics_warehouse/factors.duckdb"):
@@ -49,4 +52,43 @@ class SaveFactorsToWarehouseStep(BaseETLStep):
             except Exception as e:
                 self.logger.error(f"儲存因子時發生錯誤: {e}", exc_info=True)
                 raise
+        return data
+
+
+class SaveToWarehouseStep(BaseStep):
+    """
+    一個 Pipeline 步驟，用於將 DataFrame 儲存到資料倉儲。
+    """
+
+    def __init__(self, db_manager: DBManager, table_name: str):
+        """
+        初始化步驟。
+
+        :param db_manager: 資料庫管理器。
+        :param table_name: 要儲存的目標表格名稱。
+        """
+        self.db_manager = db_manager
+        self.table_name = table_name
+        self.logger = LogManager.get_instance().get_logger(self.__class__.__name__)
+
+    async def run(self, data: pd.DataFrame, context: Dict[str, Any]) -> pd.DataFrame:
+        """
+        將 DataFrame 儲存到資料倉儲。
+
+        :param data: 要儲存的 DataFrame。
+        :param context: Pipeline 的共享上下文。
+        :return: 未經修改的原始 DataFrame。
+        """
+        if data.empty:
+            self.logger.warning("數據為空，沒有可以儲存的內容。")
+            return data
+
+        try:
+            self.logger.info(f"正在將 {len(data)} 筆數據儲存到表格 '{self.table_name}'...")
+            self.db_manager.save_data(data, self.table_name)
+            self.logger.info("數據儲存成功。")
+        except Exception as e:
+            self.logger.error(f"儲存數據到倉儲時發生錯誤: {e}", exc_info=True)
+            raise
+
         return data

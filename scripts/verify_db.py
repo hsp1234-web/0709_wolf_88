@@ -3,7 +3,7 @@ import os
 
 def main():
     db_path = "data/analytics_warehouse/factors.duckdb"
-    table_name = "universal_factors"
+    table_name = "factors"
 
     if not os.path.exists(db_path):
         print(f"錯誤：找不到數據庫檔案 '{db_path}'")

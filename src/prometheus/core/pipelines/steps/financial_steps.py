@@ -1,5 +1,13 @@
 from prometheus.core.pipelines.base_step import BaseETLStep
 from prometheus.core.analysis.stress_index import StressIndexCalculator
+import pandas as pd
+import logging
+from typing import Dict, Any
+
+from src.prometheus.core.pipelines.base_step import BaseStep
+from src.prometheus.core.engines.stock_factor_engine import StockFactorEngine
+
+logger = logging.getLogger(__name__)
 
 
 class BuildGoldLayerStep(BaseETLStep):
@@ -43,3 +51,41 @@ class CalculateStressIndexStep(BaseETLStep):
         finally:
             if calculator:
                 calculator.close_all_sessions()
+
+
+class RunStockFactorEngineStep(BaseStep):
+    """
+    一個 Pipeline 步驟，用於執行股票因子引擎。
+    """
+
+    def __init__(self, engine: StockFactorEngine):
+        """
+        初始化步驟。
+
+        :param engine: 一個 StockFactorEngine 的實例。
+        """
+        self.engine = engine
+
+    async def run(self, data: pd.DataFrame, context: Dict[str, Any]) -> pd.DataFrame:
+        """
+        對輸入的 DataFrame 執行因子引擎。
+
+        :param data: 包含價格數據的 DataFrame。
+        :param context: Pipeline 的共享上下文。
+        :return: 處理後、包含新因子欄位的 DataFrame。
+        """
+        logger.info("正在執行 RunStockFactorEngineStep...")
+
+        if data.empty:
+            logger.warning("輸入的數據為空，跳過因子計算。")
+            return data
+
+        # StockFactorEngine 的 run 方法是按 symbol 處理的
+        # 我們需要確保輸入的 data 是單一 symbol 的
+        # 或者修改引擎以處理多個 symbol
+        # 這裡我們假設 Pipeline 的上一步 (Loader) 已經將數據按 symbol 分組
+
+        processed_data = await self.engine.run(data)
+
+        logger.info("RunStockFactorEngineStep 執行完畢。")
+        return processed_data

@@ -146,6 +146,12 @@ class YFinanceClient(BaseAPIClient):
         logger.info(f"成功合併 {len(combined_df)} 筆來自 {len(all_data_list)} 個商品的數據。")
         return combined_df
 
+    def get_ticker(self, symbol: str) -> yf.Ticker:
+        """
+        獲取一個 yfinance Ticker 物件。
+        """
+        return yf.Ticker(symbol)
+
     def get_move_index(self, start_date: str, end_date: str) -> pd.Series:
         """從 yfinance 獲取 ICE BofA MOVE Index (^MOVE) 的歷史收盤價。"""
         logger.info(f"正在獲取 ^MOVE 指數數據，日期範圍: {start_date} 至 {end_date}")

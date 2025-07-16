@@ -602,6 +602,17 @@ def run_transformer(raw_db_path, schema_db_path, analytics_db_path):
     logger.info(f"Transformer 完成，成功轉換 {transformed_count} 筆記錄。")
 
 
+@pipelines_app.command("run-stock-factors")
+def run_stock_factors():
+    """
+    執行第四號生產線：股票因子生成。
+    """
+    from prometheus.pipelines.p4_stock_factor_generation import main as p4_main
+    logger.info("--- 啟動 P4：股票因子生成管線 ---")
+    p4_main()
+    logger.info("--- P4：股票因子生成管線執行完畢 ---")
+
+
 @pipelines_app.command("run")
 def run_pipeline(
     name: str = typer.Option(..., help="要執行的管線名稱"),

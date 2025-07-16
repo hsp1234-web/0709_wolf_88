@@ -133,6 +133,19 @@ class FinMindClient(BaseAPIClient):
         except requests.exceptions.HTTPError:
             raise
 
+    def get_monthly_revenue(self, stock_id: str, start_year: int, start_month: int) -> pd.DataFrame:
+        """
+        獲取月營收數據。
+        """
+        start_date = f"{start_year}-{start_month:02d}-01"
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        return self.fetch_data(
+            symbol=stock_id,
+            dataset="TaiwanStockMonthRevenue",
+            start_date=start_date,
+            end_date=end_date,
+        )
+
     def get_taiwan_stock_institutional_investors_buy_sell(
         self, stock_id: str, start_date: str, end_date: Optional[str] = None
     ) -> pd.DataFrame:
