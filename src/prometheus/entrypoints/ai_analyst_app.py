@@ -1,10 +1,16 @@
-# 檔案: src/apps/ai_analyst_app.py
+# 檔案: src/prometheus/entrypoints/ai_analyst_app.py
 import json
 from pathlib import Path
+import pandas as pd
+import vectorbt as vbt
 
-# 假設我們有一個 Gemini 客戶端
-# from prometheus.core.clients.gemini_client import GeminiClient
-
+# --- 檔案路徑 ---
+DATA_DIR = Path("data")
+REPORTS_DIR = DATA_DIR / "reports"
+HALL_OF_FAME_PATH = DATA_DIR / "hall_of_fame.json"
+OHLCV_DATA_PATH = DATA_DIR / "ohlcv_data.csv"
+EQUITY_CURVE_PATH = REPORTS_DIR / "equity_curve.png"
+ANALYSIS_REPORT_PATH = REPORTS_DIR / "analysis_report.md"
 
 # --- 模擬 Gemini 客戶端 ---
 class MockGeminiClient:
@@ -13,119 +19,120 @@ class MockGeminiClient:
         # 在真實場景中，這裡會是 API 呼叫
         # 為了演示，我們返回一個基於提示的簡單模板化回應
         return """
-# 【普羅米修斯之火】策略分析報告
+**AI 洞察**
 
-**1. 策略核心解讀 (Strategy Deconstruction)**
-   - **策略類型:** 短期趨勢跟隨。
-   - **行為模式:** 它試圖在短期均線向上穿越長期均線時進場，並在 RSI 指標顯示超買時出場。其背後的交易哲學可能是捕捉由短期動能引發的小波段上漲。
+*   **行為模式分析**: 根據回測數據，此策略似乎在市場呈現溫和上漲趨勢時表現最佳。它利用短期動量進場，並在相對強弱指標（RSI）顯示超買時退出，這是一種典型的「趨勢跟隨」與「均值回歸」的混合策略。
 
-**2. 績效綜合評估 (Performance Assessment)**
-   - **樣本內表現:** 在學習區表現出色。
-   - **【嚴峻考驗】樣本外表現:** 在未知區表現尚可。
-   - **一致性分析:** 樣本內外夏普比率存在一定衰退，但未超過30%，暫無明顯的過擬合警示。
+*   **潛在風險**: 該策略在橫盤震盪市場中可能會因為頻繁的進出場而產生較多交易成本，從而侵蝕利潤。此外，在市場出現劇烈反轉時，基於RSI的出場信號可能滯後，導致較大的回撤。
 
-**3. 戰術推演與風險分析 (Tactical Simulation & Risk Analysis)**
-   - **適應的市場環境:** 最可能在溫和上漲的趨勢市中獲利。
-   - **潛在弱點 (Achilles' Heel):** 害怕劇烈的假突破和長期盤整行情，可能導致頻繁止損。
-
-**4. 最終結論與建議 (Final Verdict & Recommendations)**
-   - **策略總評:** 這是一個在特定歷史時期有效的“幸運兒”，但其穩健性仍需進一步驗證。
-   - **下一步行動建議:** 建議投入小資金進行實盤測試，並密切關注其在真實市場中的表現，特別是在盤整市中的回撤情況。
+*   **建議**: 建議在實際部署前，對策略的參數進行更細緻的優化，特別是針對不同的市場波動率進行調整。同時，可以考慮加入止損訂單來限制最大虧損。
 """
 
+def get_best_strategy():
+    """從名人堂讀取最佳策略。"""
+    if not HALL_OF_FAME_PATH.exists():
+        print(f"[AI-Analyst] 錯誤: 名人堂檔案不存在於 {HALL_OF_FAME_PATH}")
+        return None
+    with open(HALL_OF_FAME_PATH, "r") as f:
+        return json.load(f)
 
-# --- 檔案路徑 ---
-HALL_OF_FAME_PATH = Path("data/hall_of_fame.json")
-# 假設驗證報告會被儲存到這裡
-VALIDATION_REPORT_PATH = Path("data/validation_report.json")
-FINAL_REPORT_PATH = Path("strategy_intelligence_report.md")
+def run_backtest(strategy_genome, price_data):
+    """使用 vectorbt 執行回測。"""
+    # 這裡我們需要一個策略函數來解釋基因體
+    # 為了簡化，我們假設基因體直接對應到某個指標的參數
+    # 例如：基因體的前兩個值是快慢均線的窗口
+    fast_ma_window = int(strategy_genome[0] * 10) + 5  # 示例：窗口範圍 5-15
+    slow_ma_window = int(strategy_genome[1] * 30) + 20 # 示例：窗口範圍 20-50
 
+    fast_ma = vbt.MA.run(price_data, fast_ma_window)
+    slow_ma = vbt.MA.run(price_data, slow_ma_window)
 
-def generate_analysis_prompt(strategy_data: dict, validation_data: dict) -> str:
-    # 這部分將實現「洞察力提示」的格式化
-    prompt = f"""
-# --- AI 首席量化分析師指令 ---
+    entries = fast_ma.ma_crossed_above(slow_ma)
+    exits = fast_ma.ma_crossed_below(slow_ma)
 
-**角色:**
-你是一位經驗豐富的首席量化策略分析師。你的任務不是簡單地複述數據，而是要以清晰、專業、且富有洞察力的方式，為一位資深決策者（指揮官）解讀一份由 AI 演化引擎發現並驗證過的交易策略。
+    portfolio = vbt.Portfolio.from_signals(price_data, entries, exits, init_cash=100000)
+    return portfolio
 
-**輸入資料:**
-你將收到一份包含以下結構的 JSON 資料：
-1.  `strategy_params`: 策略的具體參數。
-2.  `in_sample_performance`: 策略在學習區（樣本內）的回測績效。
-3.  `out_of_sample_performance`: 策略在未知區（樣本外）的最終考驗績效。
+def generate_markdown_report(stats, equity_curve_path):
+    """生成 Markdown 格式的分析報告。"""
 
-**任務要求:**
-請根據輸入資料，生成一份結構完整的 Markdown 格式分析報告，必須包含以下所有章節：
+    # 從 stats Series 中提取指標
+    total_return = stats['Total Return [%]']
+    max_drawdown = stats['Max Drawdown [%]']
+    sharpe_ratio = stats['Sharpe Ratio']
+    calmar_ratio = stats['Calmar Ratio']
 
----
-### **【普羅米修斯之火】策略分析報告**
+    # 模擬 Gemini 客戶端生成 AI 洞察
+    client = MockGeminiClient()
+    # 為了簡化，我們傳遞一個固定的 prompt
+    ai_insights = client.generate_report("請分析此策略")
 
-**1. 策略核心解讀 (Strategy Deconstruction)**
-   - **策略類型:** 根據參數（例如，短均線 vs 長均線，RSI 出場點位），判斷這是一個什麼類型的策略？（例如：短期趨勢跟隨、長線動能捕捉、逆勢反轉等）。
-   - **行為模式:** 用白話文描述這個策略的交易行為。「它試圖在什麼時候進場？又在什麼時候出場？它背後的交易哲學可能是什麼？」
+    report_content = f"""
+# AI 首席分析師報告
 
-**2. 績效綜合評估 (Performance Assessment)**
-   - **樣本內表現:** 總結它在學習區的表現。是否出色？
-   - **【嚴峻考驗】樣本外表現:** 總結它在未知區的表現。
-   - **一致性分析:** 對比樣本內與樣本外的關鍵指標（特別是夏普比率和最大回撤）。兩者表現是否一致？如果存在顯著衰退（例如夏普比率下降超過 30%），請明確指出，並將其標記為一個「**過擬合警示**」。
+## 策略概述
 
-**3. 戰術推演與風險分析 (Tactical Simulation & Risk Analysis)**
-   - **適應的市場環境:** 根據策略的行為模式和績效表現，推斷它最可能在哪種市場環境下獲利？（例如：高波動的趨勢市、低波動的盤整市、溫和上漲的牛市等）。
-   - **潛在弱點 (Achilles' Heel):** 這個策略最害怕遇到什麼樣的行情？它的潛在風險是什麼？（例如：害怕劇烈的假突破、在長期盤整中可能被頻繁止損等）。
+本報告旨在分析從演化計算中脫穎而出的最佳交易策略。我們將透過回測來評估其歷史表現，並提供由 AI 生成的洞察。
 
-**4. 最終結論與建議 (Final Verdict & Recommendations)**
-   - **策略總評:** 給予這個策略一個總體評價。它是一個值得信賴的穩健策略，還是一個僅在特定歷史時期有效的「幸運兒」？
-   - **下一步行動建議:** 基於以上所有分析，你建議指揮官下一步應該做什麼？（例如：直接投入小資金實盤測試、需要針對其弱點進行進一步優化、或因過擬合風險而應直接放棄）。
----
+## 核心績效指標
 
----
-**【輸入資料】**
-```json
-{{
-    "strategy_params": {json.dumps(strategy_data.get("params"), indent=4)},
-    "in_sample_performance": {json.dumps(strategy_data.get("fitness"), indent=4)},
-    "out_of_sample_performance": {json.dumps(validation_data.get("report"), indent=4)}
-}}
-```
+| 指標           | 數值                  |
+| -------------- | --------------------- |
+| 總回報 (%)     | {total_return:.2f}    |
+| 最大回撤 (%)   | {max_drawdown:.2f}    |
+| 夏普比率       | {sharpe_ratio:.2f}    |
+| 卡瑪比率       | {calmar_ratio:.2f}    |
+
+## 權益曲線
+
+![權益曲線]({equity_curve_path.name})
+
+{ai_insights}
 """
-    return prompt.strip()
+    return report_content.strip()
 
 
-def analyst_job():
-    """AI 分析師的主工作流程。它是一個單次執行的任務。"""
+def ai_analyst_job():
+    """AI 分析師的主工作流程。"""
     print("[AI-Analyst] AI 首席分析師已啟動。")
-    # 1. 讀取必要的數據
-    if not HALL_OF_FAME_PATH.exists() or not VALIDATION_REPORT_PATH.exists():
-        print("[AI-Analyst] 錯誤：缺少名人堂或驗證報告。無法生成分析。")
+
+    # 1. 確保報告目錄存在
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 2. 讀取最佳策略和價格數據
+    strategy_data = get_best_strategy()
+    if not strategy_data:
         return
 
-    try:
-        with open(HALL_OF_FAME_PATH, "r") as f:
-            strategy_data = json.load(f)
-        with open(VALIDATION_REPORT_PATH, "r") as f:
-            validation_data = json.load(f)
-    except Exception as e:
-        print(f"!!!!!! [AI-Analyst] 讀取數據檔案失敗: {e} !!!!!!")
+    if not OHLCV_DATA_PATH.exists():
+        print(f"[AI-Analyst] 錯誤: 價格數據檔案不存在於 {OHLCV_DATA_PATH}")
         return
 
-    # 2. 生成提示
-    prompt = generate_analysis_prompt(strategy_data, validation_data)
+    price_data = pd.read_csv(OHLCV_DATA_PATH, index_col='Date', parse_dates=True)['Close']
 
-    # 3. 調用 AI 模型
-    # client = GeminiClient() # 真實場景
-    client = MockGeminiClient()  # 演示場景
-    report_content = client.generate_report(prompt)
+    # 3. 執行回測
+    print("[AI-Analyst] 正在對最佳策略進行回測...")
+    portfolio = run_backtest(strategy_data["genome"], price_data)
+    stats = portfolio.stats()
 
-    # 4. 儲存最終報告
+    # 4. 生成並儲存權益曲線圖
+    print(f"[AI-Analyst] 正在生成權益曲線圖並儲存至 {EQUITY_CURVE_PATH}...")
+    fig = portfolio.plot()
+    fig.write_image(EQUITY_CURVE_PATH)
+
+    # 5. 生成並儲存 Markdown 報告
+    print(f"[AI-Analyst] 正在生成 Markdown 分析報告...")
+    report_content = generate_markdown_report(stats, EQUITY_CURVE_PATH)
+
     try:
-        with open(FINAL_REPORT_PATH, "w", encoding="utf-8") as f:
+        with open(ANALYSIS_REPORT_PATH, "w", encoding="utf-8") as f:
             f.write(report_content)
-        print("\n" + "=" * 20 + " 任務完成 " + "=" * 20)
-        print("🎉 最終智慧報告已成功生成！")
-        print(f"請查看檔案: {FINAL_REPORT_PATH}")
-        print("=" * 52)
+        print("\n" + "="*20 + " 任務完成 " + "="*20)
+        print(f"🎉 分析報告已成功生成！請查看: {ANALYSIS_REPORT_PATH}")
+        print(f"📈 權益曲線圖已儲存！請查看: {EQUITY_CURVE_PATH}")
+        print("="*52)
     except Exception as e:
-        print(f"!!!!!! [AI-Analyst] 儲存最終報告失敗: {e} !!!!!!")
+        print(f"!!!!!! [AI-Analyst] 儲存報告失敗: {e} !!!!!!")
 
-    print("[AI-Analyst] 工作完成，即將關閉。")
+if __name__ == "__main__":
+    ai_analyst_job()
