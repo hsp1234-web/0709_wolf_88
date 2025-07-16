@@ -8,7 +8,7 @@ from deap import creator, tools
 from prometheus.core.queue.sqlite_queue import SQLiteQueue
 from prometheus.services.checkpoint_manager import CheckpointManager
 from prometheus.services.evolution_chamber import EvolutionChamber
-from src.prometheus.core.logging.log_manager import LogManager
+from prometheus.core.logging.log_manager import LogManager
 
 # --- 演化設定 ---
 POPULATION_SIZE = 10

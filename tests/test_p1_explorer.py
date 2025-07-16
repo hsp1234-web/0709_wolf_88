@@ -10,7 +10,7 @@ PROJECT_ROOT_FROM_TEST_P1 = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT_FROM_TEST_P1) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT_FROM_TEST_P1))
 
-from src.prometheus.pipelines.p1_explorer import (
+from prometheus.pipelines.p1_explorer import (
     get_header_fingerprint,
     run_explorer as p1_explorer_main,
     prospect_file_content,

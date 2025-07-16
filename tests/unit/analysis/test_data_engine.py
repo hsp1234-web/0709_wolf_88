@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from src.prometheus.core.analysis.data_engine import DataEngine
+from prometheus.core.analysis.data_engine import DataEngine
 
 
 @pytest.fixture

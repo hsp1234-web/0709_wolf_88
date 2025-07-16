@@ -6,9 +6,9 @@ from typing import Tuple, Optional
 
 import pandas as pd
 
-from src.prometheus.core.clients.yfinance import YFinanceClient
-from src.prometheus.core.clients.finmind import FinMindClient
-from src.prometheus.core.logging.log_manager import LogManager
+from prometheus.core.clients.yfinance import YFinanceClient
+from prometheus.core.clients.finmind import FinMindClient
+from prometheus.core.logging.log_manager import LogManager
 
 logger = LogManager.get_instance().get_logger("OmniDataEngine")
 

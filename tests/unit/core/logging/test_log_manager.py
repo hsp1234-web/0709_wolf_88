@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 import time
 
-from src.prometheus.core.logging.log_manager import LogManager
+from prometheus.core.logging.log_manager import LogManager
 
 class TestLogManager(unittest.TestCase):
     """測試中央日誌管理器 LogManager"""

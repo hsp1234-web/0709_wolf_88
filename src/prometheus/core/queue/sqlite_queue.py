@@ -5,9 +5,11 @@ import abc
 from pathlib import Path
 from typing import Any, Optional
 
-from src.prometheus.core.logging.log_manager import LogManager
+import logging
 
-logger = LogManager.get_instance().get_logger("SQLiteQueue")
+# 為此模組創建一個標準的 logger，而不是依賴 LogManager
+# 這使得模組更加獨立和可重用
+logger = logging.getLogger(__name__)
 
 
 class BaseQueue(abc.ABC):

@@ -9,7 +9,7 @@ import pandas as pd
 import requests
 
 from .base import BaseAPIClient
-from src.prometheus.core.logging.log_manager import LogManager
+from prometheus.core.logging.log_manager import LogManager
 
 logger = LogManager.get_instance().get_logger("NYFedClient")
 

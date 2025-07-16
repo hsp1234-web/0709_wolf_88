@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from prometheus.core.queue.sqlite_queue import SQLiteQueue
-from src.prometheus.core.logging.log_manager import LogManager
+from prometheus.core.logging.log_manager import LogManager
 
 HALL_OF_FAME_PATH = Path("data/hall_of_fame.json")
 VALIDATION_REPORT_PATH = Path("data/reports/validation_report.json")

@@ -14,8 +14,8 @@ PROJECT_ROOT_FROM_TEST_P2 = os.path.abspath(
 if PROJECT_ROOT_FROM_TEST_P2 not in sys.path:
     sys.path.insert(0, PROJECT_ROOT_FROM_TEST_P2)
 
-from src.prometheus.pipelines.p1_explorer import run_explorer as p1_explorer_main
-from src.prometheus.pipelines.p2_elt_pipeline import run_elt_pipeline as p2_elt_main
+from prometheus.pipelines.p1_explorer import run_explorer as p1_explorer_main
+from prometheus.pipelines.p2_elt_pipeline import run_elt_pipeline as p2_elt_main
 
 # Define the path to the fixture files
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")

@@ -2,7 +2,7 @@ import time
 
 from prometheus.core.queue.sqlite_queue import SQLiteQueue
 from prometheus.services.backtesting_service import BacktestingService
-from src.prometheus.core.logging.log_manager import LogManager
+from prometheus.core.logging.log_manager import LogManager
 
 POISON_PILL = "STOP_WORKING"
 

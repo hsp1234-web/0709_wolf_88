@@ -1,12 +1,6 @@
-import sys
-from pathlib import Path
-
-# 將專案根目錄加入 Python 路徑
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root / "src"))
-
-from prometheus.core.db.sqlite_queue import SQLiteQueue
+from prometheus.core.queue.sqlite_queue import SQLiteQueue
 from rich.console import Console
+import os
 
 console = Console()
 
@@ -39,31 +33,45 @@ ASSET_UNIVERSE = {
 }
 
 # --- 探測配置 (基於 yfinance 限制) ---
+# ReconWorker 將直接使用 period 或 days
 PROBE_CONFIG = {
-    "1d": {"period": "max", "label": "最大歷史"},
-    "1h": {"days": 729, "label": "過去 729 天"},
-    "5m": {"days": 59, "label": "過去 59 天"},
-    "1m": {"days": 6, "label": "過去 6 天"}
+    "1d": {"period": "10y", "label": "過去10年日線"},
+    "1h": {"period": "730d", "label": "過去730天小時線"}, # yfinance a little over 2 years
+    "5m": {"period": "60d", "label": "過去60天5分鐘線"}, # yfinance max
+    "1m": {"period": "7d", "label": "過去7天1分鐘線"} # yfinance max
 }
+
 
 def main():
     """主執行函數"""
-    queue = SQLiteQueue(db_path="output/recon_queue.sqlite", queue_name="recon_tasks")
+    db_path = "recon_tasks.sqlite"
+    # 清理舊的佇列檔案
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        console.print(f"[yellow]已刪除舊的任務佇列檔案: {db_path}[/yellow]")
+
+    queue = SQLiteQueue(db_path=db_path, table_name="recon_tasks")
 
     task_count = 0
     for category, details in ASSET_UNIVERSE.items():
         for ticker in details['tickers']:
-            for interval, config in PROBE_CONFIG.items():
-                task = {
-                    "category": category,
-                    "ticker": ticker,
-                    "interval": interval,
-                    "config": config
-                }
-                queue.put(task)
-                task_count += 1
+            # 對於每個 ticker，我們只探測最重要的 '1d' 資料
+            # 這是為了簡化和加速【鳳凰協議】的首次運行
+            # 後續可以輕鬆擴展到所有 PROBE_CONFIG
+            interval = "1d"
+            config = PROBE_CONFIG[interval]
 
-    console.print(f"[bold green]總共播種了 {task_count} 個偵察任務。[/bold green]")
+            task = {
+                "ticker": ticker,
+                "interval": interval,
+                "period": config.get("period"), # 直接傳遞 period
+                "label": f"{category} - {config['label']}"
+            }
+            queue.put(task)
+            task_count += 1
+
+    console.print(f"[bold green]✅ 總共播種了 {task_count} 個基礎偵察任務。[/bold green]")
+    queue.close()
 
 if __name__ == "__main__":
     main()

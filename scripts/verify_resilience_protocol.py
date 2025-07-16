@@ -14,8 +14,8 @@ from rich.table import Table
 # 這樣即使 FinMindClient 初始化失敗，測試腳本也能顯示警告但繼續執行
 os.environ["FINMIND_API_TOKEN"] = "test_token" # 測試時使用假 token
 
-from src.prometheus.core.engines.omni_data_engine import OmniDataEngine
-from src.prometheus.core.clients.yfinance import YFinanceClient
+from prometheus.core.engines.omni_data_engine import OmniDataEngine
+from prometheus.core.clients.yfinance import YFinanceClient
 
 # --- 測試情境定義 ---
 TEST_SCENARIOS = [

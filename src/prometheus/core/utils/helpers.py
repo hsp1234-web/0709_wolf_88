@@ -14,7 +14,7 @@ try:
     import requests_cache
 except ImportError:
     requests_cache = None
-from src.prometheus.core.logging.log_manager import LogManager
+from prometheus.core.logging.log_manager import LogManager
 
 logger = LogManager.get_instance().get_logger("Helpers")
 

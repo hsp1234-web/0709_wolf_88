@@ -5,7 +5,7 @@ version = "0.9.0"
 description = "Advanced Quantitative Research Framework"
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
-packages = [{include = "src/prometheus"}]
+packages = [{include = "prometheus", from = "src"}]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.14"

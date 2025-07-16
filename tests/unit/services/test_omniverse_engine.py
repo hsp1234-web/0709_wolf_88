@@ -4,8 +4,8 @@ import numpy as np
 import yaml
 import os
 
-from src.prometheus.services.evolution_chamber import EvolutionChamber
-from src.prometheus.services.backtesting_service import BacktestingService
+from prometheus.services.evolution_chamber import EvolutionChamber
+from prometheus.services.backtesting_service import BacktestingService
 
 # 建立一個假的設定檔，用於測試
 FAKE_CONFIG_CONTENT = """

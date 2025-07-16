@@ -7,7 +7,7 @@ import duckdb
 import pandas as pd
 
 from prometheus.core.clients.client_factory import ClientFactory
-from src.prometheus.core.logging.log_manager import LogManager
+from prometheus.core.logging.log_manager import LogManager
 
 logger = LogManager.get_instance().get_logger("DataEngine")
 
