@@ -55,7 +55,7 @@ def main():
     target_symbols = ['AAPL', '2330.TW']
 
     # 初始化資料庫管理器
-    db_manager = DBManager()
+    db_manager = DBManager(db_path=config.get('database.main_db_path'))
 
     # 初始化客戶端工廠
     client_factory = ClientFactory()

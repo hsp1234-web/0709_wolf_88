@@ -52,7 +52,7 @@ def main():
     target_symbols = ['BTC-USD', 'ETH-USD']
 
     # 初始化資料庫管理器
-    db_manager = DBManager(db_path="data/analytics_warehouse/factors.duckdb")
+    db_manager = DBManager(db_path=config.get('database.main_db_path'))
 
     # 初始化客戶端工廠
     client_factory = ClientFactory()

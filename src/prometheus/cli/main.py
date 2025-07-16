@@ -624,6 +624,19 @@ def run_crypto_factors():
     logger.info("--- P5：加密貨幣因子生成管線執行完畢 ---")
 
 
+@pipelines_app.command("run-simulation-training")
+def run_simulation_training(
+    target_factor: str = typer.Option(..., help="要模擬的目標因子名稱"),
+):
+    """
+    執行第六號生產線：因子代理模擬模型訓練。
+    """
+    from prometheus.pipelines.p6_simulation_training import run_main as p6_run_main
+    logger.info(f"--- 啟動 P6：因子代理模擬模型訓練管線，目標為 {target_factor} ---")
+    p6_run_main(target_factor=target_factor)
+    logger.info(f"--- P6：因子代理模擬模型訓練管線執行完畢 ---")
+
+
 @pipelines_app.command("run")
 def run_pipeline(
     name: str = typer.Option(..., help="要執行的管線名稱"),
