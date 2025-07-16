@@ -27,19 +27,7 @@ def cli_dashboard(
 ):
     """啟動網頁儀表板。"""
     logger.info(f"準備在 http://{host}:{port} 啟動儀表板...")
-
-    # 獲取 poetry 虛擬環境的 uvicorn 路徑
-    venv_path = subprocess.check_output(["poetry", "env", "info", "-p"]).decode("utf-8").strip()
-    uvicorn_path = os.path.join(venv_path, "bin", "uvicorn")
-
-    # 使用 subprocess.Popen 啟動 uvicorn
-    # 這將會建立一個新的進程，並且不會阻塞目前的進程
-    subprocess.Popen([
-        uvicorn_path,
-        "src.prometheus.entrypoints.query_gateway:app",
-        "--host", host,
-        "--port", str(port),
-    ])
+    run_dashboard_service(None, host, port)
 
 data_app = typer.Typer()
 app.add_typer(data_app, name="data")

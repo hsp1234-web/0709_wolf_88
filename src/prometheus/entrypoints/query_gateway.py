@@ -1,6 +1,6 @@
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pathlib import Path
 
 # --- 檔案路徑 ---
@@ -43,12 +43,15 @@ def get_equity_curve():
 
     return FileResponse(EQUITY_CURVE_PATH, media_type="image/png")
 
-@app.get("/", summary="根目錄", include_in_schema=False)
-def read_root():
-    return {"message": "歡迎來到神諭儀表板後端。請訪問 /docs 查看 API 文件。"}
+@app.get("/")
+def serve_report_at_root():
+    """
+    直接在根目錄提供最新的分析報告 JSON。
+    """
+    return get_latest_report()
 
 def run_dashboard_service(ctx, host: str, port: int):
     """啟動 FastAPI 儀表板服務。"""
     # ctx 參數保留以符合現有 cli 結構，但在此處未使用
     print(f"INFO:     正在於 http://{host}:{port} 啟動神諭儀表板後端...")
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, log_level="info")

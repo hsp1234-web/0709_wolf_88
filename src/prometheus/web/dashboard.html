@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阿波羅神殿 - 普羅米修斯之火儀表板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">阿波羅神殿 - 普羅米修斯之火儀表板</h1>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="md:col-span-1 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-xl font-semibold mb-4">權益曲線</h2>
+                <img id="equity-curve" src="" alt="權益曲線圖" class="w-full h-auto rounded">
+            </div>
+            <div class="md:col-span-2 bg-white p-4 rounded-lg shadow">
+                <h2 class="text-xl font-semibold mb-4">AI 分析師報告</h2>
+                <div id="report-content" class="prose max-w-none"></div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // 獲取報告
+                const reportResponse = await fetch('/api/v1/reports/latest');
+                if (!reportResponse.ok) {
+                    throw new Error(`HTTP error! status: ${reportResponse.status}`);
+                }
+                const reportData = await reportResponse.json();
+                console.log('報告數據:', reportData);
+
+                // 獲取權益曲線
+                const equityCurveResponse = await fetch('/api/v1/reports/equity_curve.png');
+                if (!equityCurveResponse.ok) {
+                    throw new Error(`HTTP error! status: ${equityCurveResponse.status}`);
+                }
+                const equityCurveBlob = await equityCurveResponse.blob();
+                const equityCurveUrl = URL.createObjectURL(equityCurveBlob);
+
+                // 渲染報告
+                const reportContent = document.getElementById('report-content');
+                reportContent.innerHTML = marked.parse(reportData.report_content);
+
+                // 渲染權益曲線
+                const equityCurve = document.getElementById('equity-curve');
+                equityCurve.src = equityCurveUrl;
+
+            } catch (error) {
+                console.error('獲取儀表板數據時出錯:', error);
+                const reportContent = document.getElementById('report-content');
+                reportContent.innerHTML = `<p class="text-red-500">加載報告時出錯: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
