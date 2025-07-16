@@ -613,6 +613,17 @@ def run_stock_factors():
     logger.info("--- P4：股票因子生成管線執行完畢 ---")
 
 
+@pipelines_app.command("run-crypto-factors")
+def run_crypto_factors():
+    """
+    執行第五號生產線：加密貨幣因子生成。
+    """
+    from prometheus.pipelines.p5_crypto_factor_generation import main as p5_main
+    logger.info("--- 啟動 P5：加密貨幣因子生成管線 ---")
+    p5_main()
+    logger.info("--- P5：加密貨幣因子生成管線執行完畢 ---")
+
+
 @pipelines_app.command("run")
 def run_pipeline(
     name: str = typer.Option(..., help="要執行的管線名稱"),

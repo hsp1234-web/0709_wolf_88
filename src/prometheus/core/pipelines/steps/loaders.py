@@ -311,6 +311,59 @@ class LoadStockDataStep(BaseStep):
         return combined_df
 
 
+class LoadCryptoDataStep(BaseStep):
+    """
+    一個 Pipeline 步驟，用於從 yfinance 加載加密貨幣數據。
+    """
+
+    def __init__(self, symbols: List[str], client_factory: ClientFactory):
+        """
+        初始化步驟。
+
+        :param symbols: 要加載的加密貨幣代號列表 (例如: ['BTC-USD', 'ETH-USD'])。
+        :param client_factory: 客戶端工廠。
+        """
+        self.symbols = symbols
+        self.yfinance_client = client_factory.get_client('yfinance')
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    async def run(self, data: Any = None, context: Dict[str, Any] = None) -> pd.DataFrame:
+        """
+        執行數據加載。
+
+        :param data: 上一步的輸出 (在此被忽略)。
+        :param context: Pipeline 的共享上下文。
+        :return: 包含所有加密貨幣數據的單一 DataFrame。
+        """
+        self.logger.info(f"開始從 yfinance 加載加密貨幣數據，目標: {self.symbols}")
+        all_data = []
+
+        for symbol in self.symbols:
+            try:
+                self.logger.debug(f"正在為 {symbol} 獲取數據...")
+                # 為加密貨幣獲取更長的歷史數據以進行相關性計算
+                crypto_data = await self.yfinance_client.fetch_data(symbol, period="2y")
+                if crypto_data.empty:
+                    self.logger.warning(f"無法為 {symbol} 獲取數據，可能該代號無效或無數據。")
+                    continue
+
+                crypto_data['symbol'] = symbol
+                all_data.append(crypto_data)
+                self.logger.debug(f"成功加載 {symbol} 的 {len(crypto_data)} 筆數據。")
+
+            except Exception as e:
+                self.logger.error(f"加載 {symbol} 數據時出錯: {e}", exc_info=True)
+
+        if not all_data:
+            self.logger.error("未能加載任何加密貨幣數據。")
+            return pd.DataFrame()
+
+        combined_df = pd.concat(all_data)
+        self.logger.info(f"成功加載並合併了 {len(all_data)} 種加密貨幣的數據。")
+
+        return combined_df
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.DEBUG,

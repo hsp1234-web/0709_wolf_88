@@ -6,6 +6,7 @@ from typing import Dict, Any
 
 from src.prometheus.core.pipelines.base_step import BaseStep
 from src.prometheus.core.engines.stock_factor_engine import StockFactorEngine
+from src.prometheus.core.engines.crypto_factor_engine import CryptoFactorEngine
 
 logger = logging.getLogger(__name__)
 
@@ -88,4 +89,37 @@ class RunStockFactorEngineStep(BaseStep):
         processed_data = await self.engine.run(data)
 
         logger.info("RunStockFactorEngineStep 執行完畢。")
+        return processed_data
+
+
+class RunCryptoFactorEngineStep(BaseStep):
+    """
+    一個 Pipeline 步驟，用於執行加密貨幣因子引擎。
+    """
+
+    def __init__(self, engine: CryptoFactorEngine):
+        """
+        初始化步驟。
+
+        :param engine: 一個 CryptoFactorEngine 的實例。
+        """
+        self.engine = engine
+
+    async def run(self, data: pd.DataFrame, context: Dict[str, Any]) -> pd.DataFrame:
+        """
+        對輸入的 DataFrame 執行因子引擎。
+
+        :param data: 包含價格數據的 DataFrame。
+        :param context: Pipeline 的共享上下文。
+        :return: 處理後、包含新因子欄位的 DataFrame。
+        """
+        logger.info("正在執行 RunCryptoFactorEngineStep...")
+
+        if data.empty:
+            logger.warning("輸入的數據為空，跳過因子計算。")
+            return data
+
+        processed_data = await self.engine.run(data)
+
+        logger.info("RunCryptoFactorEngineStep 執行完畢。")
         return processed_data
