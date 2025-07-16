@@ -15,10 +15,7 @@ class ConfigManager:
     def __new__(cls, config_path: str = "config.yml"):
         if cls._instance is None:
             cls._instance = super(ConfigManager, cls).__new__(cls)
-            # 當首次創建實例時，立即載入設定檔
-            # 避免在 _load_config 中再次嘗試創建 cls._instance
-            cls._instance._config = {}  # 初始化 _config 以免 AttributeError
-            cls._instance._load_config(config_path)
+        cls._instance._load_config(config_path)
         return cls._instance
 
     def _load_config(self, config_path: str):
@@ -33,19 +30,13 @@ class ConfigManager:
 
     def get(self, key: str, default: Any = None) -> Any:
         keys = key.split(".")
-        # 從類別層級的 _config 獲取值
         value = self.__class__._config
-        try:
-            for k in keys:
+        for k in keys:
+            if isinstance(value, dict) and k in value:
                 value = value[k]
-            return value
-        except (
-            KeyError,
-            TypeError,
-            AttributeError,
-        ):  # AttributeError for initial empty _config
-            # print(f"DEBUG: Key '{key}' not found or value is None, returning default '{default}'")
-            return default
+            else:
+                return default
+        return value
 
 
 # 建立一個全域實例，方便在專案中各處直接導入使用

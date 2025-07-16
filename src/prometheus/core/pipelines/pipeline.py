@@ -23,10 +23,11 @@ class DataPipeline:
         self._steps = steps
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def run(self, initial_data=None, context: dict | None = None) -> None:
+    async def run(self, initial_data=None, context: dict | None = None) -> None:
         """
         執行完整的数据處理流程。
         """
+        import asyncio
         data = initial_data
         if context is None:
             context = {}
@@ -41,7 +42,10 @@ class DataPipeline:
                 self.logger.info(
                     f"--- [步驟 {i}/{len(self._steps)}]：正在執行 {step_name} ---"
                 )
-                data = step.execute(data, **context)
+                if asyncio.iscoroutinefunction(step.execute):
+                    data = await step.execute(data, **context)
+                else:
+                    data = step.execute(data, **context)
                 self.logger.info(f"步驟 {step_name} 執行完畢。")
 
             self.logger.info("數據管線所有步驟均已成功執行。")

@@ -608,18 +608,19 @@ def run_pipeline(
     """
     執行指定的數據管線。
     """
+    import asyncio
     pipeline_context = {"ticker": ticker} if ticker else {}
     logger.info(f"--- 啟動 {name} 管線，上下文: {pipeline_context} ---")
 
     if name == "p1_factor_generation":
         from prometheus.pipelines.p1_factor_generation import p1_factor_generation_pipeline
-        p1_factor_generation_pipeline.run(context=pipeline_context)
+        asyncio.run(p1_factor_generation_pipeline.run(context=pipeline_context))
     elif name == "p2_index_factor_generation":
         from prometheus.pipelines.p2_index_factor_generation import p2_index_factor_pipeline
-        p2_index_factor_pipeline.run(context=pipeline_context)
+        asyncio.run(p2_index_factor_pipeline.run(context=pipeline_context))
     elif name == "p3_bond_factor_generation":
         from prometheus.pipelines.p3_bond_factor_generation import p3_bond_factor_pipeline
-        p3_bond_factor_pipeline.run(context=pipeline_context)
+        asyncio.run(p3_bond_factor_pipeline.run(context=pipeline_context))
     else:
         logger.error(f"錯誤：找不到名為 '{name}' 的管線。")
         raise typer.Exit(code=1)
