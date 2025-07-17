@@ -44,6 +44,8 @@ class YFinanceClient(BaseAPIClient):
         end_date = kwargs.get("end_date")
         period = kwargs.get("period")
 
+        if not period and not (start_date and end_date):
+            raise ValueError("必須提供 'period' 或 'start_date' 與 'end_date' 其中之一。")
 
         history_params = {
             "start": start_date,

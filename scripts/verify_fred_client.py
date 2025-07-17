@@ -6,7 +6,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
 from prometheus.core.config import ConfigManager
-from prometheus.data_clients.fred_client import FredClient
+from prometheus.core.clients.fred import FredClient
 from rich.console import Console
 
 console = Console()

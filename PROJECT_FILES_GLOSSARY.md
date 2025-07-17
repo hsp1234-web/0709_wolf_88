@@ -37,7 +37,7 @@
     *   `pytest-asyncio`: `^1.0.0`
     *   `ruff`: `^0.4.8` (Linter & Formatter)
 
-## **二、 檔案目錄結構 (v3.1 - 清理後)**
+## **二、 檔案目錄結構 (v4.0 - 簡化後)**
 
 ```
 .
@@ -52,11 +52,9 @@
 ├── pytest.ini
 ├── run.py
 ├── scripts/
-│   ├── generate_data_availability_report.py
 │   ├── verify_db.py
 │   ├── verify_factor_accuracy.py
-│   ├── verify_fred_client.py
-│   └── verify_resilience_protocol.py
+│   └── verify_fred_client.py
 ├── src/
 │   ├── __init__.py
 │   └── prometheus
@@ -78,12 +76,15 @@
 │       │   │   └── transactional_writer.py
 │       │   ├── engines/
 │       │   │   ├── __init__.py
-│       │   │   ├── omni_data_engine.py
-│       │   │   └── universal_factor_engine.py
+│       │   │   ├── bond_factor_engine.py
+│       │   │   ├── crypto_factor_engine.py
+│       │   │   ├── index_factor_engine.py
+│       │   │   └── stock_factor_engine.py
 │       │   ├── logging/
 │       │   └── queue/
 │       ├── pipelines/
-│       │   ├── p1_factor_generation.py
+│       │   ├── p4_stock_factor_generation.py
+│       │   ├── p5_crypto_factor_generation.py
 │       │   ├── p6_simulation_training.py
 │       │   └── steps/
 │       └── services/
@@ -121,11 +122,12 @@
 -   `core/`: **[核心服務與商業邏輯層]**
     -   `clients/`: 包含所有與外部 API 互動的客戶端，如 `YFinanceClient`, `FredClient` 等。
     -   `db/`: 包含了資料庫管理、數據倉庫 (`DataWarehouse`) 和 schema 定義。
-    -   `engines/`: 包含了核心的數據處理引擎，如 `OmniDataEngine` (負責從多個來源獲取原始數據) 和 `UniversalFactorEngine` (負責計算和儲存所有因子)。
+    -   `engines/`: 包含針對不同資產類別的因子計算引擎，如 `StockFactorEngine`, `CryptoFactorEngine` 等。
     -   `logging/log_manager.py`: **[核心服務]** 中央日誌管理器。
     -   `queue/sqlite_queue.py`: 一個基於 `sqlite3` 的、穩健的同步任務佇列。
 -   `pipelines/`: **[數據處理管線]**
-    -   `p1_factor_generation.py`: **[管線]** 構建特徵儲存的完整管線。
+    -   `p4_stock_factor_generation.py`: **[管線]** 生成股票相關因子的生產線。
+    -   `p5_crypto_factor_generation.py`: **[管線]** 生成加密貨幣相關因子的生產線。
     -   `p6_simulation_training.py`: **[管線]** 訓練因子模擬器的管線。
     -   `steps/`: 包含管線中每個具體步驟的實現。
 -   `services/`: **[應用服務]** 包含應用程式級別的服務，如 `FactorSimulator`。

@@ -1,5 +1,4 @@
-from prometheus.data_clients.fred_client import FredClient
-from prometheus.core.engines.robust_acquisition_engine import RobustDataAcquisitionEngine
+from prometheus.core.clients.fred import FredClient
 from prometheus.core.config import ConfigManager
 
 import logging
@@ -18,8 +17,6 @@ class ClientFactory:
                 logger.info("Getting fred client")
                 api_key = self.config.get("api_keys", {}).get("fred")
                 self._clients[client_name] = FredClient(api_key=api_key)
-            elif client_name == "default":
-                self._clients[client_name] = RobustDataAcquisitionEngine(tickers=self.config.get("auxiliary_tickers", {}).values())
             else:
                 raise ValueError(f"Unknown client name: {client_name}")
         return self._clients[client_name]

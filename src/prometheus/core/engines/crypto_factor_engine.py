@@ -5,7 +5,8 @@ import logging
 from typing import Dict, Any
 
 from src.prometheus.core.analyzers.base_analyzer import BaseAnalyzer
-from src.prometheus.core.engines.omni_data_engine import OmniDataEngine
+from src.prometheus.core.clients.client_factory import ClientFactory
+
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +16,13 @@ class CryptoFactorEngine(BaseAnalyzer):
     加密貨幣因子引擎，專門計算與加密貨幣相關的因子。
     """
 
-    def __init__(self):
+    def __init__(self, client_factory: ClientFactory):
         """
         初始化加密貨幣因子引擎。
         """
         super().__init__(analyzer_name="CryptoFactorEngine")
-        self.omni_data_engine = OmniDataEngine()
+        self.client_factory = client_factory
+        self.yfinance_client = self.client_factory.get_client('yfinance')
 
     def _load_data(self) -> pd.DataFrame:
         """
@@ -78,7 +80,7 @@ class CryptoFactorEngine(BaseAnalyzer):
             # 獲取 NQ=F 的數據
             start_date = df.index.min()
             end_date = df.index.max()
-            nasdaq_data, _, _ = await self.omni_data_engine.get_data('NQ=F', start_date=start_date, end_date=end_date)
+            nasdaq_data = await self.yfinance_client.fetch_data('NQ=F', start_date=start_date, end_date=end_date)
             if nasdaq_data is None or nasdaq_data.empty:
                 self.logger.warning("無法獲取納斯達克數據 (NQ=F)，跳過相關性計算。")
                 df['factor_corr_nq'] = None

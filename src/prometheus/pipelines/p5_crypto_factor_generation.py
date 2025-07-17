@@ -29,7 +29,7 @@ def create_crypto_factor_pipeline(symbols: List[str], db_manager: DBManager, cli
     :return: 一個配置好的 Pipeline 實例。
     """
     # 初始化加密貨幣因子引擎
-    crypto_factor_engine = CryptoFactorEngine()
+    crypto_factor_engine = CryptoFactorEngine(client_factory=client_factory)
 
     from src.prometheus.core.pipelines.steps.normalize_columns_step import NormalizeColumnsStep
     # 定義 Pipeline 的步驟
