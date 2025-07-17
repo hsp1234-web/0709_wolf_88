@@ -1,272 +1,70 @@
-# **【普羅米修斯之火】金融數據與分析框架 - 開發者手冊 v3.0**
+# **【普羅米修斯之火】金融因子工程與模擬框架**
 
-## **一、 專案概覽與目的**
+## **專案總覽**
 
-【普羅米修斯之火】是一個專為進階量化研究與金融市場分析而設計的 Python 框架。本專案旨在提供一個從多樣化數據源獲取金融數據、進行複雜指標計算、透過遺傳演算法進行策略最佳化、回測交易策略、並將結果視覺化的完整解決方案。
+【普羅米修斯之火】是一個自動化的金融數據工程框架，其核心使命是:
+1.  **系統性地從多個數據源獲取原始金融數據。**
+2.  **構建一個統一、穩健的「特徵儲存 (Feature Store)」，包含數百個經過驗證的金融因子。**
+3.  **基於特徵儲存，訓練能夠模擬未來因子行為的「因子模擬器 (Factor Simulator)」。**
 
-**核心理念演進 (v2.1 - 萬象引擎):**
-本作戰計畫旨在將策略演化系統從單一的「均線策略」升級為可處理多元因子組合的「萬象引擎」。我們重構了基因體 (Genome) 的數據結構與核心服務，讓 AI 能夠在一個更廣闊、由 `config.yml` 動態定義的「因子宇宙」中，探索與創新更複雜的交易策略。
+本框架旨在為量化研究、風險管理和投資組合優化提供一個堅實的、數據驅動的基礎。
 
-**當前架構 (v2.0):**
-本專案目前採用一種混合式架構：
-*   **同步核心**：核心的策略演化 (`evolution_app`) 與回測 (`backtest_worker_app`) 流程是基於多進程/多線程的同步模型。它們使用一個基於 `SQLite` 的、穩健的任務佇列 (`SQLiteQueue`) 進行通訊，確保了在 CPU 密集型計算中的穩定性與任務的持久性。
-*   **非同步服務**：儀表板後端 (`query_gateway`) 等 Web 服務則採用了現代的 `asyncio` 和 `FastAPI` 架構，以實現高效率的 I/O 操作和並發處理。
+## **核心架構**
 
-這種設計允許系統在需要執行大量計算時保持穩健，同時在需要處理網路請求時又能擁有高效能。
+我們最終確立的系統架構，圍繞著兩大核心概念：**統一數據模型**和**自動化特徵工廠**。
 
-## **二、 技術棧 (Technology Stack)**
+*   **統一數據模型**:
+    *   **標準化協議**: 所有進入系統的數據，無論來源 (yfinance, FRED, ...)，都會被轉換為一個標準化的內部格式。
+    *   **主鍵與 UPSERT**: 我們採用「資產代號 + 日期」作為唯一主鍵，並實施「UPSERT」 (Update or Insert) 策略，從根本上解決了數據重複、欄位不匹配和更新衝突的問題。
+    *   **數據倉庫 (`DataWarehouse`)**: 所有標準化後的數據都儲存在一個由 DuckDB 支持的高性能數據倉庫中，為後續的因子計算提供了單一、可靠的數據來源。
 
-本專案使用 [Poetry](https://python-poetry.org/) (v1.8.2+) 進行依賴管理。
+*   **自動化特徵工廠 (`UniversalFactorEngine`)**:
+    *   這是一個能夠自動化計算、驗證和儲存數百個金融因子的強大引擎。
+    *   它直接從 `DataWarehouse` 讀取標準化數據，確保了計算的一致性。
+    *   所有計算出的因子，連同其元數據，都被儲存在一個獨立的 `factors.duckdb` 資料庫中，即我們的「特徵儲存」。
 
-*   **核心與框架:**
-    *   `python`: `>=3.12,<3.14`
-    *   `typer`: `^0.12.3` (命令列介面)
-    *   `fastapi`: `^0.111.0` (Web API 框架)
-    *   `setuptools`: `^80.9.0` (建構工具)
-*   **數據處理與分析:**
-    *   `pandas`: `^2.2.2`
-    *   `numpy`: `<2.0`
-    *   `pandas-ta`: `^0.3.14b0`
-    *   `vectorbt`: `^0.28.0`
-*   **遺傳演算法:**
-    *   `deap`: `^1.4.1`
-*   **資料庫與 I/O:**
-    *   `duckdb`: `^1.0.0`
-    *   `aiosqlite`: `^0.21.0` (非同步 SQLite 驅動)
-    *   `pyyaml`: `^6.0.1` (YAML 設定檔)
-    *   `openpyxl`: `^3.1.5` (Excel 讀寫)
-*   **網路與 API 客戶端:**
-    *   `requests`: `^2.32.3`
-    *   `requests-cache`: `^1.2.1`
-    *   `yfinance`: `0.2.40`
-    *   `fredapi`: `^0.5.2`
-*   **視覺化與報告:**
-    *   `plotly`: `^5.22.0`
-    *   `rich`: `^14.0.0` (美化終端機輸出)
-*   **測試與品質保證:**
-    *   `pytest`: `^8.2.2`
-    *   `pytest-mock`: `^3.14.0`
-    *   `pytest-asyncio`: `^1.0.0`
-    *   `ruff`: `^0.4.8` (Linter & Formatter)
-
-## **三、 完整檔案目錄結構 (v3.0 - 終極整合)**
-
-> **[文件化說明]**
-> 關於下表中每一個檔案的詳細功能、職責與執行邏輯，請參閱 **[`PROJECT_FILES_GLOSSARY.md`](./PROJECT_FILES_GLOSSARY.md)** 檔案。
-
-```
-.
-├── PROJECT_FILES_GLOSSARY.md
-├── README.md
-├── TEST_REPORT.md
-├── config.yml
-├── mypy.ini
-├── poetry.lock
-├── pyproject.toml
-├── pytest.ini
-├── run.py
-├── src
-│   ├── __init__.py
-│   └── prometheus
-│       ├── cli
-│       │   └── main.py
-│       ├── core
-│       │   ├── __init__.py
-│       │   ├── analysis
-│       │   ├── analyzers
-│       │   ├── clients
-│       │   ├── config.py
-│       │   ├── constants.py
-│       │   ├── context.py
-│       │   ├── db
-│       │   ├── engines
-│       │   ├── events
-│       │   ├── logging
-│       │   ├── monitoring
-│       │   ├── pipelines
-│       │   ├── py.typed
-│       │   ├── queue
-│       │   └── utils
-│       ├── entrypoints
-│       ├── services
-│       └── web
-│           └── dashboard.html
-└── tests
-    ├── conftest.py
-    ├── fixtures
-    ├── ignition_test.py
-    ├── integration
-    ├── test_p0_downloader.py
-    ├── test_p1_explorer.py
-    ├── test_p2_elt_pipeline.py
-    └── unit
-```
-
-## **四、 環境設定與執行**
-
-1.  **安裝 Poetry**: `curl -sSL https://install.python-poetry.org | python -`
-2.  **克隆專案**。
-3.  **配置 Poetry 虛擬環境** (推薦): `poetry config virtualenvs.in-project true`
-4.  **安裝依賴**: `poetry install`
-5.  **激活虛擬環境**: `poetry shell`
-
-## **五、 主要功能執行與測試**
+## **主要功能與使用方式**
 
 本專案的所有功能，皆透過統一的 CLI 入口 `run.py` 進行操作。
 
-### **5.1 透過 `run.py` CLI 執行任務**
+1.  **構建特徵儲存 (`build-feature-store`)**
+    此命令會啟動一個完整的數據處理管線，從獲取原始數據到計算並儲存所有因子。
 
-`run.py` 是專案的唯一命令列介面，你可以用它來執行各種獨立的任務。
-
-*   **查看所有可用指令**:
     ```bash
-    poetry run python run.py --help
+    # 執行完整的特徵工程管線
+    poetry run python run.py build-feature-store
     ```
 
-*   **數據管理 (`data`)**:
+2.  **運行因子模擬訓練 (`run-simulation-training`)**
+    在特徵儲存構建完成後，此命令會針對指定的目標因子，訓練一個機器學習模型（因子模擬器）。
+
     ```bash
-    # 建立虛構數據
-    poetry run python run.py data create-dummy
+    # 針對 'T10Y2Y' 因子訓練一個模擬器
+    poetry run python run.py run-simulation-training --target-factor T10Y2Y
     ```
 
-*   **數據管線 (`pipelines`)**:
-    ```bash
-    # 執行數據下載
-    poetry run python run.py pipelines run-downloader --start-date 2023-01-01 --end-date 2023-01-31
+## **作戰歷史 (Changelog)**
 
-    # 執行格式探勘
-    poetry run python run.py pipelines run-explorer
+這份日誌記錄了【普羅米修斯之火】從一個充滿挑戰的初始原型，演進為一個穩定、可靠的數據工程框架的關鍵歷程。
 
-    # 執行 ELT 流程
-    poetry run python run.py pipelines run-elt
+### **v2.1 - 【系統穩定】 (作戰計畫 140)**
+*   **里程碑**: 實現了專案的全面穩定。
+*   **關鍵行動**:
+    *   修復了在測試環境中因「幽靈引用」(dangling references) 導致的間歇性 `segmentation fault` 錯誤。
+    *   通過對 `DBManager` 的實例化過程進行嚴格的生命週期管理，確保了資料庫連接在多進程環境中的安全關閉。
+    *   完成了對整個測試套件的最終修復，確保所有測試 100% 可靠通過。
 
-    # 執行歷史數據回填
-    poetry run python run.py pipelines run-backfill --start-date 2023-01-01 --end-date 2023-01-31
-    ```
+### **v2.0 - 【統一數據模型】 (作戰計畫 137-139)**
+*   **里程碑**: 從根本上解決了數據庫的欄位不匹配、大小寫混亂和數據更新衝突問題。
+*   **關鍵行動**:
+    *   **實施「數據標準化協議」**: 設計並強制執行了一個統一的內部數據模型，確保所有從外部 API 獲取的數據在存入系統前，都被轉換為標準格式 (例如，所有欄位名小寫、統一的日期格式)。
+    *   **引入「UPSERT」策略**: 重新設計了數據庫寫入邏輯，採用基於主鍵 (`symbol`, `date`) 的 UPSERT 操作，徹底消除了數據重複和更新衝突的風險。
+    *   **建立 `DataWarehouse`**: 建立了一個中央數據倉庫，作為所有原始數據的唯一、權威的儲存，供下游的因子計算引擎使用。
 
-*   **結果管理 (`results`)**:
-    ```bash
-    # 清除所有結果
-    poetry run python run.py results clear
-
-    # 顯示回測結果
-    poetry run python run.py results show
-
-    # 添加回測任務
-    poetry run python run.py results add-tasks --num-tasks 50
-
-    # 生成測試報告
-    poetry run python run.py results generate-report
-    ```
-
-*   **核心應用**:
-    ```bash
-    # 啟動儀表板後端服務
-    poetry run python run.py dashboard --host 127.0.0.1 --port 8000
-
-    # 執行一次完整的策略演化
-    poetry run python run.py analyze
-    ```
-
-### **5.2 執行自動化測試**
-
-*   **運行所有測試**:
-    ```bash
-    poetry run pytest -v
-    ```
-*   **運行測試並生成報告**:
-    `run.py` 也整合了測試和報告生成的功能。
-    ```bash
-    poetry run python run.py results generate-report
-    ```
-
-## **六、 開發者指引**
-
-*   遵循 PEP 8 程式碼風格。
-*   所有程式碼註解、日誌訊息和終端機輸出均使用**繁體中文**。
-*   嚴禁在程式碼中硬編碼任何 API 金鑰或敏感資訊。所有配置應透過 `config.yml` 管理。
-*   在提交程式碼前，請務必運行 `poetry run pytest` 確保沒有引入新的迴歸問題。
-
-## **七、 日誌系統 (雅典娜之鏡)**
-
-本專案實現了一個集中式的結構化日誌系統，以取代所有分散的 `print()` 語句，提供清晰、可追蹤的系統活動記錄。
-
-*   **核心元件**: `src/prometheus/core/logging/log_manager.py`
-*   **日誌格式**: `[時間戳] [日誌級別] [來源模組] - 訊息`
-    *   例如: `[2025-07-16 06:20:00] [INFO] [Evolution-Engine] - 正在處理第 1 代...`
-*   **日誌輸出**:
-    *   **控制台**: 所有日誌都會即時輸出到控制台。
-    *   **檔案**: 所有日誌都會被寫入到 `data/logs/prometheus.log`。該檔案會根據大小自動輪替。
-*   **如何使用**:
-    在任何需要日誌記錄的模組中，透過以下方式獲取 logger 實例：
-    ```python
-    from src.prometheus.core.logging.log_manager import LogManager
-    logger = LogManager.get_instance().get_logger("你的模組名稱")
-
-    logger.info("這是一條資訊日誌。")
-    logger.error("這是一條錯誤日誌。", exc_info=True) # exc_info=True 會附帶堆疊追蹤
-    ```
-
----
-
-## **附錄：歷史版本存檔**
-
-### **v2.2 (雅典娜之鏡) - 作戰計畫 107**
-*   **【重大基礎設施升級】實施集中式結構化日誌系統**
-    *   **背景**: 舊有版本大量使用 `print()` 語句，導致輸出混亂、難以追蹤，且無法進行分級或持久化。
-    *   **實作細節**:
-        *   **強化 `LogManager`**: 將 `log_manager.py` 重構為一個採用單例模式的中央日誌服務，確保全專案使用統一的日誌配置。
-        *   **統一格式與輸出**: 設定了標準的日誌格式 `[時間戳] [級別] [模組] - 訊息`，並能同時輸出到控制台和可輪替的日誌檔案 (`data/logs/prometheus.log`)。
-        *   **全面替換 `print()`**: 在整個 `src` 目錄下，系統性地將 `print()` 語句替換為 `logger.info()`, `logger.error()`, `logger.debug()` 等呼叫。
-        *   **建立單元測試**: 為 `LogManager` 新增了單元測試，驗證其單例行為、檔案寫入和格式的正確性。
-    *   **影響**:
-        *   **可追蹤性**: 所有系統活動都有了統一、帶時間戳和來源的記錄，極大地方便了問題排查和行為分析。
-        *   **可維護性**: 程式碼變得更加乾淨，移除了混亂的 `print()` 語句，提高了可讀性和專業性。
-        *   **持久化**: 所有日誌都被保存到檔案中，便於事後審計和分析。
-
-### **v2.1 (萬象引擎) - 作戰計畫 106**
-*   **【重大架構升級】從「單一策略」到「多元因子宇宙」**
-    *   **背景**: 舊有的演化引擎只能處理固定的「雙均線交叉」策略，其基因體只是一個包含兩個數字的簡單列表，極大地限制了 AI 探索策略空間的能力。
-    *   **實作細節**:
-        *   **廢棄簡單基因**: 完全廢棄了 `[fast, slow]` 的基因結構。
-        *   **引入複雜基因體**: 將「基因體 (Genome)」重新設計為一個 **條件列表**。每個條件都是一個包含 `factor` (因子名稱), `params` (參數), `operator` (運算子) 和 `value` (比較值) 的字典，允許可擴展、可組合的複雜策略。
-        *   **因子宇宙 (`factor_universe`)**: 在 `config.yml` 中新增了 `factor_universe` 區塊，允許開發者在不修改程式碼的情況下，透過設定檔來定義所有可供 AI 使用的因子、參數範圍、運算子等。
-        *   **動態演化室 (`EvolutionChamber`)**: 重構了 `EvolutionChamber`，使其能夠讀取 `factor_universe` 設定，並動態地生成、突變和交叉新的複雜基因體。
-        *   **動態回測引擎 (`BacktestingService`)**: 重構了 `BacktestingService`，將其從一個寫死均線邏輯的服務，改造為一個 **動態規則解釋器**。它能遍歷基因體中的每個條件，使用 `pandas-ta` 動態計算指標，並根據運算子將其轉換為交易信號，最終組合所有信號進行回測。
-        *   **建立專屬單元測試**: 新增了 `tests/unit/services/test_omniverse_engine.py` 來專門驗證新架構下兩個核心服務的正確性與穩健性。
-    *   **影響**:
-        *   **策略空間擴展**: AI 不再局限於單一策略，可以在一個廣闊的因子宇宙中進行探索與創新。
-        *   **配置驅動開發**: 新增或修改可用因子不再需要修改 Python 程式碼，只需維護 `config.yml`，極大提高了擴展性與靈活性。
-        *   **架構解耦**: 演化邏輯與具體的策略計算被完全解耦，使系統更加清晰和可維護。
-
-### **v1.2.0 (鳳凰計畫) - 作戰計畫 080**
-*   **【重大架構升級】非同步事件驅動重構**
-    *   **背景**: 舊有的多線程模型存在線程競爭、死鎖以及複雜的生命週期管理問題，導致系統不穩定且難以擴展。
-    *   **實作細節**:
-        *   **廢棄 Threading**: 完全移除了基於 `threading` 的並發模型。
-        *   **擁抱 Asyncio**: 以 `asyncio` 為核心，將 `EvolutionChamber` (生產者) 和 `BacktestingService` (消費者) 的互動模式改為非同步事件驅動。
-        *   **AsyncEventBus**: 實現了一個基於 `asyncio.Queue` 的 `AsyncEventBus`，作為系統內部高效、非阻塞的通訊中樞。
-        *   **非同步 I/O**: `ResultsSaver` 使用 `aiosqlite` 進行非同步資料庫操作，`AppContext` 也被改造成非同步上下文管理器 (`async with`)，確保資源的非阻塞獲取與釋放。
-        *   **非同步測試**: 引入 `pytest-asyncio`，並重寫了 `test_final_acceptance.py`，使其能夠在單一事件循環中協調並測試整個非同步流程。
-    *   **影響**:
-        *   **根本性穩定**: 徹底根除了競爭條件與死鎖問題。
-        *   **性能提升**: I/O 密集型操作不再阻塞主事件循環，提升了系統效率。
-        *   **簡化邏輯**: 非同步模型使得並發控制邏輯更清晰、更易於維護。
-
-### **v1.0 (磐石協議) - 作戰計畫 042**
-*   **【重大架構升級】引入「作戰上下文」與「企業級任務佇列」**
-    *   **實作細節**:
-        *   **作戰上下文 (`AppContext`)**: 建立了一個中央容器，統一管理所有共享服務的生命週期。
-        *   **交易型佇列 (`SQLiteQueue`)**: 實現了一個基於 SQLite 事務的、絕對穩健的任務佇列。
-    *   **影響**:
-        *   **多進程安全**: 確保了在複雜的多進程操作中，數據不會損壞，任務不會遺失。
-        *   **代碼解耦**: 應用程式邏輯與基礎設施服務完全分離，提高了可維護性。
-
-### **v0.6.0 (精準指示器) - 作戰計畫 038**
-*   **【重大架構升級】實作統一 CLI 入口與 v82.0 精準指示器日誌系統**
-    *   **實作細節**:
-        *   **引入 `Typer`**: 在根目錄下建立 `run.py`，將其打造為一個功能強大且易於擴展的命令列介面 (CLI) 應用。
-        *   **建立 `LogManager`**: 設計並實作了基於 SQLite 的結構化日誌系統，並在任務結束時自動歸檔。
-    *   **影響**:
-        *   **開發流程簡化**: 統一了整個專案的執行入口和日誌記錄方式。
-        *   **可追溯性增強**: 所有的操作都有了集中化、永久性的日誌記錄。
+### **v1.0 - 【鳳凰協議】 (作戰計畫 130-132)**
+*   **里程碑**: 確立了「獨立 CLI 工人 + 持久化任務佇列」的次世代架構，解決了多進程並發寫入導致的「靜默失敗」和數據庫鎖定問題。
+*   **背景**: 最初的設計試圖在一個複雜的多進程環境中共享資料庫連接和內存對象，導致了嚴重的穩定性問題。
+*   **關鍵行動**:
+    *   **架構重構**: 將系統分解為一系列獨立的、可通過命令列呼叫的「工人」 (workers)。
+    *   **持久化任務佇列**: 引入了基於 SQLite 的持久化任務佇列，用於在不同的工人之間安全地傳遞任務。
+    *   **簡化流程**: 每個工人都以「無狀態」的方式運行，從任務佇列中獲取任務，完成後將結果寫入獨立的檔案，完全避免了並發寫入衝突。
