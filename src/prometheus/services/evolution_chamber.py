@@ -4,6 +4,7 @@
 """
 import random
 from typing import List, Tuple
+import numpy as np
 
 from deap import base, creator, tools
 
@@ -58,7 +59,7 @@ class EvolutionChamber:
 
     def _setup_toolbox(self):
         """
-        設定 DEAP 的 toolbox，定義基因、個體、族群的生成規則。
+        設定 DEAP 的 toolbox，定義基因、個體、族群的生成規則與演化算子。
         """
         # 定義「基因」：一個代表因子索引的整數
         self.toolbox.register("factor_indices", random.sample, range(len(self.available_factors)), self.num_factors_to_select)
@@ -69,16 +70,72 @@ class EvolutionChamber:
         # 定義「族群」：由多個「個體」組成的列表
         self.toolbox.register("population", tools.initRepeat, list, self.toolbox.individual)
 
-        # 新增：註冊評估函數
+        # --- 新增：註冊核心遺傳算子 ---
         self.toolbox.register("evaluate", self._evaluate_strategy)
+        # 交叉算子：兩點交叉
+        self.toolbox.register("mate", tools.cxTwoPoint)
+        # 突變算子：隨機交換索引，indpb 為每個基因的突變機率
+        self.toolbox.register("mutate", tools.mutShuffleIndexes, indpb=0.1)
+        # 選擇算子：錦標賽選擇，tournsize 為每次競賽的個體數
+        self.toolbox.register("select", tools.selTournament, tournsize=3)
 
-    def run_evolution(self):
+    def run_evolution(self, n_pop: int = 50, n_gen: int = 10, cxpb: float = 0.5, mutpb: float = 0.2):
         """
-        執行完整的演化流程（將在後續藍圖中實現）。
+        執行完整的演化流程。
+
+        Args:
+            n_pop (int): 族群大小。
+            n_gen (int): 演化世代數。
+            cxpb (float): 交叉機率。
+            mutpb (float): 突變機率。
+
+        Returns:
+            tools.HallOfFame: 包含演化過程中發現的最優個體。
         """
-        # TODO: 實現演化主迴圈
-        # 1. 初始化族群
-        # 2. 迭代執行評估、選擇、交叉、突變
-        # 3. 返回最優個體
-        print("INFO: 演化室主迴圈待實現。")
-        pass
+        pop = self.toolbox.population(n=n_pop)
+        hof = tools.HallOfFame(1) # 名人堂，只儲存最優的一個個體
+        stats = tools.Statistics(lambda ind: ind.fitness.values)
+        stats.register("avg", np.mean)
+        stats.register("std", np.std)
+        stats.register("min", np.min)
+        stats.register("max", np.max)
+
+        # 1. 首次評估所有個體
+        fitnesses = map(self.toolbox.evaluate, pop)
+        for ind, fit in zip(pop, fitnesses):
+            ind.fitness.values = fit
+
+        print(f"--- 開始演化，共 {n_gen} 代 ---")
+
+        for g in range(n_gen):
+            # 2. 選擇下一代的個體
+            offspring = self.toolbox.select(pop, len(pop))
+            offspring = list(map(self.toolbox.clone, offspring))
+
+            # 3. 執行交叉與突變
+            for child1, child2 in zip(offspring[::2], offspring[1::2]):
+                if random.random() < cxpb:
+                    self.toolbox.mate(child1, child2)
+                    del child1.fitness.values
+                    del child2.fitness.values
+
+            for mutant in offspring:
+                if random.random() < mutpb:
+                    self.toolbox.mutate(mutant)
+                    del mutant.fitness.values
+
+            # 4. 評估被改變的個體
+            invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
+            fitnesses = map(self.toolbox.evaluate, invalid_ind)
+            for ind, fit in zip(invalid_ind, fitnesses):
+                ind.fitness.values = fit
+
+            # 5. 更新族群與名人堂
+            pop[:] = offspring
+            hof.update(pop)
+
+            record = stats.compile(pop)
+            print(f"> 第 {g+1} 代: 最優夏普 = {record['max']:.4f}, 平均夏普 = {record['avg']:.4f}")
+
+        print("--- 演化結束 ---")
+        return hof

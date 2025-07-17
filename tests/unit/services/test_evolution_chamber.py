@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 
 from prometheus.services.evolution_chamber import EvolutionChamber
-from prometheus.models.strategy_models import PerformanceReport
+from prometheus.models.strategy_models import PerformanceReport, Strategy
 
 class TestEvolutionChamber(unittest.TestCase):
 
@@ -65,6 +65,33 @@ class TestEvolutionChamber(unittest.TestCase):
         # 驗證返回的適應度分數是否正確
         self.assertEqual(fitness, (1.5,))
         print("[PASS] EvolutionChamber 的適應度函數整合測試成功。")
+
+    def test_run_evolution_returns_best_individual(self):
+        """
+        測試：驗證演化主迴圈能夠運行並返回名人堂物件。
+        """
+        # 1. 準備 (Arrange)
+        # 讓模擬的回測器根據個體的基因（索引）返回一個可預測的分數
+        def mock_evaluate_logic(strategy: Strategy) -> PerformanceReport:
+            # 假設基因（此處為因子名稱）的字母長度總和越大，分數越高
+            # 這提供了一個簡單、確定性的方式來預測哪個“個體”會是最好的
+            score = sum(len(factor) for factor in strategy.factors)
+            return PerformanceReport(sharpe_ratio=float(score))
+
+        self.mock_backtester.run.side_effect = mock_evaluate_logic
+
+        # 2. 執行 (Act)
+        # 執行一個小規模的演化
+        hof = self.chamber.run_evolution(n_pop=10, n_gen=3, cxpb=0.5, mutpb=0.2)
+
+        # 3. 斷言 (Assert)
+        self.assertGreater(self.mock_backtester.run.call_count, 0)
+        self.assertEqual(len(hof), 1) # 驗證名人堂中有一個最優個體
+        self.assertTrue(hasattr(hof[0], 'fitness')) # 驗證最優個體有適應度屬性
+        self.assertTrue(hof[0].fitness.valid) # 驗證適應度是有效的
+        self.assertGreater(hof[0].fitness.values[0], 0) # 驗證適應度分數大於0
+
+        print("\n[PASS] EvolutionChamber 的演化主迴圈測試成功。")
 
 if __name__ == '__main__':
     unittest.main()
