@@ -113,6 +113,31 @@ class DBManager:
         except duckdb.CatalogException:
             return []
 
+    def fetch_table(self, table_name: str) -> pd.DataFrame:
+        """
+        從數據庫中讀取整個表格並返回一個 Pandas DataFrame。
+
+        Args:
+            table_name (str): 要讀取的表格名稱。
+
+        Returns:
+            pd.DataFrame: 包含表格數據的 DataFrame。如果表格不存在或為空，則返回一個空的 DataFrame。
+        """
+        try:
+            with duckdb.connect(self.db_path, read_only=True) as con:
+                # 檢查表格是否存在
+                tables = con.execute("SHOW TABLES").fetchall()
+                if (table_name,) not in tables:
+                    self.logger.warning(f"表格 '{table_name}' 在數據庫中不存在。")
+                    return pd.DataFrame()
+
+                df = con.table(table_name).to_df()
+                self.logger.info(f"成功從 '{table_name}' 表格中讀取 {len(df)} 筆數據。")
+                return df
+        except Exception as e:
+            self.logger.error(f"讀取表格 '{table_name}' 時發生錯誤: {e}", exc_info=True)
+            return pd.DataFrame() # 在出錯時返回一個空的 DataFrame
+
     def _map_dtype_to_sql(self, dtype):
         """將 Pandas 的 dtype 轉換為 SQL 類型字串。"""
         if pd.api.types.is_integer_dtype(dtype):

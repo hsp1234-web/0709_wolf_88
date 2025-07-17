@@ -631,28 +631,31 @@ def build_feature_store():
     """
     import asyncio
     from prometheus.core.db.db_manager import DBManager
-    from prometheus.pipelines.p1_factor_generation import p1_factor_generation_pipeline
-    from prometheus.pipelines.p2_index_factor_generation import p2_index_factor_pipeline
-    from prometheus.pipelines.p3_bond_factor_generation import p3_bond_factor_pipeline
+    # from prometheus.pipelines.p1_factor_generation import p1_factor_generation_pipeline
+    # from prometheus.pipelines.p2_index_factor_generation import p2_index_factor_pipeline
+    # from prometheus.pipelines.p3_bond_factor_generation import p3_bond_factor_pipeline
     from prometheus.pipelines.p4_stock_factor_generation import main as p4_main
     from prometheus.pipelines.p5_crypto_factor_generation import main as p5_main
 
     logger.info("--- 啟動統一數據倉儲建構流程 ---")
     db_manager = DBManager()
 
-    # --- P1, P2, P3 ---
-    # 這些管線經過修改後會返回 DataFrame
-    p1_df = asyncio.run(p1_factor_generation_pipeline.run())
-    db_manager.save_data(p1_df, 'factors')
-    logger.info("P1 通用因子數據已合併。")
+    # --- P1, P2, P3 (已停用) ---
+    # 根據目前的檔案結構，這些管線不存在，暫時註解以確保命令可執行
+    # logger.info("執行 P1 通用因子生成...")
+    # p1_df = asyncio.run(p1_factor_generation_pipeline.run())
+    # db_manager.save_data(p1_df, 'factors')
+    # logger.info("P1 通用因子數據已合併。")
 
-    p2_df = asyncio.run(p2_index_factor_pipeline.run())
-    db_manager.save_data(p2_df, 'factors')
-    logger.info("P2 指數因子數據已合併。")
+    # logger.info("執行 P2 指數因子生成...")
+    # p2_df = asyncio.run(p2_index_factor_pipeline.run())
+    # db_manager.save_data(p2_df, 'factors')
+    # logger.info("P2 指數因子數據已合併。")
 
-    p3_df = asyncio.run(p3_bond_factor_pipeline.run())
-    db_manager.save_data(p3_df, 'factors')
-    logger.info("P3 債券因子數據已合併。")
+    # logger.info("執行 P3 債券因子生成...")
+    # p3_df = asyncio.run(p3_bond_factor_pipeline.run())
+    # db_manager.save_data(p3_df, 'factors')
+    # logger.info("P3 債券因子數據已合併。")
 
     # --- P4, P5 ---
     # 這些管線的 main 函數內部直接調用 DBManager，我們暫時保持這種方式
@@ -738,6 +741,61 @@ def run_backfill_cli(
     ClientFactory.close_all()
     logger.info("--- 數據回填作業完成 ---")
 
+
+from prometheus.models.strategy_models import Strategy
+from prometheus.services.backtesting_service import BacktestingService
+from prometheus.services.evolution_chamber import EvolutionChamber
+from prometheus.services.strategy_reporter import StrategyReporter
+from prometheus.core.db.db_manager import DBManager
+
+@app.command()
+def run_evolution_cycle():
+    """
+    🚀 [端到端] 執行一次完整的演化週期：演化 -> 回測 -> 報告。
+    """
+    print("--- 啟動【演化室行動】完整作戰週期 ---")
+
+    # 1. 初始化核心服務
+    db_manager = DBManager()
+    backtester = BacktestingService(db_manager)
+
+    # 2. 準備演化所需數據
+    # 假設因子數據已存在
+    all_factors_df = db_manager.fetch_table('factors')
+    # 排除非因子欄位
+    available_factors = [col for col in all_factors_df.columns if col not in ['date', 'symbol', 'close']]
+
+    if not available_factors:
+        print("錯誤：數據庫中找不到可用的因子。請先執行 build-feature-store。")
+        return
+
+    target_asset_for_evolution = 'AAPL' # 選擇一個數據庫中存在的資產
+    print(f"INFO: 將使用 '{target_asset_for_evolution}' 作為本次演化的目標資產。")
+    chamber = EvolutionChamber(backtester, available_factors, target_asset=target_asset_for_evolution)
+
+    # 3. 執行演化
+    # 為了快速演示，使用較小的參數
+    hof = chamber.run_evolution(n_pop=20, n_gen=5)
+
+    if not hof:
+        print("錯誤：演化未能產生有效結果。")
+        return
+
+    # 4. 對最優策略進行最終回測以獲得完整報告
+    best_individual = hof[0]
+    best_factors = [available_factors[i] for i in best_individual]
+    final_strategy = Strategy(
+        factors=best_factors,
+        weights={factor: 1.0 / len(best_factors) for factor in best_factors},
+        target_asset='AAPL' # 修正：明確指定一個存在的資產
+    )
+    final_report = backtester.run(final_strategy)
+
+    # 5. 生成報告
+    reporter = StrategyReporter()
+    reporter.generate_report(hof, final_report, available_factors)
+
+    print("--- 【演化室行動】作戰週期結束 ---")
 
 if __name__ == "__main__":
     app()

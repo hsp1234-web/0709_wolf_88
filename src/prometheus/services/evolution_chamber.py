@@ -15,16 +15,18 @@ class EvolutionChamber:
     """
     一個「演化室」，將因子庫轉化為基因池，並使用遺傳演算法進行策略演化。
     """
-    def __init__(self, backtesting_service: BacktestingService, available_factors: List[str]):
+    def __init__(self, backtesting_service: BacktestingService, available_factors: List[str], target_asset: str = 'SPY'):
         """
         初始化演化室。
 
         Args:
             backtesting_service (BacktestingService): 用於評估策略適應度的回測服務。
             available_factors (List[str]): 可供演化選擇的所有因子名稱列表。
+            target_asset (str): 演化和回測的目標資產。
         """
         self.backtester = backtesting_service
         self.available_factors = available_factors
+        self.target_asset = target_asset
         self.num_factors_to_select = 5 # 暫定每個策略由5個因子構成
 
         # --- DEAP 核心設定 ---
@@ -43,12 +45,19 @@ class EvolutionChamber:
         評估單一個體的適應度，此為演化核心的「適應度函數」。
         """
         # 1. 解碼基因：將因子索引轉換為因子名稱
-        selected_factors = [self.available_factors[i] for i in individual]
+        raw_factors = [self.available_factors[i] for i in individual]
+        # 【修正】確保因子列表的唯一性，防止因交叉突變導致的重複
+        selected_factors = list(dict.fromkeys(raw_factors))
+
+        # 如果去重後因子少於1個，這是一個無效策略
+        if not selected_factors:
+            return (0.0,)
 
         # 2. 建立策略物件 (此處使用等權重作為範例)
         strategy_to_test = Strategy(
             factors=selected_factors,
-            weights={factor: 1.0 / len(selected_factors) for factor in selected_factors}
+            weights={factor: 1.0 / len(selected_factors) for factor in selected_factors},
+            target_asset=self.target_asset # 使用演化室指定的目標資產
         )
 
         # 3. 執行回測以獲得績效
