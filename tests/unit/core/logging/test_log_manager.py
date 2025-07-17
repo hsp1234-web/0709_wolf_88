@@ -53,7 +53,7 @@ class TestLogManager(unittest.TestCase):
 
     def test_logger_creates_file_and_writes_log(self):
         """測試獲取 logger 並記錄後，是否會創建日誌檔案並寫入內容"""
-        log_manager = LogManager(log_file=self.log_path)
+        log_manager = LogManager(log_dir=self.log_dir, log_file=self.log_file)
         logger = log_manager.get_logger("TestLogger")
 
         # RotatingFileHandler 在初始化時就會創建檔案
@@ -70,7 +70,7 @@ class TestLogManager(unittest.TestCase):
 
     def test_log_format(self):
         """測試日誌格式是否符合 '[時間戳] [級別] [名稱] - 訊息' 的要求"""
-        log_manager = LogManager(log_file=self.log_path)
+        log_manager = LogManager(log_dir=self.log_dir, log_file=self.log_file)
         logger = log_manager.get_logger("FormatTest")
 
         logger.warning("這是一條警告訊息。")
@@ -90,7 +90,7 @@ class TestLogManager(unittest.TestCase):
 
     def test_multiple_loggers_work_correctly(self):
         """測試從管理器獲取的多個 logger 是否都能正常工作"""
-        log_manager = LogManager(log_file=self.log_path)
+        log_manager = LogManager(log_dir=self.log_dir, log_file=self.log_file)
 
         logger1 = log_manager.get_logger("ModuleA")
         logger2 = log_manager.get_logger("ModuleB")

@@ -739,27 +739,5 @@ def run_backfill_cli(
     logger.info("--- 數據回填作業完成 ---")
 
 
-@app.command("run-worker")
-def run_worker_command(worker_id: int = typer.Option(..., help="工人的唯一識別碼")):
-    """啟動一個獨立的偵察工人進程。"""
-    import asyncio
-    import os
-    from prometheus.services.recon_worker import ReconWorker
-
-    logger.info(f"--- 啟動獨立偵察工人，ID: {worker_id} ---")
-
-    # 確保工人的工作目錄存在
-    os.makedirs("data/logs", exist_ok=True)
-    os.makedirs("data/db", exist_ok=True)
-
-    try:
-        worker = ReconWorker(worker_id=worker_id)
-        asyncio.run(worker.run_loop())
-        logger.info(f"--- 工人 {worker_id} 正常結束 ---")
-    except Exception as e:
-        logger.error(f"--- 工人 {worker_id} 發生致命錯誤並終止: {e} ---", exc_info=True)
-        raise typer.Exit(code=1)
-
-
 if __name__ == "__main__":
     app()

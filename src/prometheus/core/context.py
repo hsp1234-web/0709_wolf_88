@@ -3,7 +3,6 @@ import os
 
 import aiosqlite
 
-from prometheus.core.db.results_saver import ResultsSaver
 from prometheus.core.events.event_store import PersistentEventStream
 
 
@@ -16,7 +15,6 @@ class AppContext:
         self.config = ConfigManager(config_path=config_path)._config
         self.conn = None
         self.event_stream: PersistentEventStream | None = None
-        self.results_saver: ResultsSaver | None = None
 
     async def __aenter__(self):
         db_dir = os.path.dirname(self.db_path)
@@ -30,10 +28,6 @@ class AppContext:
         # 初始化事件流
         self.event_stream = PersistentEventStream(self.conn)
         await self.event_stream.initialize()
-
-        # 初始化結果儲存器
-        self.results_saver = ResultsSaver(self.conn)
-        await self.results_saver.initialize()
 
         return self
 

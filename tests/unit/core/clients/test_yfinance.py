@@ -104,11 +104,11 @@ class TestYFinanceClientFetchData:
 
         expected_df = mock_df_from_yf.reset_index()
         expected_df["symbol"] = symbol
-        expected_df.rename(columns={"Adj Close": "Adj_Close"}, inplace=True)
-        expected_df["Date"] = pd.to_datetime(expected_df["Date"])
+        expected_df.rename(columns={"Date": "date", "Adj Close": "Adj_Close"}, inplace=True)
+        expected_df["date"] = pd.to_datetime(expected_df["date"])
 
         expected_cols = [
-            "Date",
+            "date",
             "symbol",
             "Open",
             "High",
@@ -188,7 +188,7 @@ class TestYFinanceClientFetchData:
             ValueError,
             match="必須提供 'period' 或 'start_date' 與 'end_date' 其中之一。",
         ):
-            yfinance_client_fixture.fetch_data(
+            await yfinance_client_fixture.fetch_data(
                 symbol="AAPL", start_date="2023-01-01"
             )  # 缺少 end_date
 
@@ -213,7 +213,7 @@ class TestYFinanceClientFetchData:
 
         assert "date" in result_df.columns
         assert "Datetime" not in result_df.columns
-        assert result_df["Date"].iloc[0] == pd.Timestamp("2023-01-02 09:30:00")
+        assert result_df["date"].iloc[0] == pd.Timestamp("2023-01-02 09:30:00")
 
     @pytest.mark.asyncio
     async def test_fetch_data_timezone_handling(
@@ -234,7 +234,7 @@ class TestYFinanceClientFetchData:
         assert result_df["date"].dt.tz is None  # 確保時區被移除
         # 驗證 tz_localize(None) 的效果，它會保留 "絕對" 時間點，然後移除時區標記
         # '2023-01-02 00:00:00-05:00' (EST) -> '2023-01-02 05:00:00' (naive UTC)
-        assert result_df["Date"].iloc[0] == pd.Timestamp("2023-01-02 05:00:00")
+        assert result_df["date"].iloc[0] == pd.Timestamp("2023-01-02 05:00:00")
 
 
 class TestYFinanceClientFetchMultipleSymbolsData:
@@ -312,16 +312,18 @@ class TestYFinanceClientFetchMultipleSymbolsData:
         assert_frame_equal(result_df, expected_df)
         assert mock_single_fetch.call_count == 3  # 每個都會嘗試
 
-    def test_fetch_multiple_empty_symbol_list(
+    @pytest.mark.asyncio
+    async def test_fetch_multiple_empty_symbol_list(
         self, yfinance_client_fixture: YFinanceClient
     ):
-        result_df = yfinance_client_fixture.fetch_multiple_symbols_data(symbols=[])
+        result_df = await yfinance_client_fixture.fetch_multiple_symbols_data(symbols=[])
         assert result_df.empty
 
-    def test_fetch_multiple_invalid_symbols_type(
+    @pytest.mark.asyncio
+    async def test_fetch_multiple_invalid_symbols_type(
         self, yfinance_client_fixture: YFinanceClient
     ):
-        result_df = yfinance_client_fixture.fetch_multiple_symbols_data(
+        result_df = await yfinance_client_fixture.fetch_multiple_symbols_data(
             symbols="NOTALIST"
         )  # type: ignore
         assert result_df.empty

@@ -51,7 +51,9 @@ class OmniDataEngine:
         """
         # --- 1. 主要路徑: 嘗試從 yfinance 獲取數據 ---
         logger.info(f"[{symbol}] 嘗試從主要數據源 (yfinance) 獲取 {interval} 數據...")
-        data = await self.yf_client.fetch_data(symbol, interval=interval, **kwargs)
+        start_date = kwargs.get("start_date")
+        end_date = kwargs.get("end_date")
+        data = await self.yf_client.fetch_data(symbol, interval=interval, start_date=start_date, end_date=end_date)
 
         if data is not None and not data.empty:
             logger.info(f"[{symbol}] 成功從 yfinance 獲取 {interval} 數據。")

@@ -76,7 +76,9 @@ class CryptoFactorEngine(BaseAnalyzer):
         self.logger.debug("正在計算與納斯達克指數的相關性...")
         try:
             # 獲取 NQ=F 的數據
-            nasdaq_data, _, _ = await self.omni_data_engine.get_data('NQ=F')
+            start_date = df.index.min()
+            end_date = df.index.max()
+            nasdaq_data, _, _ = await self.omni_data_engine.get_data('NQ=F', start_date=start_date, end_date=end_date)
             if nasdaq_data is None or nasdaq_data.empty:
                 self.logger.warning("無法獲取納斯達克數據 (NQ=F)，跳過相關性計算。")
                 df['factor_corr_nq'] = None

@@ -44,10 +44,6 @@ class YFinanceClient(BaseAPIClient):
         end_date = kwargs.get("end_date")
         period = kwargs.get("period")
 
-        # if not period and (not start_date or not end_date):
-        #     raise ValueError(
-        #         "必須提供 'period' 或 'start_date' 與 'end_date' 其中之一。"
-        #     )
 
         history_params = {
             "start": start_date,
@@ -85,14 +81,14 @@ class YFinanceClient(BaseAPIClient):
                 hist_data[date_col_name] = pd.to_datetime(hist_data[date_col_name], utc=True)
                 hist_data[date_col_name] = hist_data[date_col_name].dt.tz_convert(None)
 
-                if date_col_name != "Date" and "Date" not in hist_data.columns:
-                    hist_data.rename(columns={date_col_name: "Date"}, inplace=True)
+                if date_col_name != "date":
+                    hist_data.rename(columns={date_col_name: "date"}, inplace=True)
 
                 rename_map = {"Adj Close": "Adj_Close"}
                 final_df = hist_data.rename(columns=rename_map)
-                final_df["Date"] = pd.to_datetime(final_df["Date"])
+                final_df["date"] = pd.to_datetime(final_df["date"])
 
-                required_cols = ["Date", "symbol", "Open", "High", "Low", "Close", "Adj_Close", "Volume"]
+                required_cols = ["date", "symbol", "Open", "High", "Low", "Close", "Adj_Close", "Volume"]
                 cols_to_keep = []
                 missing_cols = []
 
@@ -124,26 +120,35 @@ class YFinanceClient(BaseAPIClient):
 
         return await asyncio.to_thread(_sync_fetch)
 
-    def fetch_multiple_symbols_data(self, symbols: List[str], **kwargs) -> pd.DataFrame:
+    async def fetch_multiple_symbols_data(
+        self, symbols: List[str], **kwargs
+    ) -> pd.DataFrame:
+        import asyncio
+
         if not isinstance(symbols, list) or not symbols:
             logger.error("symbols 參數必須是一個非空列表。")
             return pd.DataFrame()
 
+        tasks = [self.fetch_data(symbol=s, **kwargs) for s in symbols]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
         all_data_list = []
-        for symbol_ticker in symbols:
-            try:
-                df_symbol = self.fetch_data(symbol=symbol_ticker, **kwargs)
-                if df_symbol is not None and not df_symbol.empty:
-                    all_data_list.append(df_symbol)
-            except Exception as e:
-                logger.error(f"處理商品 {symbol_ticker} 時發生錯誤: {e}", exc_info=True)
+        for i, res in enumerate(results):
+            if isinstance(res, pd.DataFrame) and not res.empty:
+                all_data_list.append(res)
+            elif isinstance(res, Exception):
+                logger.error(
+                    f"處理商品 {symbols[i]} 時發生錯誤: {res}", exc_info=True
+                )
 
         if not all_data_list:
             logger.info("未從任何指定商品抓取到數據。")
             return pd.DataFrame()
 
         combined_df = pd.concat(all_data_list, ignore_index=True)
-        logger.info(f"成功合併 {len(combined_df)} 筆來自 {len(all_data_list)} 個商品的數據。")
+        logger.info(
+            f"成功合併 {len(combined_df)} 筆來自 {len(all_data_list)} 個商品的數據。"
+        )
         return combined_df
 
     def get_ticker(self, symbol: str) -> yf.Ticker:
