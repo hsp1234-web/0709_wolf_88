@@ -16,7 +16,7 @@ api_keys:
 
 # --- 資料庫設定 ---
 database:
-  main_db_path: "prometheus_fire.duckdb"
+  main_db_path: "data/analytics_warehouse/factors.duckdb"
   # 新增任務佇列資料庫的路徑設定
   task_queue_db_path: "output/task_queue.db"
 

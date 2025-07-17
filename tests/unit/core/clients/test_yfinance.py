@@ -76,7 +76,8 @@ class TestYFinanceClientInitialization:
 class TestYFinanceClientFetchData:
     """測試 YFinanceClient.fetch_data 方法。"""
 
-    def test_fetch_single_symbol_success(
+    @pytest.mark.asyncio
+    async def test_fetch_single_symbol_success(
         self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
     ):
         mock_ticker_constructor, mock_ticker_instance = mock_yfinance_ticker
@@ -87,7 +88,7 @@ class TestYFinanceClientFetchData:
         mock_df_from_yf = create_sample_stock_data_for_test(start_date, end_date)
         mock_ticker_instance.history.return_value = mock_df_from_yf.copy()
 
-        result_df = yfinance_client_fixture.fetch_data(
+        result_df = await yfinance_client_fixture.fetch_data(
             symbol=symbol, start_date=start_date, end_date=end_date
         )
 
@@ -120,7 +121,8 @@ class TestYFinanceClientFetchData:
 
         assert_frame_equal(result_df, expected_df, check_dtype=True)
 
-    def test_fetch_data_with_period_instead_of_dates(
+    @pytest.mark.asyncio
+    async def test_fetch_data_with_period_instead_of_dates(
         self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
     ):
         mock_ticker_constructor, mock_ticker_instance = mock_yfinance_ticker
@@ -132,7 +134,7 @@ class TestYFinanceClientFetchData:
         )  # 5 business days
         mock_ticker_instance.history.return_value = mock_df_from_yf.copy()
 
-        result_df = yfinance_client_fixture.fetch_data(symbol=symbol, period=period)
+        result_df = await yfinance_client_fixture.fetch_data(symbol=symbol, period=period)
 
         mock_ticker_instance.history.assert_called_once_with(
             period=period,
@@ -146,7 +148,8 @@ class TestYFinanceClientFetchData:
         assert not result_df.empty
         assert result_df["symbol"].iloc[0] == symbol
 
-    def test_fetch_data_no_data_returned_by_yfinance(
+    @pytest.mark.asyncio
+    async def test_fetch_data_no_data_returned_by_yfinance(
         self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
     ):
         _, mock_ticker_instance = mock_yfinance_ticker
@@ -154,30 +157,32 @@ class TestYFinanceClientFetchData:
             pd.DataFrame()
         )  # yf.Ticker().history() 返回空 DataFrame
 
-        result_df = yfinance_client_fixture.fetch_data(
+        result_df = await yfinance_client_fixture.fetch_data(
             symbol="EMPTY", start_date="2023-01-01", end_date="2023-01-01"
         )
         assert result_df.empty
 
-    def test_fetch_data_yfinance_raises_exception(
+    @pytest.mark.asyncio
+    async def test_fetch_data_yfinance_raises_exception(
         self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
     ):
         _, mock_ticker_instance = mock_yfinance_ticker
         mock_ticker_instance.history.side_effect = Exception("Simulated yfinance error")
 
-        result_df = yfinance_client_fixture.fetch_data(
+        result_df = await yfinance_client_fixture.fetch_data(
             symbol="ERROR", start_date="2023-01-01", end_date="2023-01-01"
         )
         assert result_df.empty  # 錯誤應被捕獲並返回空 DataFrame
 
-    def test_fetch_data_missing_dates_or_period_raises_value_error(
+    @pytest.mark.asyncio
+    async def test_fetch_data_missing_dates_or_period_raises_value_error(
         self, yfinance_client_fixture: YFinanceClient
     ):
         with pytest.raises(
             ValueError,
             match="必須提供 'period' 或 'start_date' 與 'end_date' 其中之一。",
         ):
-            yfinance_client_fixture.fetch_data(symbol="AAPL")  # 缺少所有日期/期間參數
+            await yfinance_client_fixture.fetch_data(symbol="AAPL")  # 缺少所有日期/期間參數
 
         with pytest.raises(
             ValueError,
@@ -187,7 +192,8 @@ class TestYFinanceClientFetchData:
                 symbol="AAPL", start_date="2023-01-01"
             )  # 缺少 end_date
 
-    def test_fetch_data_handles_datetime_column(
+    @pytest.mark.asyncio
+    async def test_fetch_data_handles_datetime_column(
         self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
     ):
         """測試當 yfinance 返回 'Datetime' 而不是 'Date' 時 (通常是 intraday)。"""
@@ -201,15 +207,16 @@ class TestYFinanceClientFetchData:
         mock_data.index.name = "Datetime"  # yfinance 對 intraday 可能用 'Datetime'
         mock_ticker_instance.history.return_value = mock_data.copy()
 
-        result_df = yfinance_client_fixture.fetch_data(
+        result_df = await yfinance_client_fixture.fetch_data(
             symbol=symbol, period="1d", interval="1m"
         )
 
-        assert "Date" in result_df.columns
+        assert "date" in result_df.columns
         assert "Datetime" not in result_df.columns
         assert result_df["Date"].iloc[0] == pd.Timestamp("2023-01-02 09:30:00")
 
-    def test_fetch_data_timezone_handling(
+    @pytest.mark.asyncio
+    async def test_fetch_data_timezone_handling(
         self, yfinance_client_fixture: YFinanceClient, mock_yfinance_ticker
     ):
         _, mock_ticker_instance = mock_yfinance_ticker
@@ -220,11 +227,11 @@ class TestYFinanceClientFetchData:
         )
         mock_ticker_instance.history.return_value = mock_df_tz.copy()
 
-        result_df = yfinance_client_fixture.fetch_data(
+        result_df = await yfinance_client_fixture.fetch_data(
             symbol=symbol, start_date="2023-01-02", end_date="2023-01-02"
         )
 
-        assert result_df["Date"].dt.tz is None  # 確保時區被移除
+        assert result_df["date"].dt.tz is None  # 確保時區被移除
         # 驗證 tz_localize(None) 的效果，它會保留 "絕對" 時間點，然後移除時區標記
         # '2023-01-02 00:00:00-05:00' (EST) -> '2023-01-02 05:00:00' (naive UTC)
         assert result_df["Date"].iloc[0] == pd.Timestamp("2023-01-02 05:00:00")
@@ -233,15 +240,16 @@ class TestYFinanceClientFetchData:
 class TestYFinanceClientFetchMultipleSymbolsData:
     """測試 YFinanceClient.fetch_multiple_symbols_data 方法。"""
 
+    @pytest.mark.asyncio
     @patch.object(YFinanceClient, "fetch_data")  # Mock YFinanceClient.fetch_data
-    def test_fetch_multiple_success(
+    async def test_fetch_multiple_success(
         self, mock_single_fetch, yfinance_client_fixture: YFinanceClient
     ):
         symbols = ["AAPL", "MSFT"]
         df_aapl = pd.DataFrame({"symbol": ["AAPL"], "Close": [150]})
         df_msft = pd.DataFrame({"symbol": ["MSFT"], "Close": [300]})
 
-        def side_effect_for_fetch(symbol, **kwargs):
+        async def side_effect_for_fetch(symbol, **kwargs):
             if symbol == "AAPL":
                 return df_aapl
             if symbol == "MSFT":
@@ -250,7 +258,7 @@ class TestYFinanceClientFetchMultipleSymbolsData:
 
         mock_single_fetch.side_effect = side_effect_for_fetch
 
-        result_df = yfinance_client_fixture.fetch_multiple_symbols_data(
+        result_df = await yfinance_client_fixture.fetch_multiple_symbols_data(
             symbols=symbols, start_date="2023-01-01", end_date="2023-01-01"
         )
 
@@ -264,15 +272,16 @@ class TestYFinanceClientFetchMultipleSymbolsData:
             symbol="MSFT", start_date="2023-01-01", end_date="2023-01-01"
         )
 
+    @pytest.mark.asyncio
     @patch.object(YFinanceClient, "fetch_data")
-    def test_fetch_multiple_one_symbol_fails(
+    async def test_fetch_multiple_one_symbol_fails(
         self, mock_single_fetch, yfinance_client_fixture: YFinanceClient
     ):
         symbols = ["GOOG", "FAIL", "AMZN"]
         df_goog = pd.DataFrame({"symbol": ["GOOG"], "Close": [2000]})
         df_amzn = pd.DataFrame({"symbol": ["AMZN"], "Close": [100]})
 
-        def side_effect_for_fetch(symbol, **kwargs):
+        async def side_effect_for_fetch(symbol, **kwargs):
             if symbol == "GOOG":
                 return df_goog
             if symbol == "FAIL":
@@ -284,7 +293,7 @@ class TestYFinanceClientFetchMultipleSymbolsData:
             return pd.DataFrame()
 
         # 調整：由於 fetch_data 內部捕獲異常並返回空 DF，這裡 side_effect 應返回空 DF 代表失敗
-        def side_effect_for_fetch_adjusted(symbol, **kwargs):
+        async def side_effect_for_fetch_adjusted(symbol, **kwargs):
             if symbol == "GOOG":
                 return df_goog
             if symbol == "FAIL":
@@ -295,7 +304,7 @@ class TestYFinanceClientFetchMultipleSymbolsData:
 
         mock_single_fetch.side_effect = side_effect_for_fetch_adjusted
 
-        result_df = yfinance_client_fixture.fetch_multiple_symbols_data(
+        result_df = await yfinance_client_fixture.fetch_multiple_symbols_data(
             symbols=symbols, period="1d"
         )
 

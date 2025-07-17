@@ -34,15 +34,16 @@ class MultiSourceAggregatorStep(BaseETLStep):
                     _, aux_data = await client.fetch_single_ticker(ticker)
 
                 if not aux_data.empty:
+                    name_lower = name.lower()
                     if ticker in self.fred_tickers:
-                        merged_df = merged_df.join(aux_data.rename(name), how='left')
+                        merged_df = merged_df.join(aux_data.rename(name_lower), how='left')
                     else:
                         # 只保留 'Adj Close' 並重命名
-                        aux_data = aux_data[['Adj Close']].rename(columns={'Adj Close': name})
+                        aux_data = aux_data[['Adj Close']].rename(columns={'Adj Close': name_lower})
                         merged_df = merged_df.join(aux_data, how='left')
                 else:
                     self.logger.warning(f"找不到 {ticker} 的數據，將用 NaN 填充。")
-                    merged_df[name] = pd.NA
+                    merged_df[name.lower()] = pd.NA
             except Exception as e:
                 self.logger.error(f"獲取 {ticker} 數據時發生錯誤: {e}，將用 NaN 填充。", exc_info=True)
                 merged_df[name] = pd.NA

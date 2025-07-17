@@ -34,9 +34,7 @@ class ReconWorker:
     def _setup_logger(self) -> logging.Logger:
         """根據工人 ID 配置專屬的日誌記錄器。"""
         log_manager = LogManager(
-            log_dir="data/logs",
-            log_file=f"recon_worker_{self.worker_id}.log",
-            dedicated=True  # 確保為每個工人創建一個完全獨立的 logger
+            log_file=f"data/logs/recon_worker_{self.worker_id}.log"
         )
         return log_manager.get_logger(f"ReconWorker_{self.worker_id}")
 

@@ -38,9 +38,10 @@ def test_full_etl_flow_replaces_old_pipeline():
         MockAggregator(),
     ]
 
+    import asyncio
     # 2. 實例化並執行管線
     pipeline = DataPipeline(steps=pipeline_steps)
-    result = pipeline.run()
+    result = asyncio.run(pipeline.run())
 
     # 3. 驗證最終結果
     expected_result = 21

@@ -13,7 +13,7 @@ PROJECT_ROOT_FROM_TEST_P0 = os.path.abspath(
 if PROJECT_ROOT_FROM_TEST_P0 not in sys.path:
     sys.path.insert(0, PROJECT_ROOT_FROM_TEST_P0)
 
-from prometheus.pipelines.p0_downloader import execute_download
+from prometheus.cli.main import execute_download
 
 # Define the path to the fixture files
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")

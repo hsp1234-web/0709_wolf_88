@@ -624,6 +624,50 @@ def run_crypto_factors():
     logger.info("--- P5：加密貨幣因子生成管線執行完畢 ---")
 
 
+@app.command(name="build-feature-store")
+def build_feature_store():
+    """
+    【作戰指令】統一數據倉儲重構：建造特徵倉儲。
+    """
+    import asyncio
+    from prometheus.core.db.db_manager import DBManager
+    from prometheus.pipelines.p1_factor_generation import p1_factor_generation_pipeline
+    from prometheus.pipelines.p2_index_factor_generation import p2_index_factor_pipeline
+    from prometheus.pipelines.p3_bond_factor_generation import p3_bond_factor_pipeline
+    from prometheus.pipelines.p4_stock_factor_generation import main as p4_main
+    from prometheus.pipelines.p5_crypto_factor_generation import main as p5_main
+
+    logger.info("--- 啟動統一數據倉儲建構流程 ---")
+    db_manager = DBManager()
+
+    # --- P1, P2, P3 ---
+    # 這些管線經過修改後會返回 DataFrame
+    p1_df = asyncio.run(p1_factor_generation_pipeline.run())
+    db_manager.save_data(p1_df, 'factors')
+    logger.info("P1 通用因子數據已合併。")
+
+    p2_df = asyncio.run(p2_index_factor_pipeline.run())
+    db_manager.save_data(p2_df, 'factors')
+    logger.info("P2 指數因子數據已合併。")
+
+    p3_df = asyncio.run(p3_bond_factor_pipeline.run())
+    db_manager.save_data(p3_df, 'factors')
+    logger.info("P3 債券因子數據已合併。")
+
+    # --- P4, P5 ---
+    # 這些管線的 main 函數內部直接調用 DBManager，我們暫時保持這種方式
+    # 未來可以進一步重構，但目前足以滿足作戰目標
+    logger.info("執行 P4 股票因子生成...")
+    p4_main()
+    logger.info("P4 股票因子數據已合併。")
+
+    logger.info("執行 P5 加密貨幣因子生成...")
+    p5_main()
+    logger.info("P5 加密貨幣因子數據已合併。")
+
+    logger.info("--- 統一數據倉儲建構流程完畢 ---")
+
+
 @pipelines_app.command("run-simulation-training")
 def run_simulation_training(
     target_factor: str = typer.Option(..., help="要模擬的目標因子名稱"),

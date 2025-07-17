@@ -146,8 +146,27 @@ class LoadRawDataFromWarehouseStep(BaseETLStep):
 
     def execute(self, data: pd.DataFrame | None = None, **kwargs) -> pd.DataFrame:
         ticker = kwargs.get("ticker")
+
+        # --- [臨時修復] ---
+        # 如果沒有提供 ticker，我們假設這是一個通用管線，並載入一個預設的、廣泛的數據集。
+        # 這是為了讓 P1, P2, P3 能夠在沒有特定 ticker 的情況下運行。
         if not ticker:
-            raise ValueError("執行錯誤：LoadRawDataFromWarehouseStep 未在上下文中收到 ticker！")
+            self.logger.info("未提供 ticker，載入通用數據集...")
+            # 模擬一個包含多個 tickers 的通用數據集
+            dates = pd.to_datetime(pd.date_range(start="2023-01-01", periods=100))
+            df1 = pd.DataFrame({
+                "date": dates, "symbol": "SPY",
+                "open": [300 + i for i in range(100)], "high": [305 + i for i in range(100)],
+                "low": [295 + i for i in range(100)], "close": [302 + i for i in range(100)],
+                "volume": [10000000 + i * 10000 for i in range(100)],
+            })
+            df2 = pd.DataFrame({
+                "date": dates, "symbol": "QQQ",
+                "open": [200 + i for i in range(100)], "high": [205 + i for i in range(100)],
+                "low": [195 + i for i in range(100)], "close": [202 + i for i in range(100)],
+                "volume": [15000000 + i * 12000 for i in range(100)],
+            })
+            return pd.concat([df1, df2], ignore_index=True)
 
         self.logger.info(f"正在為資產 {ticker} 載入原始數據...")
         # 模擬返回一個包含虛擬數據的 DataFrame
@@ -156,12 +175,13 @@ class LoadRawDataFromWarehouseStep(BaseETLStep):
         )
         open_prices = np.random.uniform(90, 110, size=300)
         df = pd.DataFrame({
-            "Open": open_prices,
-            "High": open_prices + np.random.uniform(0, 5, size=300),
-            "Low": open_prices - np.random.uniform(0, 5, size=300),
-            "Close": open_prices + np.random.uniform(-2, 2, size=300),
-            "Volume": np.random.randint(100000, 500000, size=300),
+            "open": open_prices,
+            "high": open_prices + np.random.uniform(0, 5, size=300),
+            "low": open_prices - np.random.uniform(0, 5, size=300),
+            "close": open_prices + np.random.uniform(-2, 2, size=300),
+            "volume": np.random.randint(100000, 500000, size=300),
         }, index=date_range)
+        df.columns = [col.lower() for col in df.columns]
         return df
 
 class TaifexTickLoaderStep(BaseETLStep):
@@ -308,6 +328,13 @@ class LoadStockDataStep(BaseStep):
         combined_df = pd.concat(all_data)
         self.logger.info(f"成功加載並合併了 {len(all_data)} 支股票的數據。")
 
+        # --- [修復] ---
+        # 將所有列名標準化為小寫，以避免與數據庫模式的大小寫不匹配問題
+        combined_df.columns = [col.lower() for col in combined_df.columns]
+
+        # 重置索引，因為 yfinance 返回的數據中，日期是索引
+        combined_df = combined_df.reset_index()
+
         return combined_df
 
 
@@ -360,6 +387,13 @@ class LoadCryptoDataStep(BaseStep):
 
         combined_df = pd.concat(all_data)
         self.logger.info(f"成功加載並合併了 {len(all_data)} 種加密貨幣的數據。")
+
+        # --- [修復] ---
+        # 將所有列名標準化為小寫，以避免與數據庫模式的大小寫不匹配問題
+        combined_df.columns = [col.lower() for col in combined_df.columns]
+
+        # 重置索引，因為 yfinance 返回的數據中，日期是索引
+        combined_df = combined_df.reset_index()
 
         return combined_df
 

@@ -17,7 +17,7 @@ class TrainFactorSimulatorStep(BaseStep):
         self.target_factor = target_factor
         self.simulator = FactorSimulator()
 
-    def run(self, data, context):
+    async def run(self, data, context):
         """
         執行訓練步驟。
 
@@ -27,8 +27,12 @@ class TrainFactorSimulatorStep(BaseStep):
         all_factors = context.get('all_factors')
         target_series = context.get('target_series')
 
+        if target_series.empty:
+            print(f"警告：目標因子 '{self.target_factor}' 的數據為空，跳過模型訓練。")
+            return data
+
         # 排除目標因子本身作為預測變數
-        predictors_df = all_factors.drop(columns=[self.target_factor])
+        predictors_df = all_factors.drop(columns=[self.target_factor.lower()])
 
         self.simulator.train(target_series, predictors_df)
         return data

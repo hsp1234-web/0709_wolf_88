@@ -4,6 +4,7 @@ import logging
 import pandas as pd
 from typing import List
 
+from src.prometheus.core.config import config
 from src.prometheus.core.clients.client_factory import ClientFactory
 from src.prometheus.core.db.db_manager import DBManager
 from src.prometheus.core.engines.stock_factor_engine import StockFactorEngine
@@ -30,9 +31,11 @@ def create_stock_factor_pipeline(symbols: List[str], db_manager: DBManager, clie
     # 初始化股票因子引擎
     stock_factor_engine = StockFactorEngine(client_factory)
 
+    from src.prometheus.core.pipelines.steps.normalize_columns_step import NormalizeColumnsStep
     # 定義 Pipeline 的步驟
     steps = [
         LoadStockDataStep(symbols=symbols, client_factory=client_factory),
+        NormalizeColumnsStep(),
         GroupBySymbolStep(),
         RunStockFactorEngineStep(engine=stock_factor_engine),
         SaveToWarehouseStep(db_manager=db_manager, table_name="factors"),

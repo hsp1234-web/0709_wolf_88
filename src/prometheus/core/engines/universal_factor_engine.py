@@ -24,7 +24,7 @@ class UniversalFactorEngine:
     def _calculate_volatility(self, df):
         self.logger.info(f"進入波動率計算，維度: {df.shape}")
         # ... 執行計算 ...
-        df['factor_vol_20d'] = df['Close'].rolling(window=20).std()
+        df['factor_vol_20d'] = df['close'].rolling(window=20).std()
         self.logger.info(f"波動率計算後，維度: {df.shape}，新增欄位: ['factor_vol_20d']")
         return df
 
@@ -43,9 +43,9 @@ class UniversalFactorEngine:
             self.logger.error("Pandas DataFrame缺少 'ta' accessor，請確保 pandas-ta 已被正確安裝並導入。")
             return df
 
-        new_factors['factor_mom_20d'] = df['Close'].pct_change(periods=20)
-        new_factors['factor_mom_60d'] = df['Close'].pct_change(periods=60)
-        new_factors['factor_mom_252d'] = df['Close'].pct_change(periods=252)
+        new_factors['factor_mom_20d'] = df['close'].pct_change(periods=20)
+        new_factors['factor_mom_60d'] = df['close'].pct_change(periods=60)
+        new_factors['factor_mom_252d'] = df['close'].pct_change(periods=252)
 
         # 使用 .join() 確保基於索引的正確合併
         df_with_factors = df.join(new_factors)

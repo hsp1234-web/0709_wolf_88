@@ -90,9 +90,9 @@ class CryptoFactorEngine(BaseAnalyzer):
             nasdaq_data = nasdaq_data[~nasdaq_data.index.duplicated(keep='first')]
 
             # 合併數據並計算日收益率
-            merged_df = pd.merge(df[['Close']], nasdaq_data[['Close']], left_index=True, right_index=True, suffixes=('_crypto', '_nasdaq'))
-            merged_df['crypto_returns'] = merged_df['Close_crypto'].pct_change()
-            merged_df['nasdaq_returns'] = merged_df['Close_nasdaq'].pct_change()
+            merged_df = pd.merge(df[['close']], nasdaq_data[['close']], left_index=True, right_index=True, suffixes=('_crypto', '_nasdaq'))
+            merged_df['crypto_returns'] = merged_df['close_crypto'].pct_change()
+            merged_df['nasdaq_returns'] = merged_df['close_nasdaq'].pct_change()
 
             # 計算 30 日滾動相關性
             correlation = merged_df['crypto_returns'].rolling(window=30).corr(merged_df['nasdaq_returns'])
@@ -116,7 +116,7 @@ class CryptoFactorEngine(BaseAnalyzer):
         self.logger.debug("正在計算恐懼與貪婪指數代理（7日已實現波動率）...")
         try:
             # 計算日收益率
-            returns = df['Close'].pct_change()
+            returns = df['close'].pct_change()
             # 計算 7 日滾動標準差（波動率）
             volatility = returns.rolling(window=7).std()
             df['factor_fear_greed_proxy'] = volatility

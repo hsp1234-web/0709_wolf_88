@@ -27,13 +27,14 @@ class CalculateUniversalFactorsStep(BaseETLStep):
         return factor_df
 
 
-# 重新定義管線，加入驗證步驟
+from prometheus.core.pipelines.steps.normalize_columns_step import NormalizeColumnsStep
+
+# 重新定義管線，移除儲存步驟，使其返回 DataFrame
 p1_factor_generation_pipeline = DataPipeline(
     steps=[
         LoadRawDataFromWarehouseStep(),
+        NormalizeColumnsStep(),
         CalculateUniversalFactorsStep(),
-        # 在計算之後、儲存之前，注入真理血清
         VerifyDataFrameNotEmptyStep(),
-        SaveFactorsToWarehouseStep(table_name="universal_factors"),
     ]
 )

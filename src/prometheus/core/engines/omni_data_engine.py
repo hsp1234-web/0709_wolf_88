@@ -55,6 +55,7 @@ class OmniDataEngine:
 
         if data is not None and not data.empty:
             logger.info(f"[{symbol}] 成功從 yfinance 獲取 {interval} 數據。")
+            data.columns = [col.lower() for col in data.columns]
             return data, "yfinance", interval
 
         # --- 2. 獲取失敗，觸發降級邏輯 ---
@@ -67,6 +68,7 @@ class OmniDataEngine:
             data_daily = await self.yf_client.fetch_data(symbol, interval="1d", **kwargs)
             if data_daily is not None and not data_daily.empty:
                 logger.info(f"[{symbol}] 成功透過顆粒度降級從 yfinance 獲取到日線數據。")
+                data_daily.columns = [col.lower() for col in data_daily.columns]
                 return data_daily, "yfinance", "1d"
             logger.warning(f"[{symbol}] 顆粒度降級失敗，yfinance 同樣未能提供日線數據。")
 
@@ -88,6 +90,7 @@ class OmniDataEngine:
                     logger.info(f"[{symbol}] 成功透過數據源降級從 finmind 獲取到日線數據。")
                     # FinMind 的欄位名稱可能不同，這裡可以做一個標準化處理
                     # 為了驗證協議，暫時直接返回
+                    data_finmind.columns = [col.lower() for col in data_finmind.columns]
                     return data_finmind, "finmind", "1d"
             except Exception as e:
                 logger.error(f"[{symbol}] 嘗試從 finmind 獲取數據時發生錯誤: {e}")

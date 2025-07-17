@@ -27,9 +27,40 @@ class DBManager:
 
                 if not db_columns:
                     self.logger.info(f"表格 '{table_name}' 不存在，將根據 DataFrame 結構創建。")
-                    con.register('df_to_create', data)
-                    con.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df_to_create")
-                    self.logger.info(f"成功創建表格 '{table_name}' 並儲存了 {len(data)} 筆數據。")
+
+                    # --- [核心改造] ---
+                    # 為了實現穩健的 UPSERT，我們必須在創建時就定義主鍵。
+                    # 我們假設 'date' 和 'symbol' 是必然存在的核心欄位。
+                    create_sql = f"""
+                    CREATE TABLE {table_name} (
+                        date TIMESTAMP,
+                        symbol VARCHAR,
+                        PRIMARY KEY (date, symbol)
+                    );
+                    """
+                    con.execute(create_sql)
+                    self.logger.info(f"成功創建表格 '{table_name}' 並定義了 (date, symbol) 複合主鍵。")
+
+                    # 註冊 DataFrame 以便後續插入
+                    con.register('df_to_insert', data)
+
+                    # 動態添加其餘欄位
+                    initial_cols = {'date', 'symbol'}
+                    remaining_cols = [col for col in data.columns if col not in initial_cols]
+
+                    for col in remaining_cols:
+                        col_dtype = data[col].dtype
+                        sql_type = self._map_dtype_to_sql(col_dtype)
+                        con.execute(f"ALTER TABLE {table_name} ADD COLUMN \"{col}\" {sql_type};")
+
+                    # 插入完整數據
+                    all_cols = ['date', 'symbol'] + remaining_cols
+                    col_names_str = ", ".join(f'"{c}"' for c in all_cols)
+                    con.execute(f"INSERT INTO {table_name} ({col_names_str}) SELECT {col_names_str} FROM df_to_insert")
+
+                    self.logger.info(f"成功將 {len(data)} 筆初始數據插入到新創建的 '{table_name}' 表格中。")
+                    # 在創建後，重新獲取欄位資訊以進行後續的合併操作
+                    db_columns = self._get_table_columns(con, table_name)
                 else:
                     df_columns = data.columns.tolist()
                     new_columns = set(df_columns) - set(db_columns)
@@ -43,34 +74,42 @@ class DBManager:
                         self.logger.info("表格結構演進完成。")
                         db_columns = self._get_table_columns(con, table_name)
 
-                    # For existing tables, upsert data
-                    # 1. Create a temporary table with the new data
-                    con.register('new_data_view', data)
-                    con.execute("CREATE OR REPLACE TEMP TABLE new_data_temp AS SELECT * FROM new_data_view")
+                    # --- [核心改造] ---
+                    # 使用 DuckDB 的 ON CONFLICT (UPSERT) 語法實現高效、原子性的數據合併。
+                    con.register('df_to_upsert', data)
 
-                    # 2. Delete rows from the main table that have matching keys in the temp table
-                    # Assuming 'symbol' and 'date' are the composite primary key
-                    if 'symbol' in db_columns and 'date' in db_columns:
-                        con.execute(f"""
-                            DELETE FROM {table_name}
-                            WHERE (symbol, date) IN (SELECT symbol, date FROM new_data_temp)
-                        """)
-                        self.logger.info(f"從 '{table_name}' 中刪除了重複的舊數據。")
+                    all_columns = [f'"{c}"' for c in data.columns]
+                    update_columns = [col for col in all_columns if col.lower() not in ('"date"', '"symbol"')]
 
-                    # 3. Insert all data from the temp table
-                    cols_to_insert = ", ".join(data.columns)
-                    con.execute(f"INSERT INTO {table_name} ({cols_to_insert}) SELECT {cols_to_insert} FROM new_data_temp")
+                    if not update_columns:
+                        self.logger.warning("沒有需要更新的欄位（除了主鍵），將只執行插入操作。")
+                        # 如果只有主鍵，那麼 ON CONFLICT 就不需要 DO UPDATE
+                        upsert_sql = f"""
+                        INSERT INTO {table_name} ({', '.join(all_columns)})
+                        SELECT {', '.join(all_columns)} FROM df_to_upsert
+                        ON CONFLICT (date, symbol) DO NOTHING;
+                        """
+                    else:
+                        set_clause = ", ".join([f'{col} = excluded.{col}' for col in update_columns])
+                        upsert_sql = f"""
+                        INSERT INTO {table_name} ({', '.join(all_columns)})
+                        SELECT {', '.join(all_columns)} FROM df_to_upsert
+                        ON CONFLICT (date, symbol) DO UPDATE SET
+                            {set_clause};
+                        """
 
-                    self.logger.info(f"成功將 {len(data)} 筆數據寫入到 '{table_name}'。")
+                    con.execute(upsert_sql)
+                    self.logger.info(f"成功將 {len(data)} 筆數據 UPSERT 到 '{table_name}'。")
         except Exception as e:
             self.logger.error(f"儲存數據時發生錯誤: {e}", exc_info=True)
             raise
 
     def _get_table_columns(self, con, table_name):
-        """查詢並返回資料庫表的欄位列表。"""
+        """查詢並返回資料庫表的欄位列表（全部轉為小寫）。"""
         try:
             table_info = con.execute(f"PRAGMA table_info('{table_name}')").fetchall()
-            return [info[1] for info in table_info]
+            # 將所有列名轉為小寫，以實現不區分大小寫的比較
+            return [str(info[1]).lower() for info in table_info]
         except duckdb.CatalogException:
             return []
 

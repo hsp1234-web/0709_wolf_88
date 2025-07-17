@@ -18,9 +18,12 @@ class CalculateBondFactorsStep(BaseETLStep):
         factor_df = self.engine.calculate(data)
         return factor_df
 
+from prometheus.core.pipelines.steps.normalize_columns_step import NormalizeColumnsStep
+
 p3_bond_factor_pipeline = DataPipeline(
     steps=[
         LoadRawDataFromWarehouseStep(),
+        NormalizeColumnsStep(),
         MultiSourceAggregatorStep(
             auxiliary_tickers={
                 "yield_curve_slope": "T10Y2Y",
@@ -29,6 +32,5 @@ p3_bond_factor_pipeline = DataPipeline(
             }
         ),
         CalculateBondFactorsStep(),
-        SaveFactorsToWarehouseStep(table_name="bond_specific_factors"),
     ]
 )

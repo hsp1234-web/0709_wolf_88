@@ -4,6 +4,7 @@ import logging
 import asyncio
 from typing import List
 
+from src.prometheus.core.config import config
 from src.prometheus.core.clients.client_factory import ClientFactory
 from src.prometheus.core.db.db_manager import DBManager
 from src.prometheus.core.engines.crypto_factor_engine import CryptoFactorEngine
@@ -30,9 +31,11 @@ def create_crypto_factor_pipeline(symbols: List[str], db_manager: DBManager, cli
     # 初始化加密貨幣因子引擎
     crypto_factor_engine = CryptoFactorEngine()
 
+    from src.prometheus.core.pipelines.steps.normalize_columns_step import NormalizeColumnsStep
     # 定義 Pipeline 的步驟
     steps = [
         LoadCryptoDataStep(symbols=symbols, client_factory=client_factory),
+        NormalizeColumnsStep(),
         GroupBySymbolStep(),
         RunCryptoFactorEngineStep(engine=crypto_factor_engine),
         SaveToWarehouseStep(db_manager=db_manager, table_name="factors"),

@@ -18,9 +18,12 @@ class CalculateIndexFactorsStep(BaseETLStep):
         factor_df = self.engine.calculate(data)
         return factor_df
 
+from prometheus.core.pipelines.steps.normalize_columns_step import NormalizeColumnsStep
+
 p2_index_factor_pipeline = DataPipeline(
     steps=[
         LoadRawDataFromWarehouseStep(),
+        NormalizeColumnsStep(),
         MultiSourceAggregatorStep(
             auxiliary_tickers={
                 "vix": "^VIX",
@@ -29,6 +32,5 @@ p2_index_factor_pipeline = DataPipeline(
             }
         ),
         CalculateIndexFactorsStep(),
-        SaveFactorsToWarehouseStep(table_name="index_specific_factors"),
     ]
 )

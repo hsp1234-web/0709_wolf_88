@@ -148,9 +148,9 @@ class DataEngine:
         """
         technicals = {}
         # 範例：計算20日均線
-        if "Close" in ohlcv.columns and len(ohlcv) >= 20:
+        if "close" in ohlcv.columns and len(ohlcv) >= 20:
             technicals["MA20"] = round(
-                ohlcv["Close"].rolling(window=20).mean().iloc[-1], 2
+                ohlcv["close"].rolling(window=20).mean().iloc[-1], 2
             )
         else:
             technicals["MA20"] = None
@@ -165,27 +165,28 @@ class DataEngine:
         """
         計算近似信用利差 (HYG價格 / IEF價格)。
         """
+        import asyncio
         try:
-            hyg_data = self.yf_client.fetch_data("HYG", period="1d")
-            ief_data = self.yf_client.fetch_data("IEF", period="1d")
+            hyg_data = asyncio.run(self.yf_client.fetch_data("HYG", period="1d"))
+            ief_data = asyncio.run(self.yf_client.fetch_data("IEF", period="1d"))
 
             if (
                 hyg_data.empty
-                or "Close" not in hyg_data.columns
-                or hyg_data["Close"].iloc[-1] is None
+                or "close" not in hyg_data.columns
+                or hyg_data["close"].iloc[-1] is None
             ):
                 logger.warning("無法獲取 HYG 的最新收盤價。")
                 return float("nan")
             if (
                 ief_data.empty
-                or "Close" not in ief_data.columns
-                or ief_data["Close"].iloc[-1] is None
+                or "close" not in ief_data.columns
+                or ief_data["close"].iloc[-1] is None
             ):
                 logger.warning("無法獲取 IEF 的最新收盤價。")
                 return float("nan")
 
-            hyg_price = hyg_data["Close"].iloc[-1]
-            ief_price = ief_data["Close"].iloc[-1]
+            hyg_price = hyg_data["close"].iloc[-1]
+            ief_price = ief_data["close"].iloc[-1]
 
             if ief_price == 0:
                 logger.warning("IEF 價格為零，無法計算信用利差。")
@@ -200,15 +201,16 @@ class DataEngine:
         """
         計算代理債市波動率 (TLT 60天日線數據的20天滾動標準差)。
         """
+        import asyncio
         try:
-            tlt_data = self.yf_client.fetch_data("TLT", period="60d")
+            tlt_data = asyncio.run(self.yf_client.fetch_data("TLT", period="60d"))
             if (
-                tlt_data.empty or "Close" not in tlt_data.columns or len(tlt_data) < 21
+                tlt_data.empty or "close" not in tlt_data.columns or len(tlt_data) < 21
             ):  # Need at least 20 periods + 1 for pct_change
                 logger.warning("TLT 數據不足以計算代理波動率。")
                 return float("nan")
 
-            daily_returns = tlt_data["Close"].pct_change()
+            daily_returns = tlt_data["close"].pct_change()
             proxy_move = daily_returns.rolling(window=20).std().iloc[-1]
             return round(proxy_move, 4)
         except Exception as e:
@@ -219,27 +221,28 @@ class DataEngine:
         """
         計算金銅比 (GLD價格 / HG=F價格)。
         """
+        import asyncio
         try:
-            gld_data = self.yf_client.fetch_data("GLD", period="1d")
-            copper_data = self.yf_client.fetch_data("HG=F", period="1d")
+            gld_data = asyncio.run(self.yf_client.fetch_data("GLD", period="1d"))
+            copper_data = asyncio.run(self.yf_client.fetch_data("HG=F", period="1d"))
 
             if (
                 gld_data.empty
-                or "Close" not in gld_data.columns
-                or gld_data["Close"].iloc[-1] is None
+                or "close" not in gld_data.columns
+                or gld_data["close"].iloc[-1] is None
             ):
                 logger.warning("無法獲取 GLD 的最新收盤價。")
                 return float("nan")
             if (
                 copper_data.empty
-                or "Close" not in copper_data.columns
-                or copper_data["Close"].iloc[-1] is None
+                or "close" not in copper_data.columns
+                or copper_data["close"].iloc[-1] is None
             ):
                 logger.warning("無法獲取 HG=F 的最新收盤價。")
                 return float("nan")
 
-            gld_price = gld_data["Close"].iloc[-1]
-            copper_price = copper_data["Close"].iloc[-1]
+            gld_price = gld_data["close"].iloc[-1]
+            copper_price = copper_data["close"].iloc[-1]
 
             if copper_price == 0:
                 logger.warning("銅價為零，無法計算金銅比。")

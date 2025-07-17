@@ -67,7 +67,8 @@ class TestFinMindClientRequestOverride:
 
     # 移除類級別的 @patch("requests.Session.get")
 
-    def test_request_override_success_json(self, finmind_client_fixture: FinMindClient):
+    @pytest.mark.asyncio
+    async def test_request_override_success_json(self, finmind_client_fixture: FinMindClient):
         mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "application/json; charset=utf-8"}
@@ -84,7 +85,7 @@ class TestFinMindClientRequestOverride:
         with patch.object(
             finmind_client_fixture._session, "get", return_value=mock_response
         ) as mock_actual_get:
-            result_df = finmind_client_fixture._request(params=params)
+            result_df = await finmind_client_fixture._request(params=params)
             mock_actual_get.assert_called_once_with(
                 FINMIND_API_BASE_URL, params=expected_call_params
             )
@@ -92,7 +93,8 @@ class TestFinMindClientRequestOverride:
         expected_df = pd.DataFrame([{"col_a": "val1"}, {"col_a": "val2"}])
         assert_frame_equal(result_df, expected_df)
 
-    def test_request_override_success_csv(self, finmind_client_fixture: FinMindClient):
+    @pytest.mark.asyncio
+    async def test_request_override_success_csv(self, finmind_client_fixture: FinMindClient):
         mock_response = MagicMock(spec=requests.Response)
         mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "text/csv; charset=utf-8"}
@@ -106,7 +108,7 @@ class TestFinMindClientRequestOverride:
         with patch.object(
             finmind_client_fixture._session, "get", return_value=mock_response
         ) as mock_actual_get:
-            result_df = finmind_client_fixture._request(params=params)
+            result_df = await finmind_client_fixture._request(params=params)
             mock_actual_get.assert_called_once_with(
                 FINMIND_API_BASE_URL, params=expected_call_params
             )
@@ -114,7 +116,8 @@ class TestFinMindClientRequestOverride:
         expected_df = pd.read_csv(StringIO(csv_content))
         assert_frame_equal(result_df, expected_df)
 
-    def test_request_override_json_api_logic_error(
+    @pytest.mark.asyncio
+    async def test_request_override_json_api_logic_error(
         self, finmind_client_fixture: FinMindClient
     ):
         mock_response = MagicMock(spec=requests.Response)
@@ -133,14 +136,15 @@ class TestFinMindClientRequestOverride:
         with patch.object(
             finmind_client_fixture._session, "get", return_value=mock_response
         ) as mock_actual_get:
-            result_df = finmind_client_fixture._request(params=params)
+            result_df = await finmind_client_fixture._request(params=params)
             mock_actual_get.assert_called_once_with(
                 FINMIND_API_BASE_URL, params=expected_call_params
             )
 
         assert result_df.empty
 
-    def test_request_override_http_error_raises(
+    @pytest.mark.asyncio
+    async def test_request_override_http_error_raises(
         self, finmind_client_fixture: FinMindClient
     ):
         mock_response = MagicMock(spec=requests.Response)
@@ -164,7 +168,7 @@ class TestFinMindClientRequestOverride:
                 finmind_client_fixture._session, "get", return_value=mock_response
             ) as mock_actual_get:
                 try:
-                    finmind_client_fixture._request(params=params)
+                    await finmind_client_fixture._request(params=params)
                 finally:
                     # 確保即使在異常情況下，我們也檢查 get 是否被按預期調用
                     mock_actual_get.assert_called_once_with(
@@ -179,14 +183,15 @@ class TestFinMindClientRequestOverride:
         # 如果想驗證 raise_for_status, mock_response 需要在更廣的 scope
         # 或者，假設 _session.get 返回的 response 的 raise_for_status 被正確調用
 
-    def test_request_override_empty_params_value_error(
+    @pytest.mark.asyncio
+    async def test_request_override_empty_params_value_error(
         self, finmind_client_fixture: FinMindClient
     ):
         # 此測試不涉及 HTTP 請求
         with pytest.raises(
             ValueError, match="請求 FinMind API 時，params 參數不得為空。"
         ):
-            finmind_client_fixture._request(params=None)
+            await finmind_client_fixture._request(params=None)
 
 
 # 由於 FinMindClient._request 已經被徹底測試，fetch_data 的測試主要關注它如何調用 _request
@@ -194,7 +199,8 @@ class TestFinMindClientRequestOverride:
 class TestFinMindClientFetchData:
     """測試 FinMindClient.fetch_data 方法。"""
 
-    def test_fetch_data_calls_request_correctly(
+    @pytest.mark.asyncio
+    async def test_fetch_data_calls_request_correctly(
         self, mock_internal_request, finmind_client_fixture: FinMindClient
     ):
         mock_df_response = pd.DataFrame({"data": [1, 2, 3]})
@@ -205,7 +211,7 @@ class TestFinMindClientFetchData:
         start = "2023-01-01"
         end = "2023-01-31"
 
-        result = finmind_client_fixture.fetch_data(
+        result = await finmind_client_fixture.fetch_data(
             symbol=symbol_id, dataset=dataset_name, start_date=start, end_date=end
         )
 
@@ -214,14 +220,14 @@ class TestFinMindClientFetchData:
             "data_id": symbol_id,
             "start_date": start,
             "end_date": end,
-            # 'token' 會在 _request 內部添加
         }
-        mock_internal_request.assert_called_once_with(
+        mock_internal_request.assert_awaited_once_with(
             endpoint="", params=expected_params_to_request
         )
         assert_frame_equal(result, mock_df_response)
 
-    def test_fetch_data_default_end_date(
+    @pytest.mark.asyncio
+    async def test_fetch_data_default_end_date(
         self, mock_internal_request, finmind_client_fixture: FinMindClient
     ):
         mock_internal_request.return_value = pd.DataFrame()  # 返回不重要
@@ -231,7 +237,7 @@ class TestFinMindClientFetchData:
                 "2023-12-25"  # Mocked current date
             )
 
-            finmind_client_fixture.fetch_data(
+            await finmind_client_fixture.fetch_data(
                 symbol="2330",
                 dataset="TaiwanStockInfo",
                 start_date="2023-01-01",
@@ -244,22 +250,25 @@ class TestFinMindClientFetchData:
             "start_date": "2023-01-01",
             "end_date": "2023-12-25",  # Defaulted to mocked now
         }
-        mock_internal_request.assert_called_once_with(
+        mock_internal_request.assert_awaited_once_with(
             endpoint="", params=expected_params
         )
 
-    def test_fetch_data_missing_required_kwargs(
+    @pytest.mark.asyncio
+    async def test_fetch_data_missing_required_kwargs(
         self, mock_internal_request, finmind_client_fixture: FinMindClient
     ):
-        with pytest.raises(ValueError, match="必須在 kwargs 中提供 'dataset' 參數"):
-            finmind_client_fixture.fetch_data(symbol="2330", start_date="2023-01-01")
+        with pytest.raises(ValueError, match="'dataset' 參數為必填項。"):
+            await finmind_client_fixture.fetch_data(symbol="2330", start_date="2023-01-01")
 
-        with pytest.raises(ValueError, match="必須在 kwargs 中提供 'start_date' 參數"):
-            finmind_client_fixture.fetch_data(symbol="2330", dataset="TaiwanStockPrice")
+        with pytest.raises(ValueError, match="'start_date' 參數為必填項。"):
+            await finmind_client_fixture.fetch_data(symbol="2330", dataset="TaiwanStockPrice")
 
         mock_internal_request.assert_not_called()
 
-    def test_get_taiwan_stock_institutional_investors_buy_sell(
+    @pytest.mark.asyncio
+    @pytest.mark.asyncio
+    async def test_get_taiwan_stock_institutional_investors_buy_sell(
         self, mock_internal_request, finmind_client_fixture: FinMindClient
     ):
         """測試便捷方法是否正確調用 fetch_data。"""
@@ -273,7 +282,7 @@ class TestFinMindClientFetchData:
         # 它調用 fetch_data, fetch_data 調用 _request
         # 所以我們 patch _request
 
-        finmind_client_fixture.get_taiwan_stock_institutional_investors_buy_sell(
+        await finmind_client_fixture.get_taiwan_stock_institutional_investors_buy_sell(
             stock_id="2330", start_date="2024-01-01", end_date="2024-01-05"
         )
 
@@ -284,7 +293,7 @@ class TestFinMindClientFetchData:
             "end_date": "2024-01-05",
         }
         # 驗證 _request 被調用時的參數
-        mock_internal_request.assert_called_once_with(
+        mock_internal_request.assert_awaited_once_with(
             endpoint="", params=expected_params_for_request
         )
 
