@@ -1,154 +1,102 @@
+# -*- coding: utf-8 -*-
+"""
+回測服務：負責評估單一策略的歷史績效。
+"""
 import pandas as pd
-import vectorbt as vbt
 import numpy as np
+from prometheus.core.db.db_manager import DBManager
+from prometheus.models.strategy_models import Strategy, PerformanceReport
 
 class BacktestingService:
     """
-    一個動態的、基於規則的回測引擎。
-    本服務能夠解釋由 EvolutionChamber 產生的複雜基因體 (Genome)，
-    將其轉換為交易信號，並使用 vectorbt 執行高效的向量化回測。
+    一個獨立、高效的回測服務。
+    此服務是整個演化系統的心臟，專職負責精準評估任何單一策略（基因組）的歷史績效。
     """
-
-    def __init__(self, price_data: pd.DataFrame):
-        if not isinstance(price_data, pd.DataFrame) or "close" not in price_data.columns:
-            raise ValueError("必須提供包含 'close' 欄位的 Pandas DataFrame。")
-
-        # 為了使用 .ta 擴展，我們需要匯入 pandas_ta
-        try:
-            import pandas_ta
-        except ImportError:
-            raise ImportError("請安裝 pandas_ta 套件: pip install pandas_ta")
-
-        self.price_data = price_data
-
-
-    def run_backtest(self, genome: list) -> dict:
+    def __init__(self, db_manager: DBManager):
         """
-        根據給定的基因體 (一系列條件) 執行回測。
+        初始化回測服務。
 
-        :param genome: 一個包含多個條件字典的列表。
-                       例如: [
-                           { "factor": "RSI", "params": { "window": 14 }, "operator": "less_than", "value": 30 },
-                           { "factor": "SMA_cross", "params": { "fast_window": 10, "slow_window": 20 }, "operator": "cross_above" }
-                       ]
-        :return: 一個包含關鍵績效指標 (KPIs) 的字典。
+        Args:
+            db_manager (DBManager): 用於從數據倉儲讀取因子與價格數據的數據庫管理器。
         """
-        if not isinstance(genome, list) or not genome:
-            return self._invalid_strategy_results("基因體為空或格式不正確。")
+        self.db_manager = db_manager
 
-        try:
-            # 產生進場和出場信號
-            entries, exits = self._generate_signals(genome)
-
-            # 如果沒有產生任何交易信號，這是一個有效的、但不活躍的策略。
-            # 直接返回零績效，而不是將其視為錯誤。
-            if entries.sum() == 0 and exits.sum() == 0:
-                return self._zero_performance_results()
-
-            # 執行向量化回測
-            portfolio = vbt.Portfolio.from_signals(
-                self.price_data["close"],
-                entries=entries,
-                exits=exits,
-                freq="D",
-                init_cash=100000,
-            )
-
-            stats = portfolio.stats()
-            return {
-                "sharpe_ratio": round(stats.get("Sharpe Ratio", np.nan), 2),
-                "total_return": round(stats.get("Total Return [%]", np.nan), 2),
-                "max_drawdown": round(stats.get("Max Drawdown [%]", np.nan), 2),
-                "win_rate": round(stats.get("Win Rate [%]", np.nan), 2),
-                "is_valid": True,
-            }
-        except Exception as e:
-            # 捕捉任何在回測中可能發生的錯誤
-            return self._invalid_strategy_results(f"回測時發生錯誤: {e}")
-
-    def _generate_signals(self, genome: list) -> (pd.Series, pd.Series):
+    def _load_data(self, strategy: Strategy) -> pd.DataFrame:
         """
-        根據基因體中的所有條件，動態生成組合的進出場信號。
+        從數據庫加載並合併因子與目標資產價格數據。
         """
-        all_entry_signals = pd.DataFrame(index=self.price_data.index)
-        all_exit_signals = pd.DataFrame(index=self.price_data.index)
+        # 1. 加載所有因子數據
+        all_factors_df = self.db_manager.fetch_table('factors')
 
-        for i, condition in enumerate(genome):
-            entry_signal, exit_signal = self._evaluate_condition(condition)
-            all_entry_signals[f'condition_{i}'] = entry_signal
-            all_exit_signals[f'condition_{i}'] = exit_signal
+        # 2. 篩選出策略所需的因子
+        required_factors = all_factors_df[['date', 'symbol'] + strategy.factors]
 
-        # 核心邏輯：所有條件的進場信號必須同時滿足 (AND)
-        final_entries = all_entry_signals.all(axis=1)
-        # 核心邏輯：任何一個條件的出場信號被觸發即可 (OR)
-        final_exits = all_exit_signals.any(axis=1)
+        # 3. 加載目標資產的價格數據 (假設價格也存在 'factors' 表中，以 'close' 欄位表示)
+        #    在真實場景中，這可能會從一個專門的價格表中獲取
+        target_prices_df = all_factors_df[all_factors_df['symbol'] == strategy.target_asset][['date', 'close']]
 
-        return final_entries, final_exits
+        # 4. 合併數據
+        merged_df = pd.merge(required_factors[required_factors['symbol'] == strategy.target_asset], target_prices_df, on='date')
+        merged_df['date'] = pd.to_datetime(merged_df['date'])
+        merged_df = merged_df.set_index('date').sort_index()
 
-    def _evaluate_condition(self, condition: dict) -> (pd.Series, pd.Series):
+        return merged_df
+
+    def run(self, strategy: Strategy) -> PerformanceReport:
         """
-        評估單一條件，並返回對應的進出場布林序列。
+        執行一次完整的策略回測。
         """
-        factor_name = condition["factor"]
-        params = condition.get("params", {})
-        operator = condition["operator"]
-        value = condition.get("value")
+        # 1. 數據加載
+        data = self._load_data(strategy)
+        if data.empty:
+            print(f"WARN: 找不到策略 {strategy.target_asset} 的數據，跳過回測。")
+            return PerformanceReport()
 
-        # 初始化信號序列
-        entries = pd.Series(False, index=self.price_data.index)
-        exits = pd.Series(False, index=self.price_data.index)
+        # 2. 訊號生成 (正規化 + 加權)
+        # 對因子進行 z-score 正規化
+        for factor in strategy.factors:
+            data[f'{factor}_norm'] = (data[factor] - data[factor].mean()) / data[factor].std()
 
-        # --- 處理特殊因子 ---
-        if factor_name == "SMA_cross":
-            fast_window = params["fast_window"]
-            slow_window = params["slow_window"]
+        # 計算加權後的組合訊號
+        data['signal'] = 0
+        for factor in strategy.factors:
+            data['signal'] += data[f'{factor}_norm'] * strategy.weights.get(factor, 0)
 
-            # 【保護機制】如果快線大於或等於慢線，這是一個無效條件，直接返回空信號
-            if fast_window >= slow_window:
-                return entries, exits # 返回全為 False 的序列
+        # 3. 投資組合模擬
+        # 計算目標資產的日報酬率
+        data['asset_returns'] = data['close'].pct_change()
 
-            fast_sma = self.price_data.ta.sma(length=fast_window)
-            slow_sma = self.price_data.ta.sma(length=slow_window)
+        # 根據訊號計算策略報酬率 (假設 T+1 生效)
+        # 訊號為正 -> 做多, 訊號為負 -> 做空
+        data['strategy_returns'] = data['signal'].shift(1) * data['asset_returns']
 
-            if operator == "cross_above":
-                entries = fast_sma.vbt.crossed_above(slow_sma)
-                exits = fast_sma.vbt.crossed_below(slow_sma)
-            elif operator == "cross_below":
-                entries = fast_sma.vbt.crossed_below(slow_sma)
-                exits = fast_sma.vbt.crossed_above(slow_sma)
+        # 4. 績效計算
+        # 處理可能出現的 NaN 或 Inf
+        data.replace([np.inf, -np.inf], np.nan, inplace=True)
+        data.dropna(inplace=True)
 
-        # --- 處理一般因子 (例如 RSI, MACD 等) ---
-        else:
-            # 動態計算指標
-            indicator = getattr(self.price_data.ta, factor_name.lower())(**params)
+        if data.empty:
+            return PerformanceReport()
 
-            if operator == "less_than":
-                entries = indicator < value
-                exits = indicator > value # 假設出場條件是反向的
-            elif operator == "greater_than":
-                entries = indicator > value
-                exits = indicator < value # 假設出場條件是反向的
+        # 計算累積報酬
+        cumulative_returns = (1 + data['strategy_returns']).cumprod()
 
-        return entries, exits
+        # 計算年化報酬
+        days = (data.index[-1] - data.index[0]).days
+        annualized_return = (cumulative_returns.iloc[-1]) ** (365.0 / days) - 1 if days > 0 else 0.0
 
-    def _zero_performance_results(self) -> dict:
-        """返回一個代表有效但無交易活動的策略的標準字典。"""
-        return {
-            "sharpe_ratio": 0.0,
-            "total_return": 0.0,
-            "max_drawdown": 0.0,
-            "win_rate": 0.0,
-            "is_valid": True,
-            "error": "No signals generated",
-        }
+        # 計算年化夏普比率 (假設無風險利率為 0)
+        annualized_volatility = data['strategy_returns'].std() * np.sqrt(252)
+        sharpe_ratio = (annualized_return / annualized_volatility) if annualized_volatility != 0 else 0.0
 
-    def _invalid_strategy_results(self, error_message: str) -> dict:
-        """返回一個代表無效或失敗策略的標準字典。"""
-        return {
-            "sharpe_ratio": -1.0,
-            "total_return": -100.0,
-            "max_drawdown": 100.0,
-            "win_rate": 0.0,
-            "is_valid": False,
-            "error": error_message,
-        }
+        # 計算最大回撤
+        peak = cumulative_returns.expanding(min_periods=1).max()
+        drawdown = (cumulative_returns - peak) / peak
+        max_drawdown = drawdown.min()
+
+        return PerformanceReport(
+            sharpe_ratio=float(sharpe_ratio),
+            annualized_return=float(annualized_return),
+            max_drawdown=float(max_drawdown),
+            total_trades=len(data) # 簡化為交易天數
+        )
